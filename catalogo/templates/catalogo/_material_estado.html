@@ -1,0 +1,4 @@
+{% comment %}Se o formulário oferece o material e por quê. Recebe `l` com `texto` (`_texto_do_estado`) e `estado`.{% endcomment %}
+<span class="selo selo-{{ l.texto.nivel }}">{{ l.texto.selo }}</span>
+<span class="material-info texto-suave">{{ l.texto.origem }}</span>
+{% if l.estado.sem_efeito %}<span class="material-info"><span class="selo selo-neutro">Exceção sem efeito</span> a regra já dá este resultado.</span>{% endif %}

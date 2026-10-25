@@ -55,8 +55,8 @@
       <p class="texto-secundario texto-pequeno">A decisão é definitiva: se foi um engano, o servidor faz um pedido novo.</p>
     </form>
     {% else %}
-    <p><span class="selo {% if autorizacao.situacao == 'AUTORIZADO' %}selo-ok{% else %}selo-erro{% endif %}">{{ autorizacao.get_situacao_display }}</span>
-      por {{ autorizacao.decidido_por.get_full_name|default:autorizacao.decidido_por.username }} em {{ autorizacao.decidido_em|date:"d/m/Y H:i" }}.</p>
+    <p><span class="selo {{ autorizacao.situacao|badge_autorizacao }}">{{ autorizacao.get_situacao_display }}</span>
+      por {{ autorizacao.decidido_por|nome_usuario }} em {{ autorizacao.decidido_em|date:"d/m/Y H:i" }}.</p>
     {% if autorizacao.motivo %}<p><strong>Motivo:</strong> {{ autorizacao.motivo }}</p>{% endif %}
     {% endif %}
   </section>

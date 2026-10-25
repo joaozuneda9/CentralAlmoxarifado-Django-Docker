@@ -47,13 +47,12 @@ tempo, a operação é recusada. Sem filtro (catálogo inteiro), pede o "ciente"
     <p class="aviso aviso-info">Nenhum material no filtro: não há o que alterar.</p>
     {% endif %}
 
-    {% if pode_alterar_materiais %}
-    {% if total %}
+    {% if pode_alterar_materiais and total %}
     <form method="post" action="{% url 'catalogo:formularios_lote' %}" class="pilha">
       {% csrf_token %}
       <input type="hidden" name="formulario" value="{{ formulario }}">
       <input type="hidden" name="acao" value="{{ acao }}">
-      {% for nome, valor in filtros_ativos.items %}<input type="hidden" name="{{ nome }}" value="{{ valor }}">{% endfor %}
+      {% include "catalogo/_volta.html" with volta=filtros_ativos %}
       <input type="hidden" name="total" value="{{ total }}">
       {% if sem_filtro %}
       <label class="campo-check">
@@ -67,10 +66,7 @@ tempo, a operação é recusada. Sem filtro (catálogo inteiro), pede o "ciente"
       </div>
     </form>
     {% else %}
-    <div class="acoes"><a class="botao botao-secundario" href="{{ voltar }}">Voltar aos materiais</a></div>
-    {% endif %}
-    {% else %}
-    <p class="aviso aviso-info">Somente consulta: você não tem permissão para aplicar esta alteração.</p>
+    {% if not pode_alterar_materiais %}<p class="aviso aviso-info">Somente consulta: você não tem permissão para aplicar esta alteração.</p>{% endif %}
     <div class="acoes"><a class="botao botao-secundario" href="{{ voltar }}">Voltar aos materiais</a></div>
     {% endif %}
   </section>

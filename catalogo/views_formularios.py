@@ -42,7 +42,6 @@ from catalogo.forms import ESTADOS_DO_MATERIAL, FiltrosCentros, FiltrosMateriais
 from catalogo.models import (
     CentroCusto,
     CentroFormulario,
-    ExcecaoMaterial,
     Formulario,
     Material,
     ParDePara,
@@ -148,6 +147,13 @@ def _filtrar_centros(linhas, origem: str, filtros: dict, modo: str, habilitadas:
     return linhas
 
 
+def _acoes(ids: list[int], *, habilitar: bool, ativar: bool, todas: bool = False) -> dict:
+    """O que os botões de uma linha da aba Centros de custo fazem (`_centros_acoes.html`): os
+    centros que mandam e se habilitam ou desabilitam, ativam ou inativam. `todas` diz "Habilitar
+    todas" quando parte da descrição já é destino."""
+    return {"ids": ids, "habilitar": habilitar, "ativar": ativar, "todas": todas}
+
+
 def _contexto_centros(
     origem: str, filtros_centros: FiltrosCentros, usuario, numero_da_pagina=None
 ) -> dict:
@@ -168,18 +174,34 @@ def _contexto_centros(
     grupos = []
     for descricao, conjunto in groupby(linhas, key=lambda c: c.descricao):
         itens = [
-            {"centro": c, "habilitada": c.pk in habilitadas, "outros": outros.get(c.pk, [])}
+            {
+                "centro": c,
+                "habilitada": c.pk in habilitadas,
+                "outros": outros.get(c.pk, []),
+                "acoes": _acoes([c.pk], habilitar=c.pk not in habilitadas, ativar=not c.ativo),
+            }
             for c in conjunto
         ]
+        n_habilitadas = sum(1 for i in itens if i["habilitada"])
+        n_inativas = sum(1 for i in itens if not i["centro"].ativo)
+        todas_habilitadas = n_habilitadas == len(itens)
+        todas_inativas = n_inativas == len(itens)
         grupos.append(
             {
                 "descricao": descricao,
                 "linhas": itens,
                 "outros": list(dict.fromkeys(f for i in itens for f in i["outros"])),
                 "ids": [i["centro"].pk for i in itens],
-                "n_habilitadas": sum(1 for i in itens if i["habilitada"]),
-                "n_inativas": sum(1 for i in itens if not i["centro"].ativo),
+                "n_habilitadas": n_habilitadas,
+                "n_inativas": n_inativas,
+                "todas_inativas": todas_inativas,
                 "codigos": list(dict.fromkeys(i["centro"].codigo for i in itens)),
+                "acoes": _acoes(
+                    [i["centro"].pk for i in itens],
+                    habilitar=not todas_habilitadas,
+                    ativar=todas_inativas,
+                    todas=bool(n_habilitadas),
+                ),
             }
         )
     # A página mostra POR_PAGINA_CENTROS descrições por vez (as linhas de uma descrição ficam
@@ -188,7 +210,6 @@ def _contexto_centros(
     return {
         "grupos": list(pagina.object_list),
         "pagina_centros": pagina,
-        "modo": modo,
         "explicacao_do_modo": EXPLICACAO_DO_MODO[modo],
         "por_descricao": modo == MODO_SEM_PLACA,
         "total_linhas": sum(len(g["linhas"]) for g in grupos),
@@ -222,12 +243,12 @@ def _texto_do_estado(estado) -> dict:
     return {"nivel": selo[0], "selo": selo[1], "origem": origem}
 
 
-def _resumo_das_excecoes(origem: str) -> dict:
+def _resumo_das_excecoes(excecoes: dict[str, bool]) -> dict:
     """Quantas exceções de material o formulário tem e o que a restauração da regra padrão desfaz,
-    já em texto (só o que existe: sem "0 retirados")."""
-    excecoes = ExcecaoMaterial.objects.filter(formulario=origem)
-    acrescentados = excecoes.filter(habilitado=True).count()
-    retirados = excecoes.filter(habilitado=False).count()
+    já em texto (só o que existe: sem "0 retirados"). Recebe as exceções do formulário (código →
+    habilitado), as que `situacao_do_formulario` já carregou."""
+    acrescentados = sum(1 for habilitado in excecoes.values() if habilitado)
+    retirados = len(excecoes) - acrescentados
     resumo, efeito = [], []
     if acrescentados:
         s = "" if acrescentados == 1 else "s"
@@ -243,8 +264,6 @@ def _resumo_das_excecoes(origem: str) -> dict:
             f"{retirados} retirado{s} {'volta' if s == '' else 'voltam'} a ser oferecido{s}"
         )
     return {
-        "acrescentados": acrescentados,
-        "retirados": retirados,
         "total": acrescentados + retirados,
         "resumo": " e ".join(resumo),
         "efeito": " e ".join(efeito),
@@ -271,7 +290,6 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
                 "material": m,
                 "estado": estado,
                 "texto": _texto_do_estado(estado),
-                "tem_excecao": m.codigo in situacao.excecoes,
                 "saldo": qtd_br(truncar_qtd(m.estoque)),
                 "canonico": antigos.get(m.codigo, ""),
             }
@@ -282,9 +300,10 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
         "filtros_materiais": formulario_de_filtros,
         "filtros_ativos": filtros,
         "lote_query": urlencode({"formulario": origem, **filtros}),
+        "volta_materiais": {**filtros, "pagina": pagina.number if pagina.number > 1 else ""},
         "total_materiais": pagina.paginator.count,
         "pode_alterar_materiais": pode_alterar,
-        "excecoes_do_formulario": _resumo_das_excecoes(origem),
+        "excecoes_do_formulario": _resumo_das_excecoes(situacao.excecoes),
     }
 
 
