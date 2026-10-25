@@ -129,6 +129,12 @@
 
   var y = null;
   var linha = null;
+  // Quem rola (roda, toque, teclado ou arrastando a barra) antes de a página terminar de carregar
+  // manda na posição: a segunda restauração, do `load`, não a desfaz.
+  var interagiu = false;
+  ["wheel", "touchstart", "keydown", "mousedown"].forEach(function (tipo) {
+    window.addEventListener(tipo, function () { interagiu = true; }, { passive: true, once: true });
+  });
   function restaurar() {
     if (y !== null) window.scrollTo(0, y);
   }
@@ -144,7 +150,7 @@
   // Fontes e abas ainda mexem na altura da página: a posição é reaplicada quando tudo carregou, e
   // só então a linha alterada pisca (se ainda está na lista: um filtro pode tê-la tirado).
   window.addEventListener("load", function () {
-    restaurar();
+    if (!interagiu) restaurar();
     var alterada = linha && document.getElementById(linha);
     linha = null;
     if (alterada) piscar(alterada);

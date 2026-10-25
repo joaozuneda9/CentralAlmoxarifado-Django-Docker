@@ -912,3 +912,23 @@ def test_aba_materiais_mostra_as_excecoes_e_o_reset_so_a_quem_pode(client):
     leitura = client.get(PAGINA, {"formulario": "AB", "aba": "materiais"})
     assert "2 exceções à regra padrão" in texto(leitura)
     assert "Restaurar regra padrão" not in leitura.text
+
+
+def test_texto_da_restauracao_concorda_no_plural(admin):
+    # Dois acrescentados e dois retirados: "materiais", nunca "materialis".
+    for i in range(2):
+        novo = material(f"900.000.1{i}0", f"MATERIAL EXTRA {i}", "ALMOX")
+        ExcecaoMaterial.objects.create(material=novo, formulario="AB", habilitado=True)
+    for codigo in (FITA, BOTINA):
+        ExcecaoMaterial.objects.create(
+            material=Material.objects.get(codigo=codigo), formulario="AB", habilitado=False
+        )
+    pagina = texto(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais"}))
+    assert "2 materiais acrescentados deixam de ser oferecidos" in pagina
+    assert "2 retirados voltam a ser oferecidos" in pagina
+    assert "materialis" not in pagina
+
+
+def test_filtro_de_uso_nao_sugere_destino_do_formulario_aberto(admin):
+    pagina = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros"}).text
+    assert "Destino em outro formulário" in pagina and "Destino também em" not in pagina

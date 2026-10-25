@@ -139,6 +139,9 @@
 
   document.addEventListener("click", function (e) {
     if (!(e.target.closest && e.target.closest("a[data-fechar-filtros]"))) return;
+    // Só a navegação desta aba conta: Ctrl/Cmd/Shift/Alt+clique e o botão do meio abrem outra aba, e o
+    // estado ficaria guardado aqui até a próxima página de filtros da aba original.
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
     try {
       sessionStorage.setItem(CHEGAR_FECHADO, "1");
     } catch (erro) {

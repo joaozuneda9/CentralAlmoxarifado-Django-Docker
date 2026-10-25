@@ -225,7 +225,7 @@ PLACAS_DO_CENTRO = [("", "Todos"), ("com", "Só com placa"), ("sem", "Só sem pl
 USOS_DO_CENTRO = [
     ("", "Todos"),
     ("sem_formulario", "Ativos sem destino em nenhum formulário"),
-    ("outros", "Destino também em outro formulário"),
+    ("outros", "Destino em outro formulário"),
 ]
 
 

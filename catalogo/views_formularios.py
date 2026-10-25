@@ -233,7 +233,7 @@ def _resumo_das_excecoes(origem: str) -> dict:
         s = "" if acrescentados == 1 else "s"
         resumo.append(f"{acrescentados} acrescentado{s}")
         efeito.append(
-            f"{acrescentados} material{'' if s == '' else 'is'} acrescentado{s} "
+            f"{acrescentados} {'material' if acrescentados == 1 else 'materiais'} acrescentado{s} "
             f"{'deixa' if s == '' else 'deixam'} de ser oferecido{s}"
         )
     if retirados:
