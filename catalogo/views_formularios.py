@@ -17,7 +17,6 @@ from django.db.models import Q
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
-from django.utils.cache import patch_vary_headers
 from django.views.decorators.http import require_POST
 
 from catalogo.acesso import exige, pode_alterar_centros, pode_alterar_materiais
@@ -47,6 +46,7 @@ from catalogo.models import (
     Material,
     ParDePara,
 )
+from interface.htmx import regiao_pedida, render_regiao
 from pedidos.regras import norm_placa, qtd_br, truncar_qtd
 
 ABAS = [("centros", "Centros de custo"), ("materiais", "Materiais")]
@@ -192,10 +192,8 @@ def _contexto_centros(
                 "descricao": descricao,
                 "linhas": itens,
                 "outros": list(dict.fromkeys(f for i in itens for f in i["outros"])),
-                "ids": [i["centro"].pk for i in itens],
                 "n_habilitadas": n_habilitadas,
                 "n_inativas": n_inativas,
-                "todas_inativas": todas_inativas,
                 "codigos": list(dict.fromkeys(i["centro"].codigo for i in itens)),
                 "acoes": _acoes(
                     [i["centro"].pk for i in itens],
@@ -309,19 +307,12 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
 
 
 # Regiões que o HTMX carrega, pelo cabeçalho HX-Target (`tag#id` no HTMX 4): o painel da aba que
-# estava vazio na página e se abre pela primeira vez. A resposta é só o parcial da aba.
+# estava vazio na página e se abre pela primeira vez. A resposta é só o parcial da aba, e a aba é
+# a do alvo, qualquer que seja o `?aba=` (o parcial nunca sai com o contexto da outra).
 REGIOES = {
     "section#painel-centros": ("centros", "catalogo/_formularios_centros.html"),
     "section#painel-materiais": ("materiais", "catalogo/_formularios_materiais.html"),
 }
-
-
-def _url_da_aba(request, origem: str, chave: str) -> str:
-    """O endereço de uma aba com os parâmetros atuais da URL (filtros e página das duas abas), para
-    o painel que ainda não veio na página (`hx-get`, e o link que funciona sem JavaScript)."""
-    parametros = {k: v for k in PARAMETROS_DA_VOLTA if (v := request.GET.get(k))}
-    parametros.update({"formulario": origem, "aba": chave})
-    return reverse("catalogo:formularios") + "?" + urlencode(parametros)
 
 
 @login_required
@@ -331,11 +322,9 @@ def formularios(request):
     origem = _formulario(request.GET.get("formulario")) or Formulario.LIMPEZA
     aba = request.GET.get("aba")
     aba = aba if aba in {chave for chave, _ in ABAS} else "materiais"
-    regiao = None
-    if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
-        regiao = REGIOES.get(request.headers.get("HX-Target", ""))
-    if regiao:
-        aba = regiao[0]
+    modelo = "catalogo/formularios.html"
+    if regiao := regiao_pedida(request, REGIOES):
+        aba, modelo = regiao
     usuario = request.user
     contexto = {
         "formulario": origem,
@@ -343,7 +332,12 @@ def formularios(request):
         "lista_de_formularios": [(f.value, f.label) for f in Formulario],
         "aba": aba,
         "abas": ABAS,
-        "urls_das_abas": {chave: _url_da_aba(request, origem, chave) for chave, _ in ABAS},
+        # Cada aba com os parâmetros atuais da URL (filtros e página das duas), para o painel que
+        # ainda não veio na página (`hx-get`, e o link que funciona sem JavaScript).
+        "urls_das_abas": {
+            chave: _url_da_pagina({**request.GET.dict(), "formulario": origem, "aba": chave})
+            for chave, _ in ABAS
+        },
         "pode_alterar_algo": pode_alterar_centros(usuario) or pode_alterar_materiais(usuario),
     }
     if aba == "centros":
@@ -354,10 +348,7 @@ def formularios(request):
         )
     else:
         contexto.update(_contexto_materiais(request, origem, pode_alterar_materiais(usuario)))
-    modelo = regiao[1] if regiao else "catalogo/formularios.html"
-    resposta = render(request, modelo, contexto)
-    patch_vary_headers(resposta, ["HX-Request", "HX-Target", "HX-History-Restore-Request"])
-    return resposta
+    return render_regiao(request, modelo, contexto)
 
 
 # --- Gravações ---------------------------------------------------------------------------------

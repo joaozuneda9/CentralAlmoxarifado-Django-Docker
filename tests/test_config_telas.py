@@ -142,8 +142,11 @@ def test_o_htmx_com_o_alvo_da_aba_devolve_so_o_parcial(admin):
     assert r.status_code == 200
     assert "<html" not in r.text and "Destinos de" in r.text
     assert "HX-Target" in r["Vary"]
+    # a aba é a do alvo, mesmo com outro `?aba=`: o parcial sai com o contexto dele
+    assert r.context["aba"] == "centros" and "grupos" in r.context
     r = admin.get(PAGINA, {**dados, "aba": "centros"}, headers=alvo_materiais)
     assert "<html" not in r.text and "Destinos de" not in r.text and "filtros" in r.text
+    assert r.context["aba"] == "materiais" and "grupos" not in r.context
     # ao restaurar o histórico o HTMX também manda HX-Request, mas quer a página inteira
     r = admin.get(PAGINA, dados, headers={**alvo_centros, "HX-History-Restore-Request": "true"})
     assert "<html" in r.text
