@@ -195,7 +195,7 @@ class _Catalogos:
 
     @cached_property
     def viaturas_efetivo(self) -> list:
-        return catalogo_efetivo(Formulario.VIATURAS, self.ab)
+        return catalogo_efetivo(Formulario.VIATURAS, self.ab, viaturas=self.lista_viaturas)
 
     @cached_property
     def oficina(self) -> list:

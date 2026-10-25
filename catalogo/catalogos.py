@@ -135,17 +135,20 @@ def aplicar_excecoes(
     return itens + [_item(m, fracionaveis) for m in novos.order_by("nome", "codigo")]
 
 
-def regra_de_origem(origem: str, ab: CatalogoAB | None = None) -> list[ItemCatalogo]:
+def regra_de_origem(
+    origem: str, ab: CatalogoAB | None = None, viaturas: list[ItemCatalogo] | None = None
+) -> list[ItemCatalogo]:
     """Os itens que a regra de origem do formulário traz hoje, **sem** as exceções (e sem o corte
     "indisponível" por saldo nunca importado): a base da disponibilidade efetiva. `ab` é o catálogo
-    AB que o chamador já calculou (a conta pesada); sem ele, é calculado aqui."""
+    AB que o chamador já calculou (a conta pesada); sem ele, é calculado aqui. `viaturas`, do mesmo
+    jeito, é a lista das viaturas (`catalogo_viaturas`) já calculada."""
     if origem == LIMPEZA:
         return catalogo_limpeza()
     if origem == AB:
         ab = ab if ab is not None else catalogo_ab()
         return ab.itens if ab is not None else []
     if origem == VIATURAS:
-        return _base_viaturas(ab)
+        return _base_viaturas(ab, viaturas)
     if origem == OFICINA:
         return catalogo_oficina()
     if origem == EPIS:
@@ -153,12 +156,17 @@ def regra_de_origem(origem: str, ab: CatalogoAB | None = None) -> list[ItemCatal
     raise KeyError(origem)
 
 
-def catalogo_efetivo(origem: str, ab: CatalogoAB | None = None) -> list[ItemCatalogo]:
+def catalogo_efetivo(
+    origem: str,
+    ab: CatalogoAB | None = None,
+    *,
+    viaturas: list[ItemCatalogo] | None = None,
+) -> list[ItemCatalogo]:
     """A disponibilidade efetiva do formulário (regra de origem mais exceções), sem o corte de
     "indisponível" por saldo nunca importado: o que a saúde e a tela de configuração contam. `ab`
-    reaproveita o catálogo AB já calculado pelo chamador."""
+    e `viaturas` reaproveitam o catálogo AB e a lista das viaturas já calculados pelo chamador."""
     return aplicar_excecoes(
-        origem, regra_de_origem(origem, ab), ordem_do_banco=origem in (OFICINA, EPIS)
+        origem, regra_de_origem(origem, ab, viaturas), ordem_do_banco=origem in (OFICINA, EPIS)
     )
 
 
@@ -263,10 +271,12 @@ def catalogo_viaturas() -> list[ItemCatalogo]:
     return [_item(p.material, fracionaveis, nome=p.nome_exibido or p.material.nome) for p in pecas]
 
 
-def _base_viaturas(ab: CatalogoAB | None = None) -> list[ItemCatalogo]:
+def _base_viaturas(
+    ab: CatalogoAB | None = None, viaturas: list[ItemCatalogo] | None = None
+) -> list[ItemCatalogo]:
     """A regra de origem das viaturas: a lista e, depois, o catálogo AB sem repetir as peças da
-    lista."""
-    lista = catalogo_viaturas()
+    lista. `viaturas` é a lista já calculada pelo chamador (sem ela, é calculada aqui)."""
+    lista = viaturas if viaturas is not None else catalogo_viaturas()
     na_lista = {norm_u(i.codigo) for i in lista}
     ab = ab if ab is not None else catalogo_ab()
     resto = [i for i in (ab.itens if ab is not None else []) if norm_u(i.codigo) not in na_lista]
