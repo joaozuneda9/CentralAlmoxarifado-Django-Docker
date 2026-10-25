@@ -1,7 +1,8 @@
 /*
  * Abas (componente comum, `[data-abas]`): troca o painel, guarda a aba na URL (`?aba=`) e anda com
  * as setas, Home e End (padrão WAI-ARIA). Quando as abas não cabem, marca de que lado a lista
- * continua (`data-mais-inicio`/`data-mais-fim`). Ao abrir uma aba, dispara `abas:ativada` no painel. Carregado no <head> com defer, em todas as páginas.
+ * continua (`data-mais-inicio`/`data-mais-fim`). Ao abrir uma aba, dispara `abas:ativada` no
+ * painel. Carregado no <head> com defer, em todas as páginas.
  * Sem JavaScript, todos os painéis ficam à vista, empilhados.
  */
 (function () {

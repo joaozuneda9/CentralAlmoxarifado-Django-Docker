@@ -35,10 +35,10 @@ alterar vê tudo, sem os controles; o servidor recusa a gravação de qualquer f
       {% endfor %}
     </div>
 
-    <section role="tabpanel" id="painel-centros" class="aba-painel{% if aba == 'centros' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-centros"{% if aba != 'centros' %} hx-get="{{ urls_das_abas.centros}}" hx-trigger="abas:ativada once" hx-swap="innerHTML"{% endif %}>
+    <section role="tabpanel" id="painel-centros" class="aba-painel{% if aba == 'centros' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-centros"{% if aba != 'centros' %} hx-get="{{ urls_das_abas.centros }}" hx-trigger="abas:ativada once" hx-swap="innerHTML"{% endif %}>
       {% if aba == 'centros' %}{% include "catalogo/_formularios_centros.html" %}{% else %}{% include "catalogo/_formularios_aba_vazia.html" with rotulo="Centros de custo" url=urls_das_abas.centros %}{% endif %}
     </section>
-    <section role="tabpanel" id="painel-materiais" class="aba-painel{% if aba == 'materiais' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-materiais"{% if aba != 'materiais' %} hx-get="{{ urls_das_abas.materiais}}" hx-trigger="abas:ativada once" hx-swap="innerHTML"{% endif %}>
+    <section role="tabpanel" id="painel-materiais" class="aba-painel{% if aba == 'materiais' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-materiais"{% if aba != 'materiais' %} hx-get="{{ urls_das_abas.materiais }}" hx-trigger="abas:ativada once" hx-swap="innerHTML"{% endif %}>
       {% if aba == 'materiais' %}{% include "catalogo/_formularios_materiais.html" %}{% else %}{% include "catalogo/_formularios_aba_vazia.html" with rotulo="Materiais" url=urls_das_abas.materiais %}{% endif %}
     </section>
   </div>
