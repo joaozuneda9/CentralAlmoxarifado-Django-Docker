@@ -26,7 +26,7 @@ no servidor; cada botão é um formulário POST com CSRF.
           <p>{{ formulario_nome }} passa a seguir apenas a regra padrão: {{ e.efeito }}. Cadastro, estoque, pedidos e os demais formulários não são afetados.</p>
         </div>
         <div class="dialogo-confirmacao-acoes">
-          <button type="button" class="botao botao-secundario" data-fechar-dialogo autofocus>Cancelar</button>
+          <button type="submit" formmethod="dialog" class="botao botao-secundario" data-fechar-dialogo autofocus>Cancelar</button>
           <button type="submit" class="botao botao-secundario botao-perigo">Restaurar regra padrão</button>
         </div>
       </form>

@@ -367,7 +367,8 @@ html:not(.js) .dialogo-confirmacao {
 .dialogo-confirmacao-titulo { margin: 0; font-size: 20px; }
 .dialogo-confirmacao-texto p { margin: 0; color: var(--texto-secundario); }
 .dialogo-confirmacao-acoes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--esp-1); }
-html:not(.js) .dialogo-confirmacao [data-fechar-dialogo] { display: none; }
+/* Sem JavaScript só o botão que fecha por `formmethod="dialog"` (nativo, sem enviar nada) continua à vista. */
+html:not(.js) .dialogo-confirmacao [data-fechar-dialogo]:not([formmethod="dialog"]) { display: none; }
 @media (max-width: 480px) {
   .dialogo-confirmacao-corpo { padding: var(--esp-2); }
   .dialogo-confirmacao-acoes { flex-direction: column-reverse; }

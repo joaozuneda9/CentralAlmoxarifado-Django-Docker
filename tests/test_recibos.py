@@ -167,7 +167,12 @@ def test_detalhe_imprime_o_recibo_e_confirma_a_impressao(client, logado):
     # (o diálogo vem com `open`; com JavaScript, o pedidos.js o fecha e só o abre ao imprimir).
     assert '<button type="button" class="botao botao-primario" data-imprimir hidden>' in detalhe
     assert '<dialog class="dialogo-confirmacao nao-imprimir" id="dialogo-impressao"' in detalhe
-    assert "data-apos-imprimir open" in detalhe and "data-fechar-dialogo>Ainda não" in detalhe
+    assert "data-apos-imprimir open" in detalhe
+    # "Ainda não" fecha o diálogo nativamente (formmethod="dialog"), também sem JavaScript.
+    assert (
+        'formmethod="dialog" class="botao botao-secundario" data-fechar-dialogo>Ainda não'
+        in detalhe
+    )
     css = open(finders.find("interface/css/componentes.css"), encoding="utf-8").read()
     assert ".js .dialogo-confirmacao:not(:modal) { display: none; }" in css
     assert '<article class="folha-recibo">' in detalhe

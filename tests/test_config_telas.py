@@ -904,6 +904,10 @@ def test_aba_materiais_mostra_as_excecoes_e_o_reset_so_a_quem_pode(client):
     assert 'data-abrir-dialogo="dialogo-regra-padrao"' in com.text
     assert '<dialog class="dialogo-confirmacao" id="dialogo-regra-padrao"' in com.text
     assert 'name="confirmado" value="1"' in com.text and "data-fechar-dialogo" in com.text
+    assert (
+        'formmethod="dialog" class="botao botao-secundario" data-fechar-dialogo autofocus>Cancelar'
+        in (com.text)
+    )
     assert "1 material acrescentado deixa de ser oferecido e 1 retirado volta a ser oferecido" in (
         texto(com)
     )

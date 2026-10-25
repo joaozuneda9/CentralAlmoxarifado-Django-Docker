@@ -3,7 +3,8 @@
  * Carregado no <head> com defer, em todas as páginas.
  *
  *   <button type="button" data-abrir-dialogo="id" hidden>   abre o <dialog id="id"> (showModal)
- *   <button type="button" data-fechar-dialogo>               fecha o diálogo em que está
+ *   <button type="submit" formmethod="dialog" data-fechar-dialogo>   fecha o diálogo em que está
+ *                       (o `formmethod="dialog"` o fecha também sem JavaScript, sem enviar o formulário)
  *
  * O clique no fundo e o Esc também fecham. Sem JavaScript o diálogo vem com `open` e fica à vista
  * na página; com ele, é fechado ao carregar e só abre pelo botão (ou por outro script, como o
