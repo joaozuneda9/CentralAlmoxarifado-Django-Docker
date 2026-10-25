@@ -349,6 +349,31 @@ tr.destaque-piscada > td { animation: piscar-linha 1.3s ease-in-out; }
   tr.destaque-piscada > td { animation: none; background-color: var(--destaque-superficie); }
 }
 
+/* Diálogo de confirmação (dialogo.js): um <dialog> modal com título, texto e duas ações. O botão
+   `[data-abrir-dialogo="id"]` o abre; `[data-fechar-dialogo]`, o fundo e o Esc o fecham. Sem
+   JavaScript ele vem com `open` e fica à vista na página, como um aviso comum, e o botão que o abre
+   (escondido) não aparece. */
+.dialogo-confirmacao {
+  width: min(440px, calc(100% - 2 * var(--esp-2))); padding: 0; color: inherit; background: var(--fundo);
+  border: 1px solid var(--borda); border-radius: var(--raio-cartao); box-shadow: var(--sombra-elevada);
+}
+.dialogo-confirmacao::backdrop { background: rgba(15, 14, 12, 0.4); }
+.js .dialogo-confirmacao:not(:modal) { display: none; }
+html:not(.js) .dialogo-confirmacao {
+  position: static; width: auto; margin: 0; box-shadow: none; background: var(--aviso-superficie); color: var(--aviso-texto);
+}
+.dialogo-confirmacao-corpo { display: grid; gap: var(--esp-3); padding: var(--esp-3); }
+.dialogo-confirmacao-texto { display: grid; gap: var(--esp-1); }
+.dialogo-confirmacao-titulo { margin: 0; font-size: 20px; }
+.dialogo-confirmacao-texto p { margin: 0; color: var(--texto-secundario); }
+.dialogo-confirmacao-acoes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--esp-1); }
+html:not(.js) .dialogo-confirmacao [data-fechar-dialogo] { display: none; }
+@media (max-width: 480px) {
+  .dialogo-confirmacao-corpo { padding: var(--esp-2); }
+  .dialogo-confirmacao-acoes { flex-direction: column-reverse; }
+  .dialogo-confirmacao-acoes .botao { width: 100%; justify-content: center; }
+}
+
 /* Filtros */
 /* Grade de colunas iguais: a última linha não estica um campo sozinho pela largura toda. A busca
    (primeiro campo) ocupa duas colunas quando há espaço. */

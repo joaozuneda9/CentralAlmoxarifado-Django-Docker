@@ -28,19 +28,19 @@
   {% if editando %}{% include "pedidos/_edicao_faixa.html" %}
   {% elif a %}{% include "pedidos/_edicao_aviso.html" %}{% endif %}
   {% if a and not a.recibo_impresso_em and not editando %}
-  {# Depois de imprimir, a confirmação de que o recibo saiu na impressora (pedidos.js a abre como diálogo modal). Sem JavaScript, o `open` a deixa à vista na página. #}
-  <dialog class="confirmacao-impressao nao-imprimir" open aria-labelledby="confirmacao-impressao-titulo">
-    <form method="post" action="{% url 'pedidos:marcar_impressos' %}" class="confirmacao-impressao-corpo">
+  {# Depois de imprimir, a confirmação de que o recibo saiu na impressora (pedidos.js a abre como diálogo modal, dialogo.js). Sem JavaScript, o `open` a deixa à vista na página. #}
+  <dialog class="dialogo-confirmacao nao-imprimir" id="dialogo-impressao" data-apos-imprimir open aria-labelledby="dialogo-impressao-titulo">
+    <form method="post" action="{% url 'pedidos:marcar_impressos' %}" class="dialogo-confirmacao-corpo">
       {% csrf_token %}
       <input type="hidden" name="atendimento" value="{{ a.id }}">
       <input type="hidden" name="versao-{{ a.id }}" value="{{ pedido.versao }}">
       <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
-      <div class="confirmacao-impressao-texto">
-        <h2 id="confirmacao-impressao-titulo" class="confirmacao-impressao-titulo">O recibo saiu na impressora?</h2>
+      <div class="dialogo-confirmacao-texto">
+        <h2 id="dialogo-impressao-titulo" class="dialogo-confirmacao-titulo">O recibo saiu na impressora?</h2>
         <p>Confirme para marcá-lo como impresso. Sem a confirmação, ele continua na lista de recibos pendentes.</p>
       </div>
-      <div class="confirmacao-impressao-acoes">
-        <button type="button" class="botao botao-secundario" data-impressao-adiar>Ainda não</button>
+      <div class="dialogo-confirmacao-acoes">
+        <button type="button" class="botao botao-secundario" data-fechar-dialogo>Ainda não</button>
         <button type="submit" class="botao botao-primario" autofocus>{% include "interface/_icone.html" with nome="check" %}Saiu na impressora</button>
       </div>
     </form>

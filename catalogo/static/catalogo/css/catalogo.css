@@ -165,3 +165,8 @@
   .tabela-config .tabela-vazia td { text-align: left; }
   .tabela-config td .acoes { flex-wrap: wrap; }
 }
+
+/* Restaurar a regra padrão de um formulário (aba Materiais): o resumo das exceções e, embaixo, o botão
+   que abre o diálogo de confirmação (componentes.css, "Diálogo de confirmação"). */
+.regra-padrao { display: grid; gap: var(--esp-1); justify-items: start; }
+.regra-padrao > p { margin: 0; }

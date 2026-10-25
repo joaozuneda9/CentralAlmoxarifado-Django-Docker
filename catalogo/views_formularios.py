@@ -35,10 +35,18 @@ from catalogo.disponibilidade import (
     estados_do_material,
     habilitar_centros,
     materiais_da_tela,
+    restaurar_regra,
     situacao_do_formulario,
 )
 from catalogo.forms import ESTADOS_DO_MATERIAL, FiltrosCentros, FiltrosMateriais
-from catalogo.models import CentroCusto, CentroFormulario, Formulario, Material, ParDePara
+from catalogo.models import (
+    CentroCusto,
+    CentroFormulario,
+    ExcecaoMaterial,
+    Formulario,
+    Material,
+    ParDePara,
+)
 from pedidos.regras import norm_placa, qtd_br, truncar_qtd
 
 ABAS = [("centros", "Centros de custo"), ("materiais", "Materiais")]
@@ -214,6 +222,35 @@ def _texto_do_estado(estado) -> dict:
     return {"nivel": selo[0], "selo": selo[1], "origem": origem}
 
 
+def _resumo_das_excecoes(origem: str) -> dict:
+    """Quantas exceções de material o formulário tem e o que a restauração da regra padrão desfaz,
+    já em texto (só o que existe: sem "0 retirados")."""
+    excecoes = ExcecaoMaterial.objects.filter(formulario=origem)
+    acrescentados = excecoes.filter(habilitado=True).count()
+    retirados = excecoes.filter(habilitado=False).count()
+    resumo, efeito = [], []
+    if acrescentados:
+        s = "" if acrescentados == 1 else "s"
+        resumo.append(f"{acrescentados} acrescentado{s}")
+        efeito.append(
+            f"{acrescentados} material{'' if s == '' else 'is'} acrescentado{s} "
+            f"{'deixa' if s == '' else 'deixam'} de ser oferecido{s}"
+        )
+    if retirados:
+        s = "" if retirados == 1 else "s"
+        resumo.append(f"{retirados} retirado{s}")
+        efeito.append(
+            f"{retirados} retirado{s} {'volta' if s == '' else 'voltam'} a ser oferecido{s}"
+        )
+    return {
+        "acrescentados": acrescentados,
+        "retirados": retirados,
+        "total": acrescentados + retirados,
+        "resumo": " e ".join(resumo),
+        "efeito": " e ".join(efeito),
+    }
+
+
 def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
     formulario_de_filtros = FiltrosMateriais(request.GET)
     filtros = formulario_de_filtros.filtros()
@@ -247,6 +284,7 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
         "lote_query": urlencode({"formulario": origem, **filtros}),
         "total_materiais": pagina.paginator.count,
         "pode_alterar_materiais": pode_alterar,
+        "excecoes_do_formulario": _resumo_das_excecoes(origem),
     }
 
 
@@ -464,3 +502,30 @@ def formularios_material(request, codigo):
         "saldo": qtd_br(truncar_qtd(material.estoque)),
     }
     return render(request, "catalogo/formularios_material.html", contexto)
+
+
+@login_required
+@require_POST
+@exige(pode_alterar_materiais)
+def formularios_regra(request):
+    """Restaura a regra padrão do formulário: apaga todas as exceções de material dele. Só vale com
+    `confirmado=1` (o painel de confirmação da aba Materiais), também sem JavaScript."""
+    origem = _formulario(request.POST.get("formulario"))
+    if origem is None:
+        return HttpResponseBadRequest("Pedido inválido.")
+    alvo = Formulario(origem).label
+    if request.POST.get("confirmado") != "1":
+        messages.warning(request, "Confirme para restaurar a regra padrão do formulário.")
+    else:
+        acrescentados, retirados = restaurar_regra(origem)
+        if not acrescentados and not retirados:
+            messages.info(request, f"Nada mudou: {alvo} já segue a regra padrão.")
+        else:
+            removidos = "acrescentado removido" if acrescentados == 1 else "acrescentados removidos"
+            devolvidos = "retirado devolvido" if retirados == 1 else "retirados devolvidos"
+            messages.success(
+                request,
+                f"Regra padrão restaurada em {alvo}: {acrescentados} {removidos} e "
+                f"{retirados} {devolvidos}.",
+            )
+    return redirect(_url_da_pagina({"formulario": origem, "aba": "materiais"}))

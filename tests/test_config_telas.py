@@ -289,7 +289,7 @@ def test_excecao_acrescentar_retirar_e_restaurar(admin):
         f"{FITA} — FITA VEDA ROSCA deixou de ser oferecido em Ferramentas, peças e materiais."
     )
     linha = linhas_da_aba(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais", "q": "veda"}))
-    # Acrescentar já apaga a exceção (a regra dá o resultado): um botão só, sem "Voltar à regra".
+    # Acrescentar já apaga a exceção (a regra dá o resultado): um botão só na linha.
     assert "retirado pelo administrador" in linha and "Acrescentar" in linha
     assert "Voltar à regra" not in linha
     admin.post(EXCECAO, {**corpo, "codigo": FITA, "acao": "acrescentar"})
@@ -338,7 +338,8 @@ def test_exceção_sem_efeito_e_marcada(admin):
         material=Material.objects.get(codigo=FITA), formulario="AB", habilitado=True
     )
     linha = linhas_da_aba(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais", "q": "veda"}))
-    assert "Exceção sem efeito" in linha and "Voltar à regra" in linha
+    # Sem efeito: restaurar a regra padrão do formulário é que a limpa, não um botão por linha.
+    assert "Exceção sem efeito" in linha and "Voltar à regra" not in linha
 
 
 def test_codigo_antigo_de_um_par_de_para_avisa_o_canonico(admin):
@@ -842,3 +843,72 @@ def test_botoes_das_tabelas_tem_forma_e_cor_pelo_significado(admin, centros_de_f
     assert "botao-texto" not in centros.split("<tbody>")[1].split("</tbody>")[0]
     materiais = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "materiais"}).text
     assert 'botao-destaque">Acrescentar</button>' in materiais
+
+
+# --- Restaurar a regra padrão do formulário -----------------------------------------------------
+
+REGRA = reverse("catalogo:formularios_regra")
+
+
+def _duas_excecoes(formulario="AB"):
+    ExcecaoMaterial.objects.create(
+        material=Material.objects.get(codigo=FITA), formulario=formulario, habilitado=False
+    )
+    novo = material("900.000.002", "TESOURA", "ALMOX")
+    ExcecaoMaterial.objects.create(material=novo, formulario=formulario, habilitado=True)
+
+
+def test_restaurar_regra_padrao_apaga_so_as_excecoes_do_formulario(admin):
+    _duas_excecoes("AB")
+    outra = Material.objects.get(codigo=BOTINA)
+    ExcecaoMaterial.objects.create(material=outra, formulario="LIMPEZA", habilitado=True)
+    r = admin.post(REGRA, {"formulario": "AB", "confirmado": "1"})
+    assert volta(r) == {"formulario": "AB", "aba": "materiais"}
+    assert not ExcecaoMaterial.objects.filter(formulario="AB").exists()
+    assert ExcecaoMaterial.objects.filter(formulario="LIMPEZA").count() == 1
+    assert ultima_mensagem(r) == (
+        "Regra padrão restaurada em Ferramentas, peças e materiais: "
+        "1 acrescentado removido e 1 retirado devolvido."
+    )
+    # Idempotente: sem exceções, nada muda.
+    r = admin.post(REGRA, {"formulario": "AB", "confirmado": "1"})
+    assert "Nada mudou" in ultima_mensagem(r)
+
+
+def test_restaurar_regra_padrao_exige_confirmacao_e_formulario_valido(admin):
+    _duas_excecoes("AB")
+    r = admin.post(REGRA, {"formulario": "AB"})
+    assert ExcecaoMaterial.objects.filter(formulario="AB").count() == 2
+    assert "Confirme" in ultima_mensagem(r)
+    assert admin.post(REGRA, {"formulario": "AVULSA", "confirmado": "1"}).status_code == 400
+    assert admin.get(REGRA).status_code == 405
+    assert ExcecaoMaterial.objects.filter(formulario="AB").count() == 2
+
+
+def test_restaurar_regra_padrao_e_recusado_a_quem_nao_pode_alterar(client):
+    _duas_excecoes("AB")
+    client.force_login(usuarios()["comum"])
+    r = client.post(REGRA, {"formulario": "AB", "confirmado": "1"})
+    assert r.status_code == 403
+    assert ExcecaoMaterial.objects.filter(formulario="AB").count() == 2
+
+
+def test_aba_materiais_mostra_as_excecoes_e_o_reset_so_a_quem_pode(client):
+    client.force_login(usuarios()["admin"])
+    sem = client.get(PAGINA, {"formulario": "AB", "aba": "materiais"})
+    assert "segue a regra padrão, sem exceções" in texto(sem)
+    assert "Restaurar regra padrão" not in sem.text
+    _duas_excecoes("AB")
+    com = client.get(PAGINA, {"formulario": "AB", "aba": "materiais"})
+    assert "2 exceções à regra padrão deste formulário (1 acrescentado e 1 retirado)" in texto(com)
+    assert 'data-abrir-dialogo="dialogo-regra-padrao"' in com.text
+    assert '<dialog class="dialogo-confirmacao" id="dialogo-regra-padrao"' in com.text
+    assert 'name="confirmado" value="1"' in com.text and "data-fechar-dialogo" in com.text
+    assert "1 material acrescentado deixa de ser oferecido e 1 retirado volta a ser oferecido" in (
+        texto(com)
+    )
+    assert "Voltar à regra</button>" not in com.text  # nada de botão de restaurar por linha
+    client.force_login(usuarios()["comum"])
+    leitura = client.get(PAGINA, {"formulario": "AB", "aba": "materiais"})
+    assert "2 exceções à regra padrão" in texto(leitura)
+    assert "Restaurar regra padrão" not in leitura.text

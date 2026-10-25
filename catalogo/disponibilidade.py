@@ -129,6 +129,23 @@ def _gravar_excecao(origem, material, alvo: bool | None, usuario) -> bool:
     return True
 
 
+def restaurar_regra(origem: str) -> tuple[int, int]:
+    """Restaura a regra padrão de um formulário: apaga todas as exceções de material dele, e o
+    formulário volta a oferecer exatamente o que a regra de origem dá. Devolve (acrescentados que
+    saíram, retirados que voltaram). Não toca o material, o estoque nem nenhum pedido; os outros
+    formulários não mudam. Idempotente."""
+    from django.db import transaction
+
+    from catalogo.models import ExcecaoMaterial
+
+    with transaction.atomic():
+        excecoes = ExcecaoMaterial.objects.filter(formulario=origem)
+        acrescentados = excecoes.filter(habilitado=True).count()
+        retirados = excecoes.filter(habilitado=False).count()
+        excecoes.delete()
+    return acrescentados, retirados
+
+
 def definir_excecao(origem: str, material, acao: str, usuario=None) -> bool:
     """Acrescenta, retira ou restaura (apaga a exceção) um material num formulário, com a menor
     mudança: se a regra de origem já dá o resultado pedido, a exceção é apagada. Idempotente.
