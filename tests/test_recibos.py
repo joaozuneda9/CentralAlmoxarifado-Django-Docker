@@ -163,10 +163,13 @@ def test_detalhe_imprime_o_recibo_e_confirma_a_impressao(client, logado):
     p = criar_pedido(atendido=True)
     url = reverse("pedidos:detalhe", args=[p.numero])
     detalhe = client.get(url).text
-    # O botão imprime a própria página; sem JavaScript fica escondido, e a confirmação, à vista.
+    # O botão imprime a própria página; sem JavaScript fica escondido, e a confirmação, à vista
+    # (o diálogo vem com `open`; com JavaScript, o pedidos.js o fecha e só o abre ao imprimir).
     assert '<button type="button" class="botao botao-primario" data-imprimir hidden>' in detalhe
+    assert '<dialog class="confirmacao-impressao nao-imprimir" open' in detalhe
+    assert "data-impressao-adiar" in detalhe
     css = open(finders.find("pedidos/css/pedidos.css"), encoding="utf-8").read()
-    assert ".js .confirmacao-impressao:not([data-visivel]) { display: none; }" in css
+    assert ".js .confirmacao-impressao:not(:modal) { display: none; }" in css
     assert '<article class="folha-recibo">' in detalhe
     assert f'name="atendimento" value="{p.atendimento.id}"' in detalhe
     r = client.post(

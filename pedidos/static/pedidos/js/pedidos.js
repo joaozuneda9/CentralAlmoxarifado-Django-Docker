@@ -740,21 +740,29 @@
   document.addEventListener("DOMContentLoaded", sincronizarCentro);
   document.addEventListener("htmx:after:swap", sincronizarCentro);
 
-  // Depois de imprimir (pelo botão ou pelo Ctrl+P), aparece a confirmação de que os recibos
-  // saíram na impressora; antes disso, marcar como impressos não faz sentido.
+  // Depois de imprimir (pelo botão ou pelo Ctrl+P), abre o diálogo que pergunta se os recibos
+  // saíram na impressora; antes disso, marcar como impressos não faz sentido. "Ainda não" (ou
+  // Esc) só o fecha: ele volta a abrir na próxima impressão, e o recibo segue na lista de pendentes.
   function revelarConfirmacao() {
-    var form = document.querySelector(".confirmacao-impressao");
-    if (!form || form.hasAttribute("data-visivel")) return;
-    form.setAttribute("data-visivel", "");
-    form.scrollIntoView({ block: "nearest" });
+    var dialogo = document.querySelector("dialog.confirmacao-impressao");
+    if (!dialogo || dialogo.open) return;
+    dialogo.showModal();
   }
   window.addEventListener("afterprint", revelarConfirmacao);
-  // O botão de imprimir só funciona com JavaScript: sem ele, fica escondido.
   document.addEventListener("DOMContentLoaded", function () {
+    // O botão de imprimir só funciona com JavaScript: sem ele, fica escondido.
     document.querySelectorAll("[data-imprimir][hidden]").forEach(function (b) { b.hidden = false; });
+    // Sem JavaScript o diálogo vem aberto na página; com ele, só abre depois de imprimir.
+    var dialogo = document.querySelector("dialog.confirmacao-impressao");
+    if (dialogo) dialogo.close();
   });
 
   document.addEventListener("click", function (e) {
+    var adiar = e.target.closest && e.target.closest("[data-impressao-adiar]");
+    if (adiar) {
+      adiar.closest("dialog").close();
+      return;
+    }
     var botao = e.target.closest && e.target.closest("[data-imprimir]");
     if (!botao) return;
     window.print();

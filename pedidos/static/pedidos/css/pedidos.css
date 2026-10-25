@@ -389,10 +389,28 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 .assinaturas { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--esp-4); margin-top: var(--esp-2); }
 .assinaturas p { display: flex; align-items: flex-end; gap: var(--esp-1); min-height: 48px; white-space: nowrap; }
 .assinaturas p::after { content: ""; flex: 1; border-bottom: 1px solid currentColor; }
-/* A confirmação de impressão só aparece depois de Imprimir (pedidos.js); sem JavaScript, fica à vista. */
-.confirmacao-impressao { display: grid; justify-items: start; gap: var(--esp-2); }
-.js .confirmacao-impressao:not([data-visivel]) { display: none; }
-.confirmacao-impressao .aviso { width: 100%; }
+/* A confirmação de impressão é um diálogo modal que o pedidos.js abre depois de Imprimir. Sem
+   JavaScript ele vem com `open` e fica à vista na página, como um aviso comum. */
+.confirmacao-impressao {
+  width: min(440px, calc(100% - 2 * var(--esp-2))); padding: 0; color: inherit; background: var(--fundo);
+  border: 1px solid var(--borda); border-radius: var(--raio-cartao); box-shadow: var(--sombra-elevada);
+}
+.confirmacao-impressao::backdrop { background: rgba(15, 14, 12, 0.4); }
+.js .confirmacao-impressao:not(:modal) { display: none; }
+html:not(.js) .confirmacao-impressao {
+  position: static; width: auto; margin: 0; box-shadow: none; background: var(--aviso-superficie); color: var(--aviso-texto);
+}
+.confirmacao-impressao-corpo { display: grid; gap: var(--esp-3); padding: var(--esp-3); }
+.confirmacao-impressao-texto { display: grid; gap: var(--esp-1); }
+.confirmacao-impressao-titulo { margin: 0; font-size: 20px; }
+.confirmacao-impressao-texto p { margin: 0; color: var(--texto-secundario); }
+.confirmacao-impressao-acoes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--esp-1); }
+html:not(.js) .confirmacao-impressao [data-impressao-adiar] { display: none; }
+@media (max-width: 480px) {
+  .confirmacao-impressao-corpo { padding: var(--esp-2); }
+  .confirmacao-impressao-acoes { flex-direction: column-reverse; }
+  .confirmacao-impressao-acoes .botao { width: 100%; justify-content: center; }
+}
 @media print {
   .folha-recibo, .recibo-bloco { border: 0; border-radius: 0; box-shadow: none; padding: 0; background: none; }
   .recibo .selo { border: 1px solid #999999; background: none; color: #000000; }
