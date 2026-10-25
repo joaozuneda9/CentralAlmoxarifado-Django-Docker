@@ -26,4 +26,5 @@ urlpatterns = [
         views_formularios.formularios_excecao,
         name="formularios_excecao",
     ),
+    path("formularios/regra/", views_formularios.formularios_regra, name="formularios_regra"),
 ]

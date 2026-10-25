@@ -163,10 +163,18 @@ def test_detalhe_imprime_o_recibo_e_confirma_a_impressao(client, logado):
     p = criar_pedido(atendido=True)
     url = reverse("pedidos:detalhe", args=[p.numero])
     detalhe = client.get(url).text
-    # O botão imprime a própria página; sem JavaScript fica escondido, e a confirmação, à vista.
+    # O botão imprime a própria página; sem JavaScript fica escondido, e a confirmação, à vista
+    # (o diálogo vem com `open`; com JavaScript, o pedidos.js o fecha e só o abre ao imprimir).
     assert '<button type="button" class="botao botao-primario" data-imprimir hidden>' in detalhe
-    css = open(finders.find("pedidos/css/pedidos.css"), encoding="utf-8").read()
-    assert ".js .confirmacao-impressao:not([data-visivel]) { display: none; }" in css
+    assert '<dialog class="dialogo-confirmacao nao-imprimir" id="dialogo-impressao"' in detalhe
+    assert "data-apos-imprimir open" in detalhe
+    # "Ainda não" fecha o diálogo nativamente (formmethod="dialog"), também sem JavaScript.
+    assert (
+        'formmethod="dialog" class="botao botao-secundario" data-fechar-dialogo>Ainda não'
+        in detalhe
+    )
+    css = open(finders.find("interface/css/componentes.css"), encoding="utf-8").read()
+    assert ".js .dialogo-confirmacao:not(:modal) { display: none; }" in css
     assert '<article class="folha-recibo">' in detalhe
     assert f'name="atendimento" value="{p.atendimento.id}"' in detalhe
     r = client.post(
@@ -174,7 +182,7 @@ def test_detalhe_imprime_o_recibo_e_confirma_a_impressao(client, logado):
     )
     assert r.status_code == 302 and r["Location"] == url
     # Já impresso, a confirmação não aparece mais.
-    assert "confirmacao-impressao" not in client.get(url).text
+    assert "dialogo-impressao" not in client.get(url).text
 
 
 # A confirmação de impresso confere a versão do pedido: a impressão de uma versão anterior

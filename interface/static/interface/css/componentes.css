@@ -20,6 +20,14 @@
 .botao-texto { min-height: 0; padding: var(--esp-meio) var(--esp-1); background: none; color: var(--texto-secundario); }
 .botao-texto:hover { background: var(--superficie); color: var(--texto); }
 .botao-perigo, .botao-perigo:hover { color: var(--erro-texto); }
+/* Variantes de cor do botão secundário (contorno e texto na cor, fundo tingido ao passar o mouse):
+   destaque (azul, incluir), perigo (vermelho, o que afeta tudo) e ok (verde, reativar). */
+.botao-secundario.botao-destaque { color: var(--info-texto); border-color: rgba(37, 99, 235, 0.35); }
+.botao-secundario.botao-destaque:hover { color: var(--info-texto); background: var(--destaque-superficie); border-color: rgba(37, 99, 235, 0.6); }
+.botao-secundario.botao-perigo { border-color: rgba(163, 38, 29, 0.35); }
+.botao-secundario.botao-perigo:hover { background: var(--erro-superficie); border-color: rgba(163, 38, 29, 0.6); }
+.botao-secundario.botao-ok { color: var(--ok-texto); border-color: rgba(30, 107, 52, 0.35); }
+.botao-secundario.botao-ok:hover { color: var(--ok-texto); background: var(--ok-superficie); border-color: rgba(30, 107, 52, 0.6); }
 .botao-icone { width: var(--altura-controle); padding: 0; }
 @media (max-width: 640px) { .botao-bloco { width: 100%; } }
 
@@ -318,14 +326,66 @@ a.paginacao-link:hover { background: var(--superficie); color: var(--texto); tex
 .paginacao-compacta { display: none; }
 @media (max-width: 640px) { .paginacao-larga { display: none; } .paginacao-compacta { display: list-item; } }
 
+/* Piscada que destaca o que um atalho acabou de mostrar (rolagem.js, `data-destacar`): anel azul e
+   fundo claro que se dissolvem. Com movimento reduzido não anima: o destaque fica parado até o JS
+   tirar a classe. */
+@keyframes piscar-destaque {
+  0%, 100% { box-shadow: var(--sombra-cartao); background-color: var(--fundo); }
+  25%, 45% { box-shadow: 0 0 0 3px var(--destaque), var(--sombra-hover); background-color: var(--destaque-superficie); }
+}
+.destaque-piscada { animation: piscar-destaque 1.3s ease-in-out; }
+@media (prefers-reduced-motion: reduce) {
+  .destaque-piscada { animation: none; box-shadow: 0 0 0 3px var(--destaque); background-color: var(--destaque-superficie); }
+}
+/* Linha de tabela (a que uma gravação acabou de mudar): só o fundo das células pisca; o anel do cartão
+   não desenha numa `<tr>`. */
+@keyframes piscar-linha {
+  0%, 100% { background-color: transparent; }
+  25%, 45% { background-color: var(--destaque-superficie); }
+}
+tr.destaque-piscada { animation: none; box-shadow: none; background-color: transparent; }
+tr.destaque-piscada > td { animation: piscar-linha 1.3s ease-in-out; }
+@media (prefers-reduced-motion: reduce) {
+  tr.destaque-piscada > td { animation: none; background-color: var(--destaque-superficie); }
+}
+
+/* Diálogo de confirmação (dialogo.js): um <dialog> modal com título, texto e duas ações. O botão
+   `[data-abrir-dialogo="id"]` o abre; `[data-fechar-dialogo]`, o fundo e o Esc o fecham. Sem
+   JavaScript ele vem com `open` e fica à vista na página, como um aviso comum, e o botão que o abre
+   (escondido) não aparece. */
+.dialogo-confirmacao {
+  width: min(440px, calc(100% - 2 * var(--esp-2))); padding: 0; color: inherit; background: var(--fundo);
+  border: 1px solid var(--borda); border-radius: var(--raio-cartao); box-shadow: var(--sombra-elevada);
+}
+.dialogo-confirmacao::backdrop { background: rgba(15, 14, 12, 0.4); }
+.js .dialogo-confirmacao:not(:modal) { display: none; }
+html:not(.js) .dialogo-confirmacao {
+  position: static; width: auto; margin: 0; box-shadow: none; background: var(--aviso-superficie); color: var(--aviso-texto);
+}
+.dialogo-confirmacao-corpo { display: grid; gap: var(--esp-3); padding: var(--esp-3); }
+.dialogo-confirmacao-texto { display: grid; gap: var(--esp-1); }
+.dialogo-confirmacao-titulo { margin: 0; font-size: 20px; }
+.dialogo-confirmacao-texto p { margin: 0; color: var(--texto-secundario); }
+.dialogo-confirmacao-acoes { display: flex; flex-wrap: wrap; justify-content: flex-end; gap: var(--esp-1); }
+/* Sem JavaScript só o botão que fecha por `formmethod="dialog"` (nativo, sem enviar nada) continua à vista. */
+html:not(.js) .dialogo-confirmacao [data-fechar-dialogo]:not([formmethod="dialog"]) { display: none; }
+@media (max-width: 480px) {
+  .dialogo-confirmacao-corpo { padding: var(--esp-2); }
+  .dialogo-confirmacao-acoes { flex-direction: column-reverse; }
+  .dialogo-confirmacao-acoes .botao { width: 100%; justify-content: center; }
+}
+
 /* Filtros */
-.filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--esp-2); }
+/* Grade de colunas iguais: a última linha não estica um campo sozinho pela largura toda. A busca
+   (primeiro campo) ocupa duas colunas quando há espaço. */
+.filtros { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); align-items: end; gap: var(--esp-2); }
+@media (min-width: 640px) { .filtros-campo:first-of-type { grid-column: span 2; } }
 /* A coluna da grade também precisa de minmax(0, 1fr): sem ela, o texto longo de um filtro preenchido alarga a coluna além do campo e o controle passa por cima do vizinho. */
 .filtros-campo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; flex: 1 1 160px; min-width: 0; }
-.filtros-campo:first-child { flex-basis: 240px; }
 .filtros-acoes { display: flex; align-items: center; gap: var(--esp-2); }
-/* Com JavaScript os filtros se aplicam sozinhos (hx-trigger); o botão fica só como reserva sem ele. */
-.js .filtros-acoes .botao { display: none; }
+/* Com JavaScript os filtros se aplicam sozinhos (hx-trigger, ou `data-filtros-auto` em filtros.js);
+   o botão fica só como reserva sem ele. */
+.js .filtros-acoes button[type="submit"] { display: none; }
 
 /* Filtros recolhíveis (filtros.js): barra com a busca e o botão "Filtros"; o painel abre embaixo
    e, fechado, os filtros ativos aparecem como chips. Sem JavaScript, o painel fica aberto e o

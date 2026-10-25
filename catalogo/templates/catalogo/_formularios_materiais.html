@@ -10,7 +10,32 @@ no servidor; cada botão é um formulário POST com CSRF.
   <h2 class="cartao-titulo">Materiais de {{ formulario_nome }}</h2>
   <p class="texto-secundario">Sem alteração, vale a regra do formulário (a lista, os grupos ou as saídas do SCPI). Acrescentar ou retirar um material muda só este formulário e não mexe no cadastro, no estoque nem nos pedidos já feitos.</p>
 
-  <form class="filtros" method="get" action="{% url 'catalogo:formularios' %}">
+  {# Restaurar a regra padrão do formulário: apaga todas as exceções de material dele. O botão abre o diálogo de confirmação (dialogo.js); sem JavaScript, o diálogo vem aberto na página e o botão não aparece. #}
+  {% with e=excecoes_do_formulario %}
+  <div class="regra-padrao">
+    <p class="texto-secundario">{% if e.total %}{{ e.total }} {% if e.total == 1 %}exceção{% else %}exceções{% endif %} à regra padrão deste formulário ({{ e.resumo }}).{% else %}Este formulário segue a regra padrão, sem exceções.{% endif %}</p>
+    {% if pode_alterar_materiais and e.total %}
+    <button type="button" class="botao botao-secundario botao-perigo" data-abrir-dialogo="dialogo-regra-padrao" aria-haspopup="dialog" hidden>Restaurar regra padrão…</button>
+    <dialog class="dialogo-confirmacao" id="dialogo-regra-padrao" open aria-labelledby="dialogo-regra-padrao-titulo">
+      <form method="post" action="{% url 'catalogo:formularios_regra' %}" class="dialogo-confirmacao-corpo">
+        {% csrf_token %}
+        <input type="hidden" name="formulario" value="{{ formulario }}">
+        <input type="hidden" name="confirmado" value="1">
+        <div class="dialogo-confirmacao-texto">
+          <h2 id="dialogo-regra-padrao-titulo" class="dialogo-confirmacao-titulo">Restaurar a regra padrão?</h2>
+          <p>{{ formulario_nome }} passa a seguir apenas a regra padrão: {{ e.efeito }}. Cadastro, estoque, pedidos e os demais formulários não são afetados.</p>
+        </div>
+        <div class="dialogo-confirmacao-acoes">
+          <button type="submit" formmethod="dialog" class="botao botao-secundario" data-fechar-dialogo autofocus>Cancelar</button>
+          <button type="submit" class="botao botao-secundario botao-perigo">Restaurar regra padrão</button>
+        </div>
+      </form>
+    </dialog>
+    {% endif %}
+  </div>
+  {% endwith %}
+
+  <form class="filtros" method="get" action="{% url 'catalogo:formularios' %}" data-filtros-auto>
     <input type="hidden" name="formulario" value="{{ formulario }}">
     <input type="hidden" name="aba" value="materiais">
     <div class="campo filtros-campo">
@@ -49,6 +74,7 @@ no servidor; cada botão é um formulário POST com CSRF.
   <div class="tabela-rolagem">
     <table class="tabela tabela-config">
       <caption class="visually-hidden">Materiais do catálogo e se são oferecidos por {{ formulario_nome }}</caption>
+      <colgroup><col><col class="col-situacao">{% if pode_alterar_materiais %}<col class="col-acoes">{% endif %}</colgroup>
       <thead>
         <tr>
           <th scope="col">Material</th>
@@ -58,7 +84,7 @@ no servidor; cada botão é um formulário POST com CSRF.
       </thead>
       <tbody>
         {% for l in linhas %}
-        <tr>
+        <tr id="material-{{ l.material.pk }}">
           <td>
             <strong>{{ l.material.nome }}</strong>
             <span class="material-info texto-suave">
@@ -77,8 +103,8 @@ no servidor; cada botão é um formulário POST com CSRF.
             {% if l.estado.sem_efeito %}<span class="material-info"><span class="selo selo-neutro">Exceção sem efeito</span> a regra já dá este resultado.</span>{% endif %}
           </td>
           {% if pode_alterar_materiais %}
-          <td>
-            <form method="post" action="{% url 'catalogo:formularios_excecao' %}" class="acoes">
+          <td class="celula-acoes">
+            <form method="post" action="{% url 'catalogo:formularios_excecao' %}" class="acoes" data-manter-rolagem>
               {% csrf_token %}
               <input type="hidden" name="formulario" value="{{ formulario }}">
               <input type="hidden" name="codigo" value="{{ l.material.codigo }}">
@@ -90,9 +116,8 @@ no servidor; cada botão é um formulário POST com CSRF.
               {% if l.estado.disponivel %}
               <button type="submit" name="acao" value="retirar" class="botao botao-secundario">Retirar</button>
               {% else %}
-              <button type="submit" name="acao" value="acrescentar" class="botao botao-secundario">Acrescentar</button>
+              <button type="submit" name="acao" value="acrescentar" class="botao botao-secundario botao-destaque">Acrescentar</button>
               {% endif %}
-              {% if l.tem_excecao %}<button type="submit" name="acao" value="restaurar" class="botao botao-texto">Voltar à regra</button>{% endif %}
             </form>
           </td>
           {% endif %}

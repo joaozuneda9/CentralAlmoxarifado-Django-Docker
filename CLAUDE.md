@@ -397,7 +397,7 @@ transações precisam se comportar como no servidor.
   acrescentados vêm ao fim, em ordem alfabética (oficina e EPIs, na ordem do banco); `oculto` nunca
   entra e `duplicado` aparece bloqueado; estoque, teto e regra de quantidade seguem como eram.
   Serviços em `catalogo/disponibilidade.py` (`definir_excecao`, `aplicar_em_lote` atômico e em blocos,
-  `habilitar_centros`, `definir_ativo`); o `bulk_create(update_conflicts=True)` no MySQL/MariaDB não
+  `habilitar_centros`, `definir_ativo`, `restaurar_regra`: restaura a regra padrão de um formulário, apagando todas as suas exceções de material, em dois passos na aba Materiais, `formularios_regra`); o `bulk_create(update_conflicts=True)` no MySQL/MariaDB não
   aceita `unique_fields`, e o `update_or_create` falha na corrida (duas gravações simultâneas deixam uma
   linha). A tela tem as abas Centros de custo e Materiais (busca, grupo, subgrupo e estado; 50 por
   página no servidor), o **lote em duas telas** (`formularios_lote`: prévia com número exato, POST com o

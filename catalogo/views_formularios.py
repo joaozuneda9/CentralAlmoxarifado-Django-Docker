@@ -35,15 +35,38 @@ from catalogo.disponibilidade import (
     estados_do_material,
     habilitar_centros,
     materiais_da_tela,
+    restaurar_regra,
     situacao_do_formulario,
 )
-from catalogo.forms import ESTADOS_DO_MATERIAL, FiltrosMateriais
-from catalogo.models import CentroCusto, CentroFormulario, Formulario, Material, ParDePara
-from pedidos.regras import qtd_br, texto, truncar_qtd
+from catalogo.forms import ESTADOS_DO_MATERIAL, FiltrosCentros, FiltrosMateriais
+from catalogo.models import (
+    CentroCusto,
+    CentroFormulario,
+    ExcecaoMaterial,
+    Formulario,
+    Material,
+    ParDePara,
+)
+from pedidos.regras import norm_placa, qtd_br, truncar_qtd
 
 ABAS = [("centros", "Centros de custo"), ("materiais", "Materiais")]
 POR_PAGINA = 50
-PARAMETROS_DA_VOLTA = ("formulario", "aba", "qc", "q", "grupo", "subgrupo", "estado", "pagina")
+POR_PAGINA_CENTROS = 50
+PARAMETROS_DA_VOLTA = (
+    "formulario",
+    "aba",
+    "qc",
+    "pagina_centros",
+    "centro_destino",
+    "centro_estado",
+    "centro_placa",
+    "centro_uso",
+    "q",
+    "grupo",
+    "subgrupo",
+    "estado",
+    "pagina",
+)
 
 # Como o formulário apresenta o destino, em palavras (a ajuda da aba Centros de custo).
 EXPLICACAO_DO_MODO = {
@@ -92,18 +115,48 @@ def _ids(valores) -> list[int]:
 # --- A página ----------------------------------------------------------------------------------
 
 
-def _contexto_centros(origem: str, termo: str, usuario) -> dict:
+def _filtrar_centros(linhas, origem: str, filtros: dict, modo: str, habilitadas: set[int]):
+    """Aplica a busca e os filtros da aba Centros de custo. O texto vale palavra por palavra (todas
+    precisam aparecer) em descrição, código e placa; a placa também casa digitada com hífen ou
+    espaço (`CZA-1614`). Nas viaturas (sem placa) o filtro de placa não existe."""
+    for palavra in filtros.get("qc", "").split():
+        condicao = Q(descricao__icontains=palavra) | Q(codigo__icontains=palavra)
+        placa = norm_placa(palavra)
+        if placa:
+            condicao |= Q(placa__icontains=placa)
+        linhas = linhas.filter(condicao)
+    destino = filtros.get("centro_destino")
+    if destino == "sim":
+        linhas = linhas.filter(pk__in=habilitadas)
+    elif destino == "nao":
+        linhas = linhas.exclude(pk__in=habilitadas)
+    estado = filtros.get("centro_estado")
+    if estado:
+        linhas = linhas.filter(ativo=(estado == "ativo"))
+    placa = filtros.get("centro_placa")
+    if placa and modo != MODO_SEM_PLACA:
+        linhas = linhas.filter(placa__isnull=(placa == "sem"))
+    uso = filtros.get("centro_uso")
+    if uso == "sem_formulario":
+        linhas = linhas.filter(ativo=True).exclude(
+            pk__in=CentroFormulario.objects.values("centro_id")
+        )
+    elif uso == "outros":
+        linhas = linhas.filter(
+            pk__in=CentroFormulario.objects.exclude(formulario=origem).values("centro_id")
+        )
+    return linhas
+
+
+def _contexto_centros(
+    origem: str, filtros_centros: FiltrosCentros, usuario, numero_da_pagina=None
+) -> dict:
+    filtros = filtros_centros.filtros()
     habilitadas = set(
         CentroFormulario.objects.filter(formulario=origem).values_list("centro_id", flat=True)
     )
-    linhas = CentroCusto.objects.all()
-    for palavra in termo.split():
-        linhas = linhas.filter(
-            Q(descricao__icontains=palavra)
-            | Q(codigo__icontains=palavra)
-            | Q(placa__icontains=palavra)
-        )
     modo = MODO_DESTINO[origem]
+    linhas = _filtrar_centros(CentroCusto.objects.all(), origem, filtros, modo, habilitadas)
     # Em quais OUTROS formulários cada linha é destino (uma consulta só, na ordem dos formulários).
     outros: dict[int, list[str]] = {}
     ordem = {valor: i for i, valor in enumerate(Formulario.values)}
@@ -129,14 +182,23 @@ def _contexto_centros(origem: str, termo: str, usuario) -> dict:
                 "codigos": list(dict.fromkeys(i["centro"].codigo for i in itens)),
             }
         )
+    # A página mostra POR_PAGINA_CENTROS descrições por vez (as linhas de uma descrição ficam
+    # juntas); os totais abaixo valem para tudo o que o filtro acha, não só para a página.
+    pagina = Paginator(grupos, POR_PAGINA_CENTROS).get_page(numero_da_pagina)
     return {
-        "grupos": grupos,
+        "grupos": list(pagina.object_list),
+        "pagina_centros": pagina,
         "modo": modo,
         "explicacao_do_modo": EXPLICACAO_DO_MODO[modo],
         "por_descricao": modo == MODO_SEM_PLACA,
         "total_linhas": sum(len(g["linhas"]) for g in grupos),
         "total_habilitadas": sum(g["n_habilitadas"] for g in grupos),
-        "termo": termo,
+        "filtros_centros": filtros_centros,
+        "filtros_centros_ativos": filtros,
+        "volta_centros": {
+            **{nome: filtros.get(nome, "") for nome in FiltrosCentros.base_fields},
+            "pagina_centros": pagina.number if pagina.number > 1 else "",
+        },
         "pode_alterar_centros": pode_alterar_centros(usuario),
         "pode_criar_centro": usuario.is_staff and usuario.has_perm("catalogo.add_centrocusto"),
         "pode_editar_centro": usuario.is_staff and usuario.has_perm("catalogo.change_centrocusto"),
@@ -158,6 +220,35 @@ def _texto_do_estado(estado) -> dict:
     if estado.oculto:
         origem = "o cadastro do SCPI o oculta em todos os formulários"
     return {"nivel": selo[0], "selo": selo[1], "origem": origem}
+
+
+def _resumo_das_excecoes(origem: str) -> dict:
+    """Quantas exceções de material o formulário tem e o que a restauração da regra padrão desfaz,
+    já em texto (só o que existe: sem "0 retirados")."""
+    excecoes = ExcecaoMaterial.objects.filter(formulario=origem)
+    acrescentados = excecoes.filter(habilitado=True).count()
+    retirados = excecoes.filter(habilitado=False).count()
+    resumo, efeito = [], []
+    if acrescentados:
+        s = "" if acrescentados == 1 else "s"
+        resumo.append(f"{acrescentados} acrescentado{s}")
+        efeito.append(
+            f"{acrescentados} {'material' if acrescentados == 1 else 'materiais'} acrescentado{s} "
+            f"{'deixa' if s == '' else 'deixam'} de ser oferecido{s}"
+        )
+    if retirados:
+        s = "" if retirados == 1 else "s"
+        resumo.append(f"{retirados} retirado{s}")
+        efeito.append(
+            f"{retirados} retirado{s} {'volta' if s == '' else 'voltam'} a ser oferecido{s}"
+        )
+    return {
+        "acrescentados": acrescentados,
+        "retirados": retirados,
+        "total": acrescentados + retirados,
+        "resumo": " e ".join(resumo),
+        "efeito": " e ".join(efeito),
+    }
 
 
 def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
@@ -193,6 +284,7 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
         "lote_query": urlencode({"formulario": origem, **filtros}),
         "total_materiais": pagina.paginator.count,
         "pode_alterar_materiais": pode_alterar,
+        "excecoes_do_formulario": _resumo_das_excecoes(origem),
     }
 
 
@@ -208,7 +300,9 @@ def formularios(request):
         "lista_de_formularios": [(f.value, f.label) for f in Formulario],
         "aba": aba,
         "abas": ABAS,
-        **_contexto_centros(origem, texto(request.GET.get("qc")), usuario),
+        **_contexto_centros(
+            origem, FiltrosCentros(request.GET), usuario, request.GET.get("pagina_centros")
+        ),
         **_contexto_materiais(request, origem, pode_alterar_materiais(usuario)),
         "pode_alterar_algo": pode_alterar_centros(usuario) or pode_alterar_materiais(usuario),
     }
@@ -408,3 +502,30 @@ def formularios_material(request, codigo):
         "saldo": qtd_br(truncar_qtd(material.estoque)),
     }
     return render(request, "catalogo/formularios_material.html", contexto)
+
+
+@login_required
+@require_POST
+@exige(pode_alterar_materiais)
+def formularios_regra(request):
+    """Restaura a regra padrão do formulário: apaga todas as exceções de material dele. Só vale com
+    `confirmado=1` (o painel de confirmação da aba Materiais), também sem JavaScript."""
+    origem = _formulario(request.POST.get("formulario"))
+    if origem is None:
+        return HttpResponseBadRequest("Pedido inválido.")
+    alvo = Formulario(origem).label
+    if request.POST.get("confirmado") != "1":
+        messages.warning(request, "Confirme para restaurar a regra padrão do formulário.")
+    else:
+        acrescentados, retirados = restaurar_regra(origem)
+        if not acrescentados and not retirados:
+            messages.info(request, f"Nada mudou: {alvo} já segue a regra padrão.")
+        else:
+            removidos = "acrescentado removido" if acrescentados == 1 else "acrescentados removidos"
+            devolvidos = "retirado devolvido" if retirados == 1 else "retirados devolvidos"
+            messages.success(
+                request,
+                f"Regra padrão restaurada em {alvo}: {acrescentados} {removidos} e "
+                f"{retirados} {devolvidos}.",
+            )
+    return redirect(_url_da_pagina({"formulario": origem, "aba": "materiais"}))

@@ -60,6 +60,19 @@ def test_a_pagina_abre_no_primeiro_formulario_e_mostra_as_duas_abas(admin):
     assert 'id="painel-centros"' in r.text and 'id="painel-materiais"' in r.text
 
 
+def test_filtros_das_duas_abas_se_aplicam_sozinhos_com_javascript(admin):
+    # O botão "Filtrar" só existe sem JavaScript; com ele, o filtros.js envia ao mudar um campo.
+    r = admin.get(PAGINA)
+    assert len(re.findall(r'<form class="filtros"[^>]*data-filtros-auto>', r.text)) == 2
+
+
+def test_acoes_por_linha_mantem_a_rolagem_ao_voltar(admin):
+    # O rolagem.js guarda a posição no envio e a devolve na página que o redirecionamento abre.
+    r = admin.get(PAGINA, {"aba": "materiais"})
+    assert "interface/js/rolagem.js" in r.text
+    assert re.search(r'<form method="post"[^>]*class="acoes" data-manter-rolagem>', r.text)
+
+
 def test_formulario_invalido_volta_ao_primeiro_sem_erro(admin):
     r = admin.get(PAGINA, {"formulario": "AVULSA"})
     assert r.status_code == 200 and "Destinos de Limpeza, copa e escritório" in r.text
@@ -248,12 +261,12 @@ def test_paginacao_de_50_no_servidor(admin):
     for i in range(120):
         material(f"700.000.{i:03d}", f"ITEM {i:03d}", "MUITOS")
     r = admin.get(PAGINA, {"formulario": "AB", "aba": "materiais", "grupo": "MUITOS"})
-    assert linhas_da_aba(r).count("<tr>") == 50
+    assert linhas_da_aba(r).count("<tr ") == 50
     assert "Página 1 de 3" in texto(r) and "120 materiais no total" in texto(r)
     r = admin.get(
         PAGINA, {"formulario": "AB", "aba": "materiais", "grupo": "MUITOS", "pagina": "3"}
     )
-    assert linhas_da_aba(r).count("<tr>") == 20
+    assert linhas_da_aba(r).count("<tr ") == 20
     fora = admin.get(
         PAGINA, {"formulario": "AB", "aba": "materiais", "grupo": "MUITOS", "pagina": "99"}
     )
@@ -276,7 +289,14 @@ def test_excecao_acrescentar_retirar_e_restaurar(admin):
         f"{FITA} — FITA VEDA ROSCA deixou de ser oferecido em Ferramentas, peças e materiais."
     )
     linha = linhas_da_aba(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais", "q": "veda"}))
-    assert "retirado pelo administrador" in linha and "Voltar à regra" in linha
+    # Acrescentar já apaga a exceção (a regra dá o resultado): um botão só na linha.
+    assert "retirado pelo administrador" in linha and "Acrescentar" in linha
+    assert "Voltar à regra" not in linha
+    admin.post(EXCECAO, {**corpo, "codigo": FITA, "acao": "acrescentar"})
+    assert not ExcecaoMaterial.objects.exists()  # a regra já oferece: a exceção é apagada
+    ExcecaoMaterial.objects.create(
+        material=Material.objects.get(codigo=FITA), formulario="AB", habilitado=False
+    )
     r = admin.post(EXCECAO, {**corpo, "codigo": FITA, "acao": "restaurar"})
     assert not ExcecaoMaterial.objects.exists()
     assert "voltou à regra" in ultima_mensagem(r)
@@ -318,7 +338,8 @@ def test_exceção_sem_efeito_e_marcada(admin):
         material=Material.objects.get(codigo=FITA), formulario="AB", habilitado=True
     )
     linha = linhas_da_aba(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais", "q": "veda"}))
-    assert "Exceção sem efeito" in linha and "Voltar à regra" in linha
+    # Sem efeito: restaurar a regra padrão do formulário é que a limpa, não um botão por linha.
+    assert "Exceção sem efeito" in linha and "Voltar à regra" not in linha
 
 
 def test_codigo_antigo_de_um_par_de_para_avisa_o_canonico(admin):
@@ -665,3 +686,253 @@ def test_o_atalho_nas_viaturas_leva_a_lista_do_admin_filtrada_pela_descricao(adm
     r = admin.get(PAGINA, {"formulario": "VIATURAS", "aba": "centros", "qc": EQUIPE})
     lista = reverse("admin:catalogo_centrocusto_changelist")
     assert f'href="{lista}?q=EQUIPE%20NORTE"' in r.text
+
+
+# --- Filtros da aba Centros de custo -----------------------------------------------------------
+
+
+def _centros_listados(admin, **filtros) -> set[str]:
+    """As descrições `FILTRO …` que a aba Centros de custo mostra com estes filtros."""
+    parametros = {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO", **filtros}
+    painel = admin.get(PAGINA, parametros).text
+    tabela = painel.split('id="painel-centros"')[1].split('id="painel-materiais"')[0]
+    return set(re.findall(r"FILTRO [A-Z]+", tabela.split("<tbody>")[1]))
+
+
+@pytest.fixture
+def centros_de_filtro():
+    criar_centro("FILTRO ALFA", "801", "FIL1A11", formularios=[Formulario.LIMPEZA])
+    criar_centro("FILTRO BETA", "802", formularios=[Formulario.AB])
+    criar_centro("FILTRO GAMA", "803", "FIL2B22", ativo=False, formularios=[Formulario.LIMPEZA])
+    criar_centro("FILTRO DELTA", "804")
+
+
+def test_filtro_de_centros_por_ser_destino_do_formulario(admin, centros_de_filtro):
+    assert _centros_listados(admin, centro_destino="sim") == {"FILTRO ALFA", "FILTRO GAMA"}
+    assert _centros_listados(admin, centro_destino="nao") == {"FILTRO BETA", "FILTRO DELTA"}
+
+
+def test_filtro_de_centros_por_estado(admin, centros_de_filtro):
+    assert _centros_listados(admin, centro_estado="inativo") == {"FILTRO GAMA"}
+    ativos = _centros_listados(admin, centro_estado="ativo")
+    assert ativos == {"FILTRO ALFA", "FILTRO BETA", "FILTRO DELTA"}
+
+
+def test_filtro_de_centros_por_placa(admin, centros_de_filtro):
+    assert _centros_listados(admin, centro_placa="com") == {"FILTRO ALFA", "FILTRO GAMA"}
+    assert _centros_listados(admin, centro_placa="sem") == {"FILTRO BETA", "FILTRO DELTA"}
+
+
+def test_filtro_de_centros_por_uso_nos_formularios(admin, centros_de_filtro):
+    # Ativo e sem destino em formulário nenhum: o inativo e o que já tem destino ficam de fora.
+    assert _centros_listados(admin, centro_uso="sem_formulario") == {"FILTRO DELTA"}
+    assert _centros_listados(admin, centro_uso="outros") == {"FILTRO BETA"}
+
+
+def test_filtros_de_centros_se_combinam_e_valor_desconhecido_some(admin, centros_de_filtro):
+    assert _centros_listados(
+        admin, centro_destino="sim", centro_placa="com", centro_estado="ativo"
+    ) == {"FILTRO ALFA"}
+    todos = {"FILTRO ALFA", "FILTRO BETA", "FILTRO GAMA", "FILTRO DELTA"}
+    assert _centros_listados(admin, centro_destino="talvez", centro_uso="x") == todos
+
+
+def test_busca_de_centro_acha_a_placa_digitada_com_hifen(admin, centros_de_filtro):
+    assert _centros_listados(admin, qc="fil1-a11") == {"FILTRO ALFA"}
+    assert _centros_listados(admin, qc="filtro 802") == {"FILTRO BETA"}
+
+
+def test_viaturas_nao_tem_filtro_de_placa(admin, centros_de_filtro):
+    r = admin.get(PAGINA, {"formulario": "VIATURAS", "aba": "centros"})
+    painel = r.text.split('id="painel-centros"')[1].split('id="painel-materiais"')[0]
+    assert 'name="centro_placa"' not in painel and 'name="centro_uso"' in painel
+    r = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros"})
+    assert 'name="centro_placa"' in r.text
+
+
+def test_gravar_na_aba_centros_volta_com_os_filtros(admin, centros_de_filtro):
+    centro = CentroCusto.objects.get(descricao="FILTRO ALFA")
+    r = admin.post(
+        CENTROS,
+        {
+            "formulario": "LIMPEZA",
+            "centro": [centro.pk],
+            "habilitado": "0",
+            "qc": "FILTRO",
+            "centro_destino": "sim",
+            "centro_estado": "ativo",
+        },
+    )
+    assert volta(r) == {
+        "formulario": "LIMPEZA",
+        "aba": "centros",
+        "qc": "FILTRO",
+        "centro_destino": "sim",
+        "centro_estado": "ativo",
+    }
+    # E a página que mostra os filtros os devolve às gravações da lista.
+    painel = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros", "centro_uso": "outros"})
+    assert 'name="centro_uso" value="outros"' in painel.text
+
+
+# --- Paginação e linhas da aba Centros de custo ------------------------------------------------
+
+
+def _tabela_de_centros(resposta) -> str:
+    painel = resposta.text.split('id="painel-centros"')[1].split('id="painel-materiais"')[0]
+    return painel.split("<tbody>")[1].split("</tbody>")[0]
+
+
+def test_aba_centros_pagina_por_descricao_e_os_totais_valem_para_tudo(admin):
+    for i in range(60):
+        criar_centro(f"PAGINADO {i:02d}", f"9{i:02d}", formularios=[Formulario.LIMPEZA])
+    base = {"formulario": "LIMPEZA", "aba": "centros", "qc": "PAGINADO"}
+    primeira = admin.get(PAGINA, base)
+    assert len(re.findall(r'<tr id="centro-', _tabela_de_centros(primeira))) == 50
+    assert "60 de 60 linhas são destino" in texto(primeira)
+    assert "Página 1 de 2" in texto(primeira)
+    segunda = admin.get(PAGINA, {**base, "pagina_centros": 2})
+    assert len(re.findall(r'<tr id="centro-', _tabela_de_centros(segunda))) == 10
+    assert "PAGINADO 59" in segunda.text and "PAGINADO 00" not in _tabela_de_centros(segunda)
+    # Página fora do intervalo cai na última, e a aba Materiais tem a sua própria paginação.
+    assert "Página 2 de 2" in texto(admin.get(PAGINA, {**base, "pagina_centros": 99}))
+    assert 'name="pagina_centros" value="2"' in segunda.text
+
+
+def test_gravar_na_aba_centros_volta_para_a_mesma_pagina(admin):
+    for i in range(60):
+        criar_centro(f"PAGINADO {i:02d}", f"9{i:02d}", formularios=[Formulario.LIMPEZA])
+    centro = CentroCusto.objects.get(descricao="PAGINADO 59")
+    r = admin.post(
+        CENTROS,
+        {
+            "formulario": "LIMPEZA",
+            "centro": [centro.pk],
+            "habilitado": "0",
+            "qc": "PAGINADO",
+            "pagina_centros": "2",
+        },
+    )
+    assert volta(r)["pagina_centros"] == "2"
+
+
+def test_linhas_das_tabelas_tem_id_para_piscar_depois_de_gravar(admin, centros_de_filtro):
+    alfa = CentroCusto.objects.get(descricao="FILTRO ALFA")
+    centros = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO"})
+    assert f'<tr id="centro-{alfa.pk}">' in centros.text
+    materiais = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "materiais"})
+    assert re.search(r'<tr id="material-\d+">', materiais.text)
+
+
+def test_coluna_de_acoes_tem_largura_propria_nas_duas_abas(admin, centros_de_filtro):
+    # Largura fixa por CSS (`celula-acoes`): a coluna não muda com a linha ter um botão ou dois.
+    materiais = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "materiais"})
+    assert '<td class="celula-acoes">' in materiais.text
+    centros = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO"})
+    assert '<td class="celula-acoes">' in centros.text
+
+
+def test_botoes_das_tabelas_tem_forma_e_cor_pelo_significado(admin, centros_de_filtro):
+    # Incluir é azul, inativar (afeta todos os formulários) é vermelho, reativar é verde; nenhum é
+    # só texto, e o "Editar" também é botão.
+    pagina = {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO"}
+    centros = admin.get(PAGINA, pagina).text
+    assert 'class="botao botao-secundario botao-perigo">Inativar</button>' in centros
+    assert 'class="botao botao-secundario botao-ok">Ativar</button>' in centros  # FILTRO GAMA
+    assert 'class="botao botao-secundario botao-destaque">Habilitar</button>' in centros
+    assert "botao-texto" not in centros.split("<tbody>")[1].split("</tbody>")[0]
+    materiais = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "materiais"}).text
+    assert 'botao-destaque">Acrescentar</button>' in materiais
+
+
+# --- Restaurar a regra padrão do formulário -----------------------------------------------------
+
+REGRA = reverse("catalogo:formularios_regra")
+
+
+def _duas_excecoes(formulario="AB"):
+    ExcecaoMaterial.objects.create(
+        material=Material.objects.get(codigo=FITA), formulario=formulario, habilitado=False
+    )
+    novo = material("900.000.002", "TESOURA", "ALMOX")
+    ExcecaoMaterial.objects.create(material=novo, formulario=formulario, habilitado=True)
+
+
+def test_restaurar_regra_padrao_apaga_so_as_excecoes_do_formulario(admin):
+    _duas_excecoes("AB")
+    outra = Material.objects.get(codigo=BOTINA)
+    ExcecaoMaterial.objects.create(material=outra, formulario="LIMPEZA", habilitado=True)
+    r = admin.post(REGRA, {"formulario": "AB", "confirmado": "1"})
+    assert volta(r) == {"formulario": "AB", "aba": "materiais"}
+    assert not ExcecaoMaterial.objects.filter(formulario="AB").exists()
+    assert ExcecaoMaterial.objects.filter(formulario="LIMPEZA").count() == 1
+    assert ultima_mensagem(r) == (
+        "Regra padrão restaurada em Ferramentas, peças e materiais: "
+        "1 acrescentado removido e 1 retirado devolvido."
+    )
+    # Idempotente: sem exceções, nada muda.
+    r = admin.post(REGRA, {"formulario": "AB", "confirmado": "1"})
+    assert "Nada mudou" in ultima_mensagem(r)
+
+
+def test_restaurar_regra_padrao_exige_confirmacao_e_formulario_valido(admin):
+    _duas_excecoes("AB")
+    r = admin.post(REGRA, {"formulario": "AB"})
+    assert ExcecaoMaterial.objects.filter(formulario="AB").count() == 2
+    assert "Confirme" in ultima_mensagem(r)
+    assert admin.post(REGRA, {"formulario": "AVULSA", "confirmado": "1"}).status_code == 400
+    assert admin.get(REGRA).status_code == 405
+    assert ExcecaoMaterial.objects.filter(formulario="AB").count() == 2
+
+
+def test_restaurar_regra_padrao_e_recusado_a_quem_nao_pode_alterar(client):
+    _duas_excecoes("AB")
+    client.force_login(usuarios()["comum"])
+    r = client.post(REGRA, {"formulario": "AB", "confirmado": "1"})
+    assert r.status_code == 403
+    assert ExcecaoMaterial.objects.filter(formulario="AB").count() == 2
+
+
+def test_aba_materiais_mostra_as_excecoes_e_o_reset_so_a_quem_pode(client):
+    client.force_login(usuarios()["admin"])
+    sem = client.get(PAGINA, {"formulario": "AB", "aba": "materiais"})
+    assert "segue a regra padrão, sem exceções" in texto(sem)
+    assert "Restaurar regra padrão" not in sem.text
+    _duas_excecoes("AB")
+    com = client.get(PAGINA, {"formulario": "AB", "aba": "materiais"})
+    assert "2 exceções à regra padrão deste formulário (1 acrescentado e 1 retirado)" in texto(com)
+    assert 'data-abrir-dialogo="dialogo-regra-padrao"' in com.text
+    assert '<dialog class="dialogo-confirmacao" id="dialogo-regra-padrao"' in com.text
+    assert 'name="confirmado" value="1"' in com.text and "data-fechar-dialogo" in com.text
+    assert (
+        'formmethod="dialog" class="botao botao-secundario" data-fechar-dialogo autofocus>Cancelar'
+        in (com.text)
+    )
+    assert "1 material acrescentado deixa de ser oferecido e 1 retirado volta a ser oferecido" in (
+        texto(com)
+    )
+    assert "Voltar à regra</button>" not in com.text  # nada de botão de restaurar por linha
+    client.force_login(usuarios()["comum"])
+    leitura = client.get(PAGINA, {"formulario": "AB", "aba": "materiais"})
+    assert "2 exceções à regra padrão" in texto(leitura)
+    assert "Restaurar regra padrão" not in leitura.text
+
+
+def test_texto_da_restauracao_concorda_no_plural(admin):
+    # Dois acrescentados e dois retirados: "materiais", nunca "materialis".
+    for i in range(2):
+        novo = material(f"900.000.1{i}0", f"MATERIAL EXTRA {i}", "ALMOX")
+        ExcecaoMaterial.objects.create(material=novo, formulario="AB", habilitado=True)
+    for codigo in (FITA, BOTINA):
+        ExcecaoMaterial.objects.create(
+            material=Material.objects.get(codigo=codigo), formulario="AB", habilitado=False
+        )
+    pagina = texto(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais"}))
+    assert "2 materiais acrescentados deixam de ser oferecidos" in pagina
+    assert "2 retirados voltam a ser oferecidos" in pagina
+    assert "materialis" not in pagina
+
+
+def test_filtro_de_uso_nao_sugere_destino_do_formulario_aberto(admin):
+    pagina = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros"}).text
+    assert "Destino em outro formulário" in pagina and "Destino também em" not in pagina
