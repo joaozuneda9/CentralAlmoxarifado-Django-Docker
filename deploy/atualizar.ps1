@@ -55,8 +55,8 @@ $branch = & git -C $raiz symbolic-ref --quiet --short HEAD
 $branchStatus = $LASTEXITCODE
 if ($Ambiente -eq 'producao') {
     if ($branchStatus -ne 1) { throw 'Producao exige checkout destacado (detached HEAD) de uma tag.' }
-    if ($Versao -notmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Informe -Versao vMAJOR.MINOR.PATCH.' }
-    if ($Imagem -notmatch '^ghcr\.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:[a-f0-9]{64}$') {
+    if ($Versao -cnotmatch '^v[0-9]+\.[0-9]+\.[0-9]+$') { throw 'Informe -Versao vMAJOR.MINOR.PATCH.' }
+    if ($Imagem -cnotmatch '^ghcr\.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:[a-f0-9]{64}$') {
         throw 'Producao exige -Imagem do GHCR deste projeto fixada por digest sha256.'
     }
     if ((Invoke-Git rev-parse "refs/tags/$Versao`^{commit}").Trim() -ne $sha) {

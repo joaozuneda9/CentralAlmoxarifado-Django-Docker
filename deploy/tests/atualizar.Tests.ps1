@@ -103,6 +103,12 @@ try {
     if ($global:AlmoxTesteChamadas | Where-Object { $_ -notmatch ' ps --status running --services$|config --format json$|^context show$' }) {
         throw 'Planejamento deve apenas consultar os servicos do projeto.'
     }
+    # -notmatch ignora maiusculas: digest e versao precisam da comparacao exata.
+    $digestValido = $global:AlmoxTesteDigest
+    $global:AlmoxTesteDigest = $digestValido.Substring(0, $digestValido.Length - 64) + ('A' * 64)
+    Recusa { Executar } 'GHCR'
+    $global:AlmoxTesteDigest = $digestValido
+    Recusa { Executar -Versao V1.0.0 } 'vMAJOR'
     # Compose no Windows pode emitir uma linha vazia quando nao ha servicos.
     foreach ($saidaVazia in @('', " `t")) {
         $global:AlmoxTesteServicos = @($saidaVazia)
