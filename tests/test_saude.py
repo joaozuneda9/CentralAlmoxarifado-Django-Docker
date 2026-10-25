@@ -359,3 +359,37 @@ def test_viaturas_sem_nada_a_oferecer_fica_indisponivel():
 
 def test_viaturas_sem_saldo_fica_so_no_aviso_geral():
     assert not itens_de(VIATURAS)
+
+
+@pytest.mark.parametrize("com_saldo", [True, False])
+def test_situacao_calcula_cada_catalogo_uma_vez(monkeypatch, com_saldo):
+    """A visão geral se recarrega a cada 5 s: os avisos e os cartões dividem o mesmo cálculo de
+    cada formulário (a oficina e os EPIs leem o cadastro inteiro)."""
+    import catalogo.saude as saude
+    from catalogo.models import Formulario
+
+    if com_saldo:
+        Material.objects.create(codigo="A", nome="A", estoque_em=AGORA)
+    efetivos, viaturas = [], []
+    original_efetivo, original_viaturas = saude.catalogo_efetivo, saude.catalogo_viaturas
+
+    def efetivo(origem, ab=None):
+        efetivos.append(origem)
+        return original_efetivo(origem, ab)
+
+    def lista_viaturas():
+        viaturas.append(1)
+        return original_viaturas()
+
+    monkeypatch.setattr(saude, "catalogo_efetivo", efetivo)
+    monkeypatch.setattr(saude, "catalogo_viaturas", lista_viaturas)
+
+    situacao = situacao_do_catalogo(AGORA)
+
+    assert len(efetivos) == len(set(efetivos))
+    assert len(viaturas) == 1
+    for formulario in (Formulario.LIMPEZA, Formulario.OFICINA, Formulario.EPIS):
+        assert formulario in efetivos
+    assert (Formulario.AB in efetivos) == com_saldo
+    assert (Formulario.VIATURAS in efetivos) == com_saldo
+    assert (situacao.limpeza, situacao.oficina, situacao.epis) == (0, 0, 0)

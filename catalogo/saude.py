@@ -7,6 +7,7 @@ os números dos formulários."""
 
 from dataclasses import dataclass, field
 from datetime import datetime, timedelta
+from functools import cached_property
 
 from django.db.models import Max
 from django.utils import timezone
@@ -172,16 +173,49 @@ def _cadastro() -> tuple[int, int]:
     return total, (Material.objects.filter(oculto=True).count() if total else 0)
 
 
+class _Catalogos:
+    """Os catálogos que a saúde e os cartões da visão geral leem, cada um calculado uma vez e só
+    quando alguém o pede: a oficina e os EPIs leem o cadastro inteiro, e a visão geral se recarrega
+    a cada 5 s. `ab` é o catálogo AB que o chamador já calculou (None: saldo nunca importado)."""
+
+    def __init__(self, ab: CatalogoAB | None):
+        self.ab = ab
+
+    @cached_property
+    def limpeza(self) -> list:
+        return catalogo_efetivo(Formulario.LIMPEZA)
+
+    @cached_property
+    def ab_efetivo(self) -> list:
+        return catalogo_efetivo(Formulario.AB, self.ab) if self.ab is not None else []
+
+    @cached_property
+    def lista_viaturas(self) -> list:
+        return catalogo_viaturas()
+
+    @cached_property
+    def viaturas_efetivo(self) -> list:
+        return catalogo_efetivo(Formulario.VIATURAS, self.ab)
+
+    @cached_property
+    def oficina(self) -> list:
+        return catalogo_efetivo(Formulario.OFICINA)
+
+    @cached_property
+    def epis(self) -> list:
+        return catalogo_efetivo(Formulario.EPIS)
+
+
 FORMULARIO_VIATURAS = "Formulário de reposição de peças das viaturas"
 
 
-def _viaturas(ab: CatalogoAB) -> list[ItemSaude]:
+def _viaturas(ab: CatalogoAB, catalogos: _Catalogos) -> list[ItemSaude]:
     """O formulário de reposição de peças das viaturas (spec 006): quanto oferece ou por que está
     indisponível, e as peças da lista que não aparecem (o saldo já foi importado)."""
     saude = []
-    lista = {i.codigo for i in catalogo_viaturas()}
+    lista = {i.codigo for i in catalogos.lista_viaturas}
     do_ab = sum(1 for i in ab.itens if i.codigo not in lista)
-    efetivo = catalogo_efetivo(Formulario.VIATURAS, ab)
+    efetivo = catalogos.viaturas_efetivo
     if not centros_do_formulario(Formulario.VIATURAS):
         saude.append(
             ItemSaude(
@@ -222,13 +256,13 @@ def _viaturas(ab: CatalogoAB) -> list[ItemSaude]:
 FORMULARIO_OFICINA = "Formulário da oficina mecânica"
 
 
-def _oficina() -> list[ItemSaude]:
+def _oficina(catalogos: _Catalogos) -> list[ItemSaude]:
     """O formulário da oficina mecânica (spec 007): quanto oferece ou por que está indisponível,
     os grupos da lista sem material visível, os avulsos ocultos e a falta do centro da oficina
     (o saldo já foi importado)."""
     saude = []
     centros = centros_do_formulario(Formulario.OFICINA)
-    n = len(catalogo_efetivo(Formulario.OFICINA))
+    n = len(catalogos.oficina)
     if not centros:
         saude.append(
             ItemSaude(
@@ -287,13 +321,13 @@ def _oficina() -> list[ItemSaude]:
 FORMULARIO_EPIS = "Formulário de EPIs"
 
 
-def _epis() -> list[ItemSaude]:
+def _epis(catalogos: _Catalogos) -> list[ItemSaude]:
     """O formulário de EPIs (spec 008): quanto oferece ou por que está indisponível, os grupos da
     lista sem material visível e os avulsos ocultos (o saldo já foi importado). O destino é
     qualquer centro de custo, como nos formulários de limpeza e AB, então não há aviso de destino
     aqui (o aviso geral de "nenhum centro de custo cadastrado" já cobre)."""
     saude = []
-    n = len(catalogo_efetivo(Formulario.EPIS))
+    n = len(catalogos.epis)
     if not n:
         saude.append(
             ItemSaude(
@@ -387,8 +421,16 @@ def _destinos_e_excecoes(ab: CatalogoAB | None = None) -> list[ItemSaude]:
     return saude
 
 
-def _demais(agora: datetime, ab: CatalogoAB | None, total: int, ocultos: int) -> list[ItemSaude]:
-    """Tudo o que não é a situação de uma importação: cadastro, saldo e formulários."""
+def _demais(
+    agora: datetime,
+    ab: CatalogoAB | None,
+    total: int,
+    ocultos: int,
+    catalogos: _Catalogos | None = None,
+) -> list[ItemSaude]:
+    """Tudo o que não é a situação de uma importação: cadastro, saldo e formulários. `catalogos`
+    reaproveita os catálogos que o chamador já calculou (sem ele, são calculados aqui)."""
+    catalogos = catalogos if catalogos is not None else _Catalogos(ab)
     saude = []
     if total:
         saude.append(
@@ -425,7 +467,7 @@ def _demais(agora: datetime, ab: CatalogoAB | None, total: int, ocultos: int) ->
                 )
             )
 
-    itens_limpeza = len(catalogo_efetivo(Formulario.LIMPEZA))
+    itens_limpeza = len(catalogos.limpeza)
     if itens_limpeza:
         saude.append(ItemSaude("ok", f"Formulário de limpeza: {itens_limpeza} itens."))
     else:
@@ -455,7 +497,7 @@ def _demais(agora: datetime, ab: CatalogoAB | None, total: int, ocultos: int) ->
         )
         # O que o formulário oferece de fato (regra mais exceções); a regra do AB segue como
         # informação separada, no texto.
-        efetivo = catalogo_efetivo(Formulario.AB, ab)
+        efetivo = catalogos.ab_efetivo
         if efetivo and not ExcecaoMaterial.objects.filter(formulario=Formulario.AB).exists():
             saude.append(
                 ItemSaude(
@@ -496,9 +538,9 @@ def _demais(agora: datetime, ab: CatalogoAB | None, total: int, ocultos: int) ->
             )
 
     if ab is not None:
-        saude += _viaturas(ab)
-        saude += _oficina()
-        saude += _epis()
+        saude += _viaturas(ab, catalogos)
+        saude += _oficina(catalogos)
+        saude += _epis(catalogos)
 
     if not CentroCusto.objects.exists():
         saude.append(
@@ -719,13 +761,14 @@ def situacao_do_catalogo(agora: datetime | None = None) -> Situacao:
     agora = agora or timezone.now()
     total, ocultos = _cadastro()
     ab = catalogo_ab(timezone.localdate(agora))
+    catalogos = _Catalogos(ab)
     return Situacao(
         fontes=[_fonte(tipo, agora, total, ocultos) for tipo in _tipos()],
-        avisos=[i for i in _demais(agora, ab, total, ocultos) if i.nivel != "ok"],
-        limpeza=len(catalogo_efetivo(Formulario.LIMPEZA)),
+        avisos=[i for i in _demais(agora, ab, total, ocultos, catalogos) if i.nivel != "ok"],
+        limpeza=len(catalogos.limpeza),
         ab=ab,
-        ab_oferecidos=len(catalogo_efetivo(Formulario.AB, ab)) if ab is not None else 0,
-        viaturas=len(catalogo_viaturas()),
-        oficina=len(catalogo_efetivo(Formulario.OFICINA)),
-        epis=len(catalogo_efetivo(Formulario.EPIS)),
+        ab_oferecidos=len(catalogos.ab_efetivo),
+        viaturas=len(catalogos.lista_viaturas),
+        oficina=len(catalogos.oficina),
+        epis=len(catalogos.epis),
     )
