@@ -138,7 +138,7 @@ def test_outro_metodo_nao_e_aceito(client):
     assert client.put(URL).status_code == 405 and client.delete(URL).status_code == 405
 
 
-def test_a_consulta_nao_grava_nada(client, django_assert_num_queries):
+def test_a_consulta_nao_grava_nada(client):
     pedido = registrar()
     from pedidos.models import AutorizacaoPedido, Pedido
 

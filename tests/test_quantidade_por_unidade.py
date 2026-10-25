@@ -47,8 +47,6 @@ def test_truncar_qtd_corta_para_baixo_em_3_casas(valor, esperado):
 
 # --- maximo_pedivel ----------------------------------------------------------------------------
 
-SALDOS = ["0.0004", "0.5", "2.4996", "2.5", "10"]
-
 
 @pytest.mark.parametrize(
     ("saldo", "fracionavel", "regra", "esperado"),
