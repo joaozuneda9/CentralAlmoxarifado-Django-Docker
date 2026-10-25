@@ -17,6 +17,7 @@ from django.db.models import Q
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
 from django.views.decorators.http import require_POST
 
 from catalogo.acesso import exige, pode_alterar_centros, pode_alterar_materiais
@@ -307,11 +308,34 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
     }
 
 
+# Regiões que o HTMX carrega, pelo cabeçalho HX-Target (`tag#id` no HTMX 4): o painel da aba que
+# estava vazio na página e se abre pela primeira vez. A resposta é só o parcial da aba.
+REGIOES = {
+    "section#painel-centros": ("centros", "catalogo/_formularios_centros.html"),
+    "section#painel-materiais": ("materiais", "catalogo/_formularios_materiais.html"),
+}
+
+
+def _url_da_aba(request, origem: str, chave: str) -> str:
+    """O endereço de uma aba com os parâmetros atuais da URL (filtros e página das duas abas), para
+    o painel que ainda não veio na página (`hx-get`, e o link que funciona sem JavaScript)."""
+    parametros = {k: v for k in PARAMETROS_DA_VOLTA if (v := request.GET.get(k))}
+    parametros.update({"formulario": origem, "aba": chave})
+    return reverse("catalogo:formularios") + "?" + urlencode(parametros)
+
+
 @login_required
 def formularios(request):
+    """Só a aba ativa é calculada (a de Materiais, nos formulários AB e Viaturas, faz a curva ABC
+    inteira). A outra vem como um painel vazio que o HTMX preenche quando a aba abre."""
     origem = _formulario(request.GET.get("formulario")) or Formulario.LIMPEZA
     aba = request.GET.get("aba")
     aba = aba if aba in {chave for chave, _ in ABAS} else "materiais"
+    regiao = None
+    if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
+        regiao = REGIOES.get(request.headers.get("HX-Target", ""))
+    if regiao:
+        aba = regiao[0]
     usuario = request.user
     contexto = {
         "formulario": origem,
@@ -319,13 +343,21 @@ def formularios(request):
         "lista_de_formularios": [(f.value, f.label) for f in Formulario],
         "aba": aba,
         "abas": ABAS,
-        **_contexto_centros(
-            origem, FiltrosCentros(request.GET), usuario, request.GET.get("pagina_centros")
-        ),
-        **_contexto_materiais(request, origem, pode_alterar_materiais(usuario)),
+        "urls_das_abas": {chave: _url_da_aba(request, origem, chave) for chave, _ in ABAS},
         "pode_alterar_algo": pode_alterar_centros(usuario) or pode_alterar_materiais(usuario),
     }
-    return render(request, "catalogo/formularios.html", contexto)
+    if aba == "centros":
+        contexto.update(
+            _contexto_centros(
+                origem, FiltrosCentros(request.GET), usuario, request.GET.get("pagina_centros")
+            )
+        )
+    else:
+        contexto.update(_contexto_materiais(request, origem, pode_alterar_materiais(usuario)))
+    modelo = regiao[1] if regiao else "catalogo/formularios.html"
+    resposta = render(request, modelo, contexto)
+    patch_vary_headers(resposta, ["HX-Request", "HX-Target", "HX-History-Restore-Request"])
+    return resposta
 
 
 # --- Gravações ---------------------------------------------------------------------------------
