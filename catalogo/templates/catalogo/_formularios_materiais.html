@@ -91,9 +91,10 @@ no servidor; cada botão é um formulário POST com CSRF.
               {% if l.estado.disponivel %}
               <button type="submit" name="acao" value="retirar" class="botao botao-secundario">Retirar</button>
               {% else %}
-              <button type="submit" name="acao" value="acrescentar" class="botao botao-secundario">Acrescentar</button>
+              <button type="submit" name="acao" value="acrescentar" class="botao botao-secundario botao-destaque">Acrescentar</button>
               {% endif %}
-              {% if l.tem_excecao %}<button type="submit" name="acao" value="restaurar" class="botao botao-texto">Voltar à regra</button>{% endif %}
+              {# "Retirar" e "Acrescentar" já apagam a exceção quando a regra dá o resultado pedido (`definir_excecao`): "Voltar à regra" só aparece para a exceção sem efeito, onde o botão acima criaria a oposta. #}
+              {% if l.tem_excecao and l.estado.sem_efeito %}<button type="submit" name="acao" value="restaurar" class="botao botao-secundario">Voltar à regra</button>{% endif %}
             </form>
           </td>
           {% endif %}

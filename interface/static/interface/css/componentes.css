@@ -20,6 +20,14 @@
 .botao-texto { min-height: 0; padding: var(--esp-meio) var(--esp-1); background: none; color: var(--texto-secundario); }
 .botao-texto:hover { background: var(--superficie); color: var(--texto); }
 .botao-perigo, .botao-perigo:hover { color: var(--erro-texto); }
+/* Variantes de cor do botão secundário (contorno e texto na cor, fundo tingido ao passar o mouse):
+   destaque (azul, incluir), perigo (vermelho, o que afeta tudo) e ok (verde, reativar). */
+.botao-secundario.botao-destaque { color: var(--info-texto); border-color: rgba(37, 99, 235, 0.35); }
+.botao-secundario.botao-destaque:hover { color: var(--info-texto); background: var(--destaque-superficie); border-color: rgba(37, 99, 235, 0.6); }
+.botao-secundario.botao-perigo { border-color: rgba(163, 38, 29, 0.35); }
+.botao-secundario.botao-perigo:hover { background: var(--erro-superficie); border-color: rgba(163, 38, 29, 0.6); }
+.botao-secundario.botao-ok { color: var(--ok-texto); border-color: rgba(30, 107, 52, 0.35); }
+.botao-secundario.botao-ok:hover { color: var(--ok-texto); background: var(--ok-superficie); border-color: rgba(30, 107, 52, 0.6); }
 .botao-icone { width: var(--altura-controle); padding: 0; }
 @media (max-width: 640px) { .botao-bloco { width: 100%; } }
 

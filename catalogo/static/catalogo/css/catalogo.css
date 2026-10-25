@@ -149,6 +149,9 @@
   .tabela-config .col-acoes { width: 9.5rem; }
 }
 .tabela-config .celula-acoes .acoes { flex-direction: column; align-items: stretch; gap: var(--esp-meio); }
+/* Os botões da célula têm o mesmo tamanho (compacto) e a largura da coluna; o link "Editar" também. */
+.tabela-config .celula-acoes .botao { display: flex; width: 100%; min-height: 32px; padding: 4px var(--esp-1); }
+.tabela-config .celula-acoes > * + * { margin-top: var(--esp-meio); }
 
 /* No celular a tabela da página Formulários empilha: cada linha vira um bloco (material, estado e
    ações um embaixo do outro), em vez de empurrar os botões para fora da tela. O cabeçalho sai da

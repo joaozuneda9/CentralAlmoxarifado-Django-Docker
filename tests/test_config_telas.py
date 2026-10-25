@@ -289,7 +289,14 @@ def test_excecao_acrescentar_retirar_e_restaurar(admin):
         f"{FITA} — FITA VEDA ROSCA deixou de ser oferecido em Ferramentas, peças e materiais."
     )
     linha = linhas_da_aba(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais", "q": "veda"}))
-    assert "retirado pelo administrador" in linha and "Voltar à regra" in linha
+    # Acrescentar já apaga a exceção (a regra dá o resultado): um botão só, sem "Voltar à regra".
+    assert "retirado pelo administrador" in linha and "Acrescentar" in linha
+    assert "Voltar à regra" not in linha
+    admin.post(EXCECAO, {**corpo, "codigo": FITA, "acao": "acrescentar"})
+    assert not ExcecaoMaterial.objects.exists()  # a regra já oferece: a exceção é apagada
+    ExcecaoMaterial.objects.create(
+        material=Material.objects.get(codigo=FITA), formulario="AB", habilitado=False
+    )
     r = admin.post(EXCECAO, {**corpo, "codigo": FITA, "acao": "restaurar"})
     assert not ExcecaoMaterial.objects.exists()
     assert "voltou à regra" in ultima_mensagem(r)
@@ -822,3 +829,16 @@ def test_coluna_de_acoes_tem_largura_propria_nas_duas_abas(admin, centros_de_fil
     assert '<td class="celula-acoes">' in materiais.text
     centros = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO"})
     assert '<td class="celula-acoes">' in centros.text
+
+
+def test_botoes_das_tabelas_tem_forma_e_cor_pelo_significado(admin, centros_de_filtro):
+    # Incluir é azul, inativar (afeta todos os formulários) é vermelho, reativar é verde; nenhum é
+    # só texto, e o "Editar" também é botão.
+    pagina = {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO"}
+    centros = admin.get(PAGINA, pagina).text
+    assert 'class="botao botao-secundario botao-perigo">Inativar</button>' in centros
+    assert 'class="botao botao-secundario botao-ok">Ativar</button>' in centros  # FILTRO GAMA
+    assert 'class="botao botao-secundario botao-destaque">Habilitar</button>' in centros
+    assert "botao-texto" not in centros.split("<tbody>")[1].split("</tbody>")[0]
+    materiais = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "materiais"}).text
+    assert 'botao-destaque">Acrescentar</button>' in materiais

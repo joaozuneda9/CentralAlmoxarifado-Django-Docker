@@ -85,7 +85,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
                 <button type="submit" class="botao botao-secundario">Desabilitar</button>
                 {% else %}
                 <input type="hidden" name="habilitado" value="1">
-                <button type="submit" class="botao botao-secundario">Habilitar{% if g.n_habilitadas %} todas{% endif %}</button>
+                <button type="submit" class="botao botao-secundario botao-destaque">Habilitar{% if g.n_habilitadas %} todas{% endif %}</button>
                 {% endif %}
               </form>
               <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
@@ -95,13 +95,13 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
                 {% for pk in g.ids %}<input type="hidden" name="centro" value="{{ pk }}">{% endfor %}
                 {% if g.n_inativas == g.linhas|length %}
                 <input type="hidden" name="ativo" value="1">
-                <button type="submit" class="botao botao-texto">Ativar</button>
+                <button type="submit" class="botao botao-secundario botao-ok">Ativar</button>
                 {% else %}
                 <input type="hidden" name="ativo" value="0">
-                <button type="submit" class="botao botao-texto">Inativar</button>
+                <button type="submit" class="botao botao-secundario botao-perigo">Inativar</button>
                 {% endif %}
               </form>
-              {% if pode_editar_centro %}<a class="botao botao-texto" href="{% url 'admin:catalogo_centrocusto_changelist' %}?q={{ g.descricao|urlencode }}">Editar</a>{% endif %}
+              {% if pode_editar_centro %}<a class="botao botao-secundario" href="{% url 'admin:catalogo_centrocusto_changelist' %}?q={{ g.descricao|urlencode }}">Editar</a>{% endif %}
             </td>
             {% endif %}
           </tr>
@@ -124,7 +124,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
                 {% include "catalogo/_centros_volta.html" %}
                 <input type="hidden" name="centro" value="{{ l.centro.pk }}">
                 <input type="hidden" name="habilitado" value="{% if l.habilitada %}0{% else %}1{% endif %}">
-                <button type="submit" class="botao botao-secundario">{% if l.habilitada %}Desabilitar{% else %}Habilitar{% endif %}</button>
+                <button type="submit" class="botao botao-secundario{% if not l.habilitada %} botao-destaque{% endif %}">{% if l.habilitada %}Desabilitar{% else %}Habilitar{% endif %}</button>
               </form>
               <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
@@ -132,9 +132,9 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
                 {% include "catalogo/_centros_volta.html" %}
                 <input type="hidden" name="centro" value="{{ l.centro.pk }}">
                 <input type="hidden" name="ativo" value="{% if l.centro.ativo %}0{% else %}1{% endif %}">
-                <button type="submit" class="botao botao-texto">{% if l.centro.ativo %}Inativar{% else %}Ativar{% endif %}</button>
+                <button type="submit" class="botao botao-secundario {% if l.centro.ativo %}botao-perigo{% else %}botao-ok{% endif %}">{% if l.centro.ativo %}Inativar{% else %}Ativar{% endif %}</button>
               </form>
-              {% if pode_editar_centro %}<a class="botao botao-texto" href="{% url 'admin:catalogo_centrocusto_change' l.centro.pk %}">Editar</a>{% endif %}
+              {% if pode_editar_centro %}<a class="botao botao-secundario" href="{% url 'admin:catalogo_centrocusto_change' l.centro.pk %}">Editar</a>{% endif %}
             </td>
             {% endif %}
           </tr>
