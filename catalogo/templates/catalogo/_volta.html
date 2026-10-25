@@ -1,0 +1,2 @@
+{% comment %}Os filtros e a página que uma gravação devolve ao redirecionar, para a lista voltar como estava. Recebe `volta` (nome → valor; vazio fica de fora).{% endcomment %}
+{% for nome, valor in volta.items %}{% if valor %}<input type="hidden" name="{{ nome }}" value="{{ valor }}">{% endif %}{% endfor %}

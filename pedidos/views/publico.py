@@ -194,5 +194,10 @@ def consulta_epi(request):
                 frase, motivo = texto_situacao_consulta(
                     numero, autorizacao.situacao, autorizacao.motivo
                 )
-                contexto.update(frase=frase, motivo=motivo, situacao=autorizacao.situacao)
+                contexto.update(
+                    frase=frase,
+                    motivo=motivo,
+                    situacao=autorizacao.situacao,
+                    rotulo=autorizacao.get_situacao_display(),
+                )
     return render(request, "pedidos/consulta_epi.html", contexto)

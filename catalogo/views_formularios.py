@@ -17,6 +17,7 @@ from django.db.models import Q
 from django.http import HttpResponseBadRequest
 from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
+from django.utils.cache import patch_vary_headers
 from django.views.decorators.http import require_POST
 
 from catalogo.acesso import exige, pode_alterar_centros, pode_alterar_materiais
@@ -42,7 +43,6 @@ from catalogo.forms import ESTADOS_DO_MATERIAL, FiltrosCentros, FiltrosMateriais
 from catalogo.models import (
     CentroCusto,
     CentroFormulario,
-    ExcecaoMaterial,
     Formulario,
     Material,
     ParDePara,
@@ -148,6 +148,13 @@ def _filtrar_centros(linhas, origem: str, filtros: dict, modo: str, habilitadas:
     return linhas
 
 
+def _acoes(ids: list[int], *, habilitar: bool, ativar: bool, todas: bool = False) -> dict:
+    """O que os botões de uma linha da aba Centros de custo fazem (`_centros_acoes.html`): os
+    centros que mandam e se habilitam ou desabilitam, ativam ou inativam. `todas` diz "Habilitar
+    todas" quando parte da descrição já é destino."""
+    return {"ids": ids, "habilitar": habilitar, "ativar": ativar, "todas": todas}
+
+
 def _contexto_centros(
     origem: str, filtros_centros: FiltrosCentros, usuario, numero_da_pagina=None
 ) -> dict:
@@ -168,18 +175,34 @@ def _contexto_centros(
     grupos = []
     for descricao, conjunto in groupby(linhas, key=lambda c: c.descricao):
         itens = [
-            {"centro": c, "habilitada": c.pk in habilitadas, "outros": outros.get(c.pk, [])}
+            {
+                "centro": c,
+                "habilitada": c.pk in habilitadas,
+                "outros": outros.get(c.pk, []),
+                "acoes": _acoes([c.pk], habilitar=c.pk not in habilitadas, ativar=not c.ativo),
+            }
             for c in conjunto
         ]
+        n_habilitadas = sum(1 for i in itens if i["habilitada"])
+        n_inativas = sum(1 for i in itens if not i["centro"].ativo)
+        todas_habilitadas = n_habilitadas == len(itens)
+        todas_inativas = n_inativas == len(itens)
         grupos.append(
             {
                 "descricao": descricao,
                 "linhas": itens,
                 "outros": list(dict.fromkeys(f for i in itens for f in i["outros"])),
                 "ids": [i["centro"].pk for i in itens],
-                "n_habilitadas": sum(1 for i in itens if i["habilitada"]),
-                "n_inativas": sum(1 for i in itens if not i["centro"].ativo),
+                "n_habilitadas": n_habilitadas,
+                "n_inativas": n_inativas,
+                "todas_inativas": todas_inativas,
                 "codigos": list(dict.fromkeys(i["centro"].codigo for i in itens)),
+                "acoes": _acoes(
+                    [i["centro"].pk for i in itens],
+                    habilitar=not todas_habilitadas,
+                    ativar=todas_inativas,
+                    todas=bool(n_habilitadas),
+                ),
             }
         )
     # A página mostra POR_PAGINA_CENTROS descrições por vez (as linhas de uma descrição ficam
@@ -188,7 +211,6 @@ def _contexto_centros(
     return {
         "grupos": list(pagina.object_list),
         "pagina_centros": pagina,
-        "modo": modo,
         "explicacao_do_modo": EXPLICACAO_DO_MODO[modo],
         "por_descricao": modo == MODO_SEM_PLACA,
         "total_linhas": sum(len(g["linhas"]) for g in grupos),
@@ -222,12 +244,12 @@ def _texto_do_estado(estado) -> dict:
     return {"nivel": selo[0], "selo": selo[1], "origem": origem}
 
 
-def _resumo_das_excecoes(origem: str) -> dict:
+def _resumo_das_excecoes(excecoes: dict[str, bool]) -> dict:
     """Quantas exceções de material o formulário tem e o que a restauração da regra padrão desfaz,
-    já em texto (só o que existe: sem "0 retirados")."""
-    excecoes = ExcecaoMaterial.objects.filter(formulario=origem)
-    acrescentados = excecoes.filter(habilitado=True).count()
-    retirados = excecoes.filter(habilitado=False).count()
+    já em texto (só o que existe: sem "0 retirados"). Recebe as exceções do formulário (código →
+    habilitado), as que `situacao_do_formulario` já carregou."""
+    acrescentados = sum(1 for habilitado in excecoes.values() if habilitado)
+    retirados = len(excecoes) - acrescentados
     resumo, efeito = [], []
     if acrescentados:
         s = "" if acrescentados == 1 else "s"
@@ -243,8 +265,6 @@ def _resumo_das_excecoes(origem: str) -> dict:
             f"{retirados} retirado{s} {'volta' if s == '' else 'voltam'} a ser oferecido{s}"
         )
     return {
-        "acrescentados": acrescentados,
-        "retirados": retirados,
         "total": acrescentados + retirados,
         "resumo": " e ".join(resumo),
         "efeito": " e ".join(efeito),
@@ -271,7 +291,6 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
                 "material": m,
                 "estado": estado,
                 "texto": _texto_do_estado(estado),
-                "tem_excecao": m.codigo in situacao.excecoes,
                 "saldo": qtd_br(truncar_qtd(m.estoque)),
                 "canonico": antigos.get(m.codigo, ""),
             }
@@ -282,17 +301,41 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
         "filtros_materiais": formulario_de_filtros,
         "filtros_ativos": filtros,
         "lote_query": urlencode({"formulario": origem, **filtros}),
+        "volta_materiais": {**filtros, "pagina": pagina.number if pagina.number > 1 else ""},
         "total_materiais": pagina.paginator.count,
         "pode_alterar_materiais": pode_alterar,
-        "excecoes_do_formulario": _resumo_das_excecoes(origem),
+        "excecoes_do_formulario": _resumo_das_excecoes(situacao.excecoes),
     }
+
+
+# Regiões que o HTMX carrega, pelo cabeçalho HX-Target (`tag#id` no HTMX 4): o painel da aba que
+# estava vazio na página e se abre pela primeira vez. A resposta é só o parcial da aba.
+REGIOES = {
+    "section#painel-centros": ("centros", "catalogo/_formularios_centros.html"),
+    "section#painel-materiais": ("materiais", "catalogo/_formularios_materiais.html"),
+}
+
+
+def _url_da_aba(request, origem: str, chave: str) -> str:
+    """O endereço de uma aba com os parâmetros atuais da URL (filtros e página das duas abas), para
+    o painel que ainda não veio na página (`hx-get`, e o link que funciona sem JavaScript)."""
+    parametros = {k: v for k in PARAMETROS_DA_VOLTA if (v := request.GET.get(k))}
+    parametros.update({"formulario": origem, "aba": chave})
+    return reverse("catalogo:formularios") + "?" + urlencode(parametros)
 
 
 @login_required
 def formularios(request):
+    """Só a aba ativa é calculada (a de Materiais, nos formulários AB e Viaturas, faz a curva ABC
+    inteira). A outra vem como um painel vazio que o HTMX preenche quando a aba abre."""
     origem = _formulario(request.GET.get("formulario")) or Formulario.LIMPEZA
     aba = request.GET.get("aba")
     aba = aba if aba in {chave for chave, _ in ABAS} else "materiais"
+    regiao = None
+    if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
+        regiao = REGIOES.get(request.headers.get("HX-Target", ""))
+    if regiao:
+        aba = regiao[0]
     usuario = request.user
     contexto = {
         "formulario": origem,
@@ -300,13 +343,21 @@ def formularios(request):
         "lista_de_formularios": [(f.value, f.label) for f in Formulario],
         "aba": aba,
         "abas": ABAS,
-        **_contexto_centros(
-            origem, FiltrosCentros(request.GET), usuario, request.GET.get("pagina_centros")
-        ),
-        **_contexto_materiais(request, origem, pode_alterar_materiais(usuario)),
+        "urls_das_abas": {chave: _url_da_aba(request, origem, chave) for chave, _ in ABAS},
         "pode_alterar_algo": pode_alterar_centros(usuario) or pode_alterar_materiais(usuario),
     }
-    return render(request, "catalogo/formularios.html", contexto)
+    if aba == "centros":
+        contexto.update(
+            _contexto_centros(
+                origem, FiltrosCentros(request.GET), usuario, request.GET.get("pagina_centros")
+            )
+        )
+    else:
+        contexto.update(_contexto_materiais(request, origem, pode_alterar_materiais(usuario)))
+    modelo = regiao[1] if regiao else "catalogo/formularios.html"
+    resposta = render(request, modelo, contexto)
+    patch_vary_headers(resposta, ["HX-Request", "HX-Target", "HX-History-Restore-Request"])
+    return resposta
 
 
 # --- Gravações ---------------------------------------------------------------------------------

@@ -6,7 +6,7 @@
 {% block voltar %}<a class="link-voltar" href="{% url 'catalogo:formularios' %}?aba=materiais">{% include "interface/_icone.html" with nome="seta-esquerda" %}Voltar aos formulários</a>{% endblock %}
 {% block rotulo %}Onde aparece{% endblock %}
 {% block heading %}{{ material.nome }}{% endblock %}
-{% block sub %}<span class="mono">{{ material.codigo }}</span>{% if material.unidade %} · {{ material.unidade }}{% endif %}{% if material.grupo %} · {{ material.grupo }}{% if material.subgrupo %} › {{ material.subgrupo }}{% endif %}{% endif %} · saldo {{ saldo }}{% endblock %}
+{% block sub %}{% include "catalogo/_material_info.html" %}{% endblock %}
 
 {% block page %}
 {% comment %}
@@ -37,9 +37,7 @@ quem pode alterar faz isso na lista de materiais de cada formulário.
           <tr data-formulario="{{ l.origem }}">
             <td>{{ l.nome }}</td>
             <td>
-              <span class="selo selo-{{ l.texto.nivel }}">{{ l.texto.selo }}</span>
-              <span class="material-info texto-suave">{{ l.texto.origem }}</span>
-              {% if l.estado.sem_efeito %}<span class="material-info"><span class="selo selo-neutro">Exceção sem efeito</span> a regra já dá este resultado.</span>{% endif %}
+              {% include "catalogo/_material_estado.html" %}
             </td>
             <td><a class="botao botao-texto" href="{{ l.url }}">Ver na lista</a></td>
           </tr>

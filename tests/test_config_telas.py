@@ -6,6 +6,7 @@ from urllib.parse import parse_qs, urlparse
 import pytest
 from django.urls import reverse
 
+from catalogo import views_formularios
 from catalogo.models import (
     CentroCusto,
     CentroFormulario,
@@ -62,8 +63,9 @@ def test_a_pagina_abre_no_primeiro_formulario_e_mostra_as_duas_abas(admin):
 
 def test_filtros_das_duas_abas_se_aplicam_sozinhos_com_javascript(admin):
     # O botão "Filtrar" só existe sem JavaScript; com ele, o filtros.js envia ao mudar um campo.
-    r = admin.get(PAGINA)
-    assert len(re.findall(r'<form class="filtros"[^>]*data-filtros-auto>', r.text)) == 2
+    for aba in ("centros", "materiais"):
+        r = admin.get(PAGINA, {"aba": aba})
+        assert len(re.findall(r'<form class="filtros"[^>]*data-filtros-auto>', r.text)) == 1
 
 
 def test_acoes_por_linha_mantem_a_rolagem_ao_voltar(admin):
@@ -74,13 +76,13 @@ def test_acoes_por_linha_mantem_a_rolagem_ao_voltar(admin):
 
 
 def test_formulario_invalido_volta_ao_primeiro_sem_erro(admin):
-    r = admin.get(PAGINA, {"formulario": "AVULSA"})
+    r = admin.get(PAGINA, {"formulario": "AVULSA", "aba": "centros"})
     assert r.status_code == 200 and "Destinos de Limpeza, copa e escritório" in r.text
 
 
 @pytest.mark.parametrize("formulario", Formulario.values)
 def test_cada_um_dos_cinco_formularios_abre(admin, formulario):
-    r = admin.get(PAGINA, {"formulario": formulario})
+    r = admin.get(PAGINA, {"formulario": formulario, "aba": "centros"})
     assert r.status_code == 200
     assert f"Destinos de {Formulario(formulario).label}" in r.text
     assert f"formulario={formulario}" in r.text  # a URL das abas leva o formulário
@@ -91,6 +93,60 @@ def test_a_aba_vem_da_url_e_o_padrao_e_materiais(admin):
     assert f'{ativa}materiais"' in admin.get(PAGINA).text
     assert f'{ativa}centros"' in admin.get(PAGINA, {"aba": "centros"}).text
     assert f'{ativa}materiais"' in admin.get(PAGINA, {"aba": "nada"}).text
+
+
+def test_a_aba_centros_nao_calcula_a_de_materiais(admin, monkeypatch):
+    def falha(*args, **kwargs):
+        raise AssertionError("a aba Materiais não deve ser calculada")
+
+    monkeypatch.setattr(views_formularios, "situacao_do_formulario", falha)
+    monkeypatch.setattr(views_formularios, "_contexto_materiais", falha)
+    r = admin.get(PAGINA, {"formulario": "AB", "aba": "centros"})
+    assert r.status_code == 200
+    assert "Destinos de" in r.text and 'id="painel-materiais"' in r.text
+    assert "Abrir a aba Materiais" in r.text
+
+
+def test_a_aba_materiais_nao_calcula_a_de_centros(admin, monkeypatch):
+    def falha(*args, **kwargs):
+        raise AssertionError("a aba Centros não deve ser calculada")
+
+    monkeypatch.setattr(views_formularios, "_contexto_centros", falha)
+    r = admin.get(PAGINA, {"aba": "materiais"})
+    assert r.status_code == 200
+    assert "Abrir a aba Centros de custo" in r.text and "Destinos de" not in r.text
+
+
+def test_o_painel_vazio_carrega_pelo_htmx_com_os_parametros_da_url(admin):
+    r = admin.get(PAGINA, {"aba": "materiais", "formulario": "AB", "qc": "novo", "q": "fita"})
+    painel = re.search(r'<section[^>]*id="painel-centros"[^>]*>', r.text).group(0)
+    # Sem `once`: o pedido só dispara enquanto o painel vazio está à vista, então uma falha na
+    # primeira abertura não impede a nova tentativa, e depois de carregado ele não pede mais.
+    assert "hx-trigger=\"abas:ativada[this.querySelector('.aba-vazia')]\"" in painel
+    assert 'class="cartao pilha aba-vazia"' in r.text
+    url = re.search(r'hx-get="([^"]+)"', painel).group(1).replace("&amp;", "&")
+    consulta = parse_qs(urlparse(url).query)
+    assert urlparse(url).path == PAGINA
+    assert consulta == {"formulario": ["AB"], "aba": ["centros"], "qc": ["novo"], "q": ["fita"]}
+    # o painel da aba ativa não tem hx-get
+    assert "hx-get" not in re.search(r'<section[^>]*id="painel-materiais"[^>]*>', r.text).group(0)
+    # sem JavaScript, o mesmo endereço é um link comum
+    assert f'href="{url.replace("&", "&amp;")}"' in r.text
+
+
+def test_o_htmx_com_o_alvo_da_aba_devolve_so_o_parcial(admin):
+    dados = {"formulario": "AB", "aba": "materiais"}
+    alvo_centros = {"HX-Request": "true", "HX-Target": "section#painel-centros"}
+    alvo_materiais = {"HX-Request": "true", "HX-Target": "section#painel-materiais"}
+    r = admin.get(PAGINA, dados, headers=alvo_centros)
+    assert r.status_code == 200
+    assert "<html" not in r.text and "Destinos de" in r.text
+    assert "HX-Target" in r["Vary"]
+    r = admin.get(PAGINA, {**dados, "aba": "centros"}, headers=alvo_materiais)
+    assert "<html" not in r.text and "Destinos de" not in r.text and "filtros" in r.text
+    # ao restaurar o histórico o HTMX também manda HX-Request, mas quer a página inteira
+    r = admin.get(PAGINA, dados, headers={**alvo_centros, "HX-History-Restore-Request": "true"})
+    assert "<html" in r.text
 
 
 def test_a_pagina_exige_login(client):

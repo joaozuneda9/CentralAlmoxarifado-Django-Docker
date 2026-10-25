@@ -123,7 +123,11 @@ def _dados_do_atendimento(post) -> tuple[DadosSaida, bool]:
 
 def _pedido(numero):
     consulta = Pedido.objects.select_related(
-        "atendimento", "atendimento__atendido_por", "registrado_por", "autorizacao"
+        "atendimento",
+        "atendimento__atendido_por",
+        "registrado_por",
+        "autorizacao",
+        "autorizacao__decidido_por",
     ).prefetch_related("itens", "atendimento__linhas")
     return get_object_or_404(consulta, numero=numero)
 

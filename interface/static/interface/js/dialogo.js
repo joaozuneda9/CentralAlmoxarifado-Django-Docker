@@ -13,14 +13,20 @@
 (function () {
   "use strict";
 
-  document.addEventListener("DOMContentLoaded", function () {
+  // Também roda no que o HTMX troca (aba carregada depois): só mexe no que ainda não foi preparado,
+  // para não fechar um diálogo que o usuário já abriu.
+  function preparar() {
     document.querySelectorAll("[data-abrir-dialogo][hidden]").forEach(function (b) {
       b.hidden = false;
     });
-    document.querySelectorAll("dialog.dialogo-confirmacao[open]").forEach(function (d) {
-      d.close();
+    document.querySelectorAll("dialog.dialogo-confirmacao:not([data-dialogo-pronto])").forEach(function (d) {
+      d.setAttribute("data-dialogo-pronto", "");
+      if (d.open) d.close();
     });
-  });
+  }
+
+  document.addEventListener("DOMContentLoaded", preparar);
+  document.addEventListener("htmx:after:swap", preparar);
 
   document.addEventListener("click", function (e) {
     var alvo = e.target;

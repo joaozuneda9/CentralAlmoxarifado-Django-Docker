@@ -1,0 +1,20 @@
+{% comment %}
+Os botões de uma linha da aba Centros de custo: habilitar ou desabilitar como destino e ativar ou
+inativar. Recebe `a` (`ids`, `habilitar`, `ativar` e `todas`, montados em `_contexto_centros`).
+{% endcomment %}
+<form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
+  {% csrf_token %}
+  <input type="hidden" name="formulario" value="{{ formulario }}">
+  {% include "catalogo/_volta.html" with volta=volta_centros %}
+  {% for pk in a.ids %}<input type="hidden" name="centro" value="{{ pk }}">{% endfor %}
+  <input type="hidden" name="habilitado" value="{% if a.habilitar %}1{% else %}0{% endif %}">
+  <button type="submit" class="botao botao-secundario{% if a.habilitar %} botao-destaque{% endif %}">{% if a.habilitar %}Habilitar{% if a.todas %} todas{% endif %}{% else %}Desabilitar{% endif %}</button>
+</form>
+<form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
+  {% csrf_token %}
+  <input type="hidden" name="formulario" value="{{ formulario }}">
+  {% include "catalogo/_volta.html" with volta=volta_centros %}
+  {% for pk in a.ids %}<input type="hidden" name="centro" value="{{ pk }}">{% endfor %}
+  <input type="hidden" name="ativo" value="{% if a.ativar %}1{% else %}0{% endif %}">
+  <button type="submit" class="botao botao-secundario {% if a.ativar %}botao-ok{% else %}botao-perigo{% endif %}">{% if a.ativar %}Ativar{% else %}Inativar{% endif %}</button>
+</form>

@@ -218,11 +218,11 @@ class Fila:
 
 def fila_de_autorizacao() -> QuerySet:
     """Os pedidos de EPI que aguardam a decisão da Segurança do Trabalho, do mais antigo para o
-    mais novo (spec 008, FR-011). Uma consulta, com os itens e o pedido já carregados."""
+    mais novo (spec 008, FR-011). Uma consulta, com o pedido e o número de itens (`n_itens`)."""
     return (
         AutorizacaoPedido.objects.filter(situacao=AutorizacaoPedido.Situacao.AGUARDANDO)
         .select_related("pedido")
-        .prefetch_related("pedido__itens")
+        .annotate(n_itens=Count("pedido__itens"))
         .order_by("pedido__criado_em", "pedido__numero")
     )
 

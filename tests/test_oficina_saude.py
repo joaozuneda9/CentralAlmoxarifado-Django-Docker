@@ -34,6 +34,18 @@ def test_disponivel_conta_os_materiais():
     assert situacao_do_catalogo().oficina == 3
 
 
+def test_cartoes_da_visao_geral_seguem_os_formularios():
+    """Um cartão por formulário público; os avulsos da oficina e dos EPIs são acrescentados na
+    página Formulários (spec 009), não mais num cadastro do admin."""
+    cartoes = {c.titulo: c for c in situacao_do_catalogo().cartoes}
+    assert len(cartoes) == 5
+    oficina = cartoes[FORMULARIO]
+    assert (oficina.total, oficina.unidade) == (3, "materiais")
+    for titulo in (FORMULARIO, "Formulário de EPIs"):
+        assert "página Formulários" in cartoes[titulo].dica
+        assert "Cadastros" not in cartoes[titulo].dica
+
+
 def test_sem_destino_fica_indisponivel():
     CentroCusto.objects.all().delete()
     assert texto_de(FORMULARIO) == ItemSaude(

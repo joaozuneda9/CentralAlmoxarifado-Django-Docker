@@ -70,43 +70,16 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
           <tr id="centro-{{ g.ids.0 }}">
             <td>{{ g.descricao }} <span class="mono texto-suave">{{ g.codigos|join:", " }}</span></td>
             <td>{{ g.linhas|length }}</td>
-            <td>{% if g.n_inativas == g.linhas|length %}<span class="selo selo-neutro">Inativo</span>{% elif g.n_inativas %}<span class="selo selo-aviso">{{ g.n_inativas }} inativa{{ g.n_inativas|pluralize }}</span>{% else %}<span class="selo selo-ok">Ativo</span>{% endif %}</td>
+            <td>{% if g.todas_inativas %}<span class="selo selo-neutro">Inativo</span>{% elif g.n_inativas %}<span class="selo selo-aviso">{{ g.n_inativas }} inativa{{ g.n_inativas|pluralize }}</span>{% else %}<span class="selo selo-ok">Ativo</span>{% endif %}</td>
             <td>{% if g.n_habilitadas %}<span class="selo selo-ok">Destino{% if g.n_habilitadas != g.linhas|length %} ({{ g.n_habilitadas }} de {{ g.linhas|length }}){% endif %}</span>{% else %}<span class="selo selo-neutro">Não é destino</span>{% endif %}
               {% if g.outros %}<span class="material-info texto-suave">Também em: {{ g.outros|join:", " }}</span>{% endif %}</td>
             {% if pode_alterar_centros %}
             <td class="celula-acoes">
-              <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
-                {% csrf_token %}
-                <input type="hidden" name="formulario" value="{{ formulario }}">
-                {% include "catalogo/_centros_volta.html" %}
-                {% for pk in g.ids %}<input type="hidden" name="centro" value="{{ pk }}">{% endfor %}
-                {% if g.n_habilitadas == g.linhas|length %}
-                <input type="hidden" name="habilitado" value="0">
-                <button type="submit" class="botao botao-secundario">Desabilitar</button>
-                {% else %}
-                <input type="hidden" name="habilitado" value="1">
-                <button type="submit" class="botao botao-secundario botao-destaque">Habilitar{% if g.n_habilitadas %} todas{% endif %}</button>
-                {% endif %}
-              </form>
-              <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
-                {% csrf_token %}
-                <input type="hidden" name="formulario" value="{{ formulario }}">
-                {% include "catalogo/_centros_volta.html" %}
-                {% for pk in g.ids %}<input type="hidden" name="centro" value="{{ pk }}">{% endfor %}
-                {% if g.n_inativas == g.linhas|length %}
-                <input type="hidden" name="ativo" value="1">
-                <button type="submit" class="botao botao-secundario botao-ok">Ativar</button>
-                {% else %}
-                <input type="hidden" name="ativo" value="0">
-                <button type="submit" class="botao botao-secundario botao-perigo">Inativar</button>
-                {% endif %}
-              </form>
+              {% include "catalogo/_centros_acoes.html" with a=g.acoes %}
               {% if pode_editar_centro %}<a class="botao botao-secundario" href="{% url 'admin:catalogo_centrocusto_changelist' %}?q={{ g.descricao|urlencode }}">Editar</a>{% endif %}
             </td>
             {% endif %}
           </tr>
-          {% empty %}
-          <tr class="tabela-vazia"><td colspan="{% if pode_alterar_centros %}5{% else %}4{% endif %}">Nenhum centro de custo encontrado.</td></tr>
           {% endfor %}
         {% else %}
           {% for g in grupos %}{% for l in g.linhas %}
@@ -118,29 +91,15 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
               {% if l.outros %}<span class="material-info texto-suave">Também em: {{ l.outros|join:", " }}</span>{% endif %}</td>
             {% if pode_alterar_centros %}
             <td class="celula-acoes">
-              <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
-                {% csrf_token %}
-                <input type="hidden" name="formulario" value="{{ formulario }}">
-                {% include "catalogo/_centros_volta.html" %}
-                <input type="hidden" name="centro" value="{{ l.centro.pk }}">
-                <input type="hidden" name="habilitado" value="{% if l.habilitada %}0{% else %}1{% endif %}">
-                <button type="submit" class="botao botao-secundario{% if not l.habilitada %} botao-destaque{% endif %}">{% if l.habilitada %}Desabilitar{% else %}Habilitar{% endif %}</button>
-              </form>
-              <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
-                {% csrf_token %}
-                <input type="hidden" name="formulario" value="{{ formulario }}">
-                {% include "catalogo/_centros_volta.html" %}
-                <input type="hidden" name="centro" value="{{ l.centro.pk }}">
-                <input type="hidden" name="ativo" value="{% if l.centro.ativo %}0{% else %}1{% endif %}">
-                <button type="submit" class="botao botao-secundario {% if l.centro.ativo %}botao-perigo{% else %}botao-ok{% endif %}">{% if l.centro.ativo %}Inativar{% else %}Ativar{% endif %}</button>
-              </form>
+              {% include "catalogo/_centros_acoes.html" with a=l.acoes %}
               {% if pode_editar_centro %}<a class="botao botao-secundario" href="{% url 'admin:catalogo_centrocusto_change' l.centro.pk %}">Editar</a>{% endif %}
             </td>
             {% endif %}
           </tr>
-          {% endfor %}{% empty %}
+          {% endfor %}{% endfor %}
+        {% endif %}
+        {% if not grupos %}
           <tr class="tabela-vazia"><td colspan="{% if pode_alterar_centros %}5{% else %}4{% endif %}">Nenhum centro de custo encontrado.</td></tr>
-          {% endfor %}
         {% endif %}
       </tbody>
     </table>
