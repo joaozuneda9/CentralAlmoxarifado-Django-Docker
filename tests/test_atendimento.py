@@ -116,14 +116,12 @@ def test_placa_de_outro_centro_e_recusada_e_a_do_proprio_centro_passa(pedido, us
     assert set(LinhaSaida.objects.values_list("placa", flat=True)) == {"ABC1D23"}
 
 
-def test_ab_so_inteiros(usuario):
+def test_ab_aceita_fracao_na_entrega(usuario):
+    """A equipe aceita fração em qualquer unidade, também nos pedidos do AB (spec 005)."""
     montar_cenario()
     p = registrar(AB, envio_ab()).pedido
     r = atender(p, usuario, qtds={"016.005.010": "1,5"})
-    assert textos(r) == [
-        "Quantidade inválida para 016.005.010.",
-        "Informe ao menos um material com quantidade maior que zero.",
-    ]
+    assert r.ok, textos(r)
 
 
 def test_nao_lancar(pedido, usuario):
@@ -242,9 +240,9 @@ def test_area_interna_mostra_a_unidade_do_scpi(client, pedido, logado):
     texto = client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
     linha = re.search(r"<tr>(?:(?!</tr>).)*?008\.001\.002.*?</tr>", texto, re.S).group(0)
     assert "Pacote 500 g" not in linha
-    assert '<span class="recibo-un">UN</span>' in linha
-    assert '<span class="entrega-un" aria-hidden="true">UN</span>' in linha
-    assert 'aria-label="Quantidade entregue de CAFÉ 500 G, em UN"' in linha
+    assert '<span class="recibo-un">KG</span>' in linha
+    assert '<span class="entrega-un" aria-hidden="true">KG</span>' in linha
+    assert 'aria-label="Quantidade entregue de CAFÉ 500 G, em KG"' in linha
     assert "data-entrega-confirmar" in linha and "data-entrega-alterar" in linha
 
 

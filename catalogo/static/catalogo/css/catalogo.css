@@ -70,6 +70,8 @@
 /* Números dos formulários. */
 .formularios .cartao { display: grid; align-content: start; gap: var(--esp-meio); }
 .formularios p { margin: 0; }
+/* Três formulários públicos (limpeza, AB e viaturas): três colunas onde há largura. */
+.formularios { grid-template-columns: repeat(auto-fit, minmax(220px, 1fr)); }
 .metrica { font-family: var(--fonte-titulo); font-size: 1.6em; font-weight: 600; letter-spacing: -0.02em; font-variant-numeric: tabular-nums; }
 @media (max-width: 640px) { .formularios { grid-template-columns: minmax(0, 1fr); } }
 
@@ -118,3 +120,53 @@
 .opcao-modo .campo-dica { display: block; margin-top: 2px; }
 .aviso .campo-dica { display: block; margin-top: 2px; }
 .aviso[hidden] { display: none; }
+
+/* Formulários (spec 009): o seletor de formulário em botões que quebram de linha, e a tabela de
+   materiais com a informação do material embaixo do nome. */
+.formularios-seletor { display: grid; gap: var(--esp-2); }
+.formularios-seletor .rotulo-secao { margin: 0; }
+/* Botões iguais em grade: no celular ficam em duas colunas (não empilham cinco botões largos) e o
+   texto longo quebra dentro do botão. */
+.formularios-seletor-lista { list-style: none; margin: 0; padding: 0; display: grid; grid-template-columns: repeat(auto-fit, minmax(8.5rem, 1fr)); gap: var(--esp-1); }
+.formularios-seletor-lista .botao { width: 100%; height: 100%; text-align: center; white-space: normal; }
+.formularios-seletor .aviso { margin: 0; }
+.tabela td .material-info { margin-top: var(--esp-meio); }
+/* Contraste: o cinza "suave" do design (2,5:1 sobre branco) não serve para o que se lê aqui (cabeçalhos,
+   códigos, placas, origem); estas tabelas e o rótulo do seletor usam o cinza secundário (5,6:1). */
+.tabela-config th, .tabela-config .texto-suave, .formularios-seletor .rotulo-secao { color: var(--texto-secundario); }
+.tabela td .acoes { flex-wrap: nowrap; gap: var(--esp-1); }
+/* Coluna de ações de largura fixa: ela não muda de tamanho conforme a linha tem um botão ou dois
+   ("Retirar" e "Voltar à regra" ficam um embaixo do outro, da mesma largura). */
+/* No computador as colunas têm largura fixa (a do nome sobra): com a largura automática, o conteúdo da
+   página (um "acrescentado pelo administrador" mais longo, por exemplo) mexia nas colunas de uma
+   página para outra e depois de cada gravação. */
+@media (min-width: 641px) {
+  .tabela-config { table-layout: fixed; }
+  .tabela-config .col-placa { width: 6.5rem; }
+  .tabela-config .col-estado { width: 5.5rem; }
+  .tabela-config .col-situacao { width: 12rem; }
+  .tabela-config .col-situacao-larga { width: 16rem; }
+  .tabela-config .col-acoes { width: 9.5rem; }
+}
+.tabela-config .celula-acoes .acoes { flex-direction: column; align-items: stretch; gap: var(--esp-meio); }
+/* Os botões da célula têm o mesmo tamanho (compacto) e a largura da coluna; o link "Editar" também. */
+.tabela-config .celula-acoes .botao { display: flex; width: 100%; min-height: 32px; padding: 4px var(--esp-1); }
+.tabela-config .celula-acoes > * + * { margin-top: var(--esp-meio); }
+
+/* No celular a tabela da página Formulários empilha: cada linha vira um bloco (material, estado e
+   ações um embaixo do outro), em vez de empurrar os botões para fora da tela. O cabeçalho sai da
+   vista (o `<th>` segue para o leitor de tela). */
+@media (max-width: 640px) {
+  .tabela-config, .tabela-config tbody, .tabela-config tr, .tabela-config td { display: block; width: 100%; }
+  .tabela-config thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
+  .tabela-config tbody tr { padding: var(--esp-2) 0; border-top: 1px solid var(--borda); }
+  .tabela-config tbody tr:first-child { border-top: 0; }
+  .tabela-config td { padding: var(--esp-meio) 0; border-bottom: 0; }
+  .tabela-config .tabela-vazia td { text-align: left; }
+  .tabela-config td .acoes { flex-wrap: wrap; }
+}
+
+/* Restaurar a regra padrão de um formulário (aba Materiais): o resumo das exceções e, embaixo, o botão
+   que abre o diálogo de confirmação (componentes.css, "Diálogo de confirmação"). */
+.regra-padrao { display: grid; gap: var(--esp-1); justify-items: start; }
+.regra-padrao > p { margin: 0; }

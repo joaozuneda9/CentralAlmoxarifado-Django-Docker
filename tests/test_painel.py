@@ -207,8 +207,15 @@ def test_atalhos_sao_cartoes_com_contador_e_o_cabecalho_fica_sem_botoes(client, 
     texto, atalhos = _atalhos(client)
     assert re.findall(r'<p class="atalho-numero">([0-9]+)</p>', atalhos) == ["1", "2", "1"]
     assert atalhos.count("atalho-pendente") == 3
-    assert f"{reverse('pedidos:painel')}?situacao=aguardando" in atalhos
-    assert f"{reverse('pedidos:painel')}?recibo=pendente" in atalhos
+    # Os atalhos que filtram a lista abrem a página rolada até ela (`#pedidos`).
+    assert f"{reverse('pedidos:painel')}?situacao=aguardando#pedidos" in atalhos
+    assert f"{reverse('pedidos:painel')}?recibo=pendente#pedidos" in atalhos
+    assert 'id="pedidos"' in client.get(reverse("pedidos:painel")).text
+    # Os dois chegam com a lista à vista (rolagem animada) e o painel de filtros recolhido.
+    assert (
+        atalhos.count('data-rolar-ate="pedidos" data-destacar="lista-pedidos" data-fechar-filtros')
+        == 2
+    )
     for rota in ("automacoes:lancar", "pedidos:avulsa"):
         assert reverse(rota) in atalhos
     cabecalho = texto[texto.index("<header") : texto.index("</header>")]
@@ -260,3 +267,39 @@ def test_lancar_fica_desabilitado_com_execucao_em_andamento(client, logado):
     ExecucaoRobo.objects.create(log="10:00:01")
     _, atalhos = _atalhos(client)
     assert _botao_desabilitado(atalhos, "Lançar no SCPI")
+
+
+def test_filtros_de_situacao_concordam_com_a_autorizacao_da_seguranca_do_trabalho():
+    """Pedido de EPI: aguardando ou recusado não é "aguardando atendimento" em lugar nenhum
+    (spec 008); autorizado segue a regra de sempre (e a sem autorização não muda)."""
+    from pedidos.models import AutorizacaoPedido
+
+    usuario = get_user_model().objects.create_user(username="70001", password="x")
+    for situacao, atendido in [
+        (None, False),
+        (None, True),
+        ("AGUARDANDO", False),
+        ("RECUSADO", False),
+        ("AUTORIZADO", False),
+        ("AUTORIZADO", True),
+    ]:
+        pedido = criar_pedido(origem="EPIS" if situacao else AB, atendido=atendido)
+        if situacao:
+            decidido = situacao != "AGUARDANDO"
+            AutorizacaoPedido.objects.create(
+                pedido=pedido,
+                situacao=situacao,
+                decidido_por=usuario if decidido else None,
+                decidido_em=timezone.now() if decidido else None,
+                motivo="Sem laudo" if situacao == "RECUSADO" else "",
+            )
+    todos = list(Pedido.objects.all())
+    chaves = {p.situacao.chave for p in todos}
+    assert {"aguardando_autorizacao", "recusado"} <= chaves
+    for chave, _ in OPCOES_SITUACAO:
+        esperado = {p for p in todos if p.situacao.chave == chave}
+        assert set(filtrar_situacao(Pedido.objects.all(), chave)) == esperado, chave
+    # Quem aguarda ou foi recusado não aparece em filtro de situação algum.
+    for chave, _ in OPCOES_SITUACAO:
+        achados = {p.situacao.chave for p in filtrar_situacao(Pedido.objects.all(), chave)}
+        assert not achados & {"aguardando_autorizacao", "recusado"}

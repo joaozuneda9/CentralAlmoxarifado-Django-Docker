@@ -8,6 +8,7 @@ $global:AlmoxTesteRevision = ''
 $global:AlmoxTesteServicos = @()
 $global:AlmoxTesteFalhar = ''
 $global:AlmoxTesteToken = ''
+$global:AlmoxTesteChatSeguranca = ''
 $global:AlmoxTesteDigest = 'ghcr.io/joaozuneda8/centralalmoxarifado-django-docker@sha256:' + ('a' * 64)
 
 function docker {
@@ -22,7 +23,8 @@ function docker {
     if ($linha -eq 'context show') { return 'desktop-linux' }
     if ($linha.Contains('config --format json')) {
         $vars = @{ LANCAMENTO_REAL = '0'; DEBUG = '0'; USAR_HTTPS = '1'; PROXY_HTTPS = '1'
-            TELEGRAM_TOKEN = $global:AlmoxTesteToken }
+            TELEGRAM_TOKEN = $global:AlmoxTesteToken
+            TELEGRAM_CHAT_ID_SEGURANCA = $global:AlmoxTesteChatSeguranca }
         return (@{
             name = $env:PROJETO_COMPOSE
             services = @{
@@ -137,6 +139,10 @@ try {
     $global:AlmoxTesteToken = 'token-que-nao-pode-enviar'
     Recusa { Executar -Aplicar } 'integracoes vazias'
     $global:AlmoxTesteToken = ''
+    # O chat da Seguranca do Trabalho (spec 008) tambem conta como integracao.
+    $global:AlmoxTesteChatSeguranca = '-100123'
+    Recusa { Executar -Aplicar } 'integracoes vazias'
+    $global:AlmoxTesteChatSeguranca = ''
     $global:AlmoxTesteRevision = 'b' * 40
     $falhou = $false
     try { Executar -Aplicar } catch { $falhou = $_.Exception.Message -like '*revisao*' }

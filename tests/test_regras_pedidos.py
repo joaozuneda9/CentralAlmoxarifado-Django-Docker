@@ -18,8 +18,7 @@ from pedidos.regras import (
     qtd_br,
     resolver_destino,
     somar_por_codigo,
-    validar_pedido_ab,
-    validar_pedido_limpeza,
+    validar_pedido,
 )
 
 
@@ -34,6 +33,7 @@ def material(codigo, estoque, **extra):
         "estoque": estoque,
         "disponivel": estoque_inteiro(estoque),
         "duplicado": False,
+        "fracionavel": False,
     }
     campos.update(extra)
     return ItemCatalogo(**campos)
@@ -45,10 +45,22 @@ CATALOGO_AB = [
     material("003.000.000", Decimal(0)),
     material("004.000.025", Decimal("2.5")),
     material("006.000.006", Decimal(10), duplicado=True),
+    # Unidade de medida (fracionável): o teto é o saldo truncado a 3 casas.
+    material("005.000.001", Decimal("7.5"), unidade="M", fracionavel=True),
+    material("007.000.007", Decimal("2.4996"), unidade="M", fracionavel=True),
 ]
 
 CATALOGO_LIMPEZA = [
-    material("023.001.002", Decimal(0), nome="DETERGENTE", categoria="Limpeza"),
+    material("023.001.002", Decimal(10), nome="DETERGENTE", categoria="Limpeza"),
+    material(
+        "023.002.002",
+        Decimal("2.5"),
+        nome="CAFÉ",
+        categoria="Copa/cozinha",
+        unidade="KG",
+        fracionavel=True,
+    ),
+    material("023.003.003", Decimal(0), nome="SACO", categoria="Limpeza"),
     material("023.009.009", Decimal(0), nome="SABÃO", duplicado=True),
 ]
 CENTROS = [
@@ -78,62 +90,96 @@ def textos(r):
     return [e.texto for e in r.erros]
 
 
+def valida_ab(*pares, **extra):
+    return validar_pedido(ab(*pares, **extra), CATALOGO_AB, CENTROS)
+
+
+def valida_limpeza(*pares, **extra):
+    return validar_pedido(limpeza(*pares, **extra), CATALOGO_LIMPEZA, CENTROS)
+
+
 def test_ab_pedido_valido_com_dois_grupos_e_aceito():
-    r = validar_pedido_ab(ab(("001.000.010", "2"), ("002.000.005", "1")), CATALOGO_AB, CENTROS)
+    r = valida_ab(("001.000.010", "2"), ("002.000.005", "1"))
     assert not r.erros and len(r.validos) == 2
 
 
 def test_ab_quantidade_igual_ao_estoque_passa_e_um_a_mais_e_recusado():
-    assert not validar_pedido_ab(ab(("001.000.010", "10")), CATALOGO_AB, CENTROS).erros
-    r = validar_pedido_ab(ab(("001.000.010", "11")), CATALOGO_AB, CENTROS)
-    assert textos(r) == ["MATERIAL 001.000.010 (001.000.010): pedido 11 UN, estoque atual 10 UN."]
+    assert not valida_ab(("001.000.010", "10")).erros
+    r = valida_ab(("001.000.010", "11"))
+    assert textos(r) == [
+        "MATERIAL 001.000.010 (001.000.010): Quantidade acima do estoque. "
+        "Estoque disponível: 10 UN."
+    ]
     assert r.estoque_atual == {"001.000.010": 10}
 
 
 @pytest.mark.parametrize("q", [Decimal("1.5"), "1.5", "1,5", 0, -1, "abc", "", None, "1000000"])
-def test_ab_quantidade_nao_inteira_ou_nao_positiva_e_recusada(q):
-    assert len(validar_pedido_ab(ab(("001.000.010", q)), CATALOGO_AB, CENTROS).erros) == 1
+def test_ab_quantidade_nao_inteira_ou_nao_positiva_e_recusada_em_material_contado(q):
+    assert len(valida_ab(("001.000.010", q)).erros) == 1
 
 
 def test_ab_aceita_texto_inteiro():
-    r = validar_pedido_ab(ab(("001.000.010", "3")), CATALOGO_AB, CENTROS)
+    r = valida_ab(("001.000.010", "3"))
     assert r.validos[0].quantidade == 3
     assert r.validos[0].material is CATALOGO_AB[0]
 
 
-def test_ab_estoque_fracionado_limita_a_parte_inteira():
-    assert not validar_pedido_ab(ab(("004.000.025", "2")), CATALOGO_AB, CENTROS).erros
-    assert len(validar_pedido_ab(ab(("004.000.025", "3")), CATALOGO_AB, CENTROS).erros) == 1
-    assert textos(validar_pedido_ab(ab(("003.000.000", "1")), CATALOGO_AB, CENTROS)) == [
-        "MATERIAL 003.000.000 (003.000.000) está sem estoque."
+def test_ab_estoque_fracionado_de_unidade_contada_limita_a_parte_inteira():
+    assert not valida_ab(("004.000.025", "2")).erros
+    assert len(valida_ab(("004.000.025", "3")).erros) == 1
+    assert textos(valida_ab(("003.000.000", "1"))) == [
+        "MATERIAL 003.000.000 (003.000.000): Sem estoque."
+    ]
+
+
+def test_ab_aceita_fracao_em_unidade_de_medida_ate_o_saldo_truncado():
+    ok = valida_ab(("005.000.001", "7,5"))
+    assert not ok.erros and ok.validos[0].quantidade == Decimal("7.5")
+    assert textos(valida_ab(("005.000.001", "7,6"))) == [
+        "MATERIAL 005.000.001 (005.000.001): Quantidade acima do estoque. "
+        "Estoque disponível: 7,5 M."
+    ]
+    # Saldo 2,4996: o teto é 2,499 (3 casas, cortado), o mesmo número da mensagem.
+    assert not valida_ab(("007.000.007", "2,499")).erros
+    assert textos(valida_ab(("007.000.007", "2,5"))) == [
+        "MATERIAL 007.000.007 (007.000.007): Quantidade acima do estoque. "
+        "Estoque disponível: 2,499 M."
+    ]
+
+
+def test_fracao_em_unidade_contada_e_recusada_com_o_texto_unico():
+    assert textos(valida_ab(("001.000.010", "1,5"))) == [
+        "MATERIAL 001.000.010 (001.000.010): "
+        "Este material só é pedido em quantidade inteira (unidade: UN)."
+    ]
+    assert textos(valida_limpeza(("023.001.002", "1,5"))) == [
+        "DETERGENTE (023.001.002): Este material só é pedido em quantidade inteira (unidade: UN)."
     ]
 
 
 def test_ab_duplicado_e_fora_do_catalogo_sao_bloqueados():
-    assert textos(validar_pedido_ab(ab(("006.000.006", "1")), CATALOGO_AB, CENTROS)) == [
+    assert textos(valida_ab(("006.000.006", "1"))) == [
         "O material 006.000.006 está com cadastro duplicado. Avise o almoxarifado."
     ]
-    r = validar_pedido_ab(ab(("999.999.999", "1")), CATALOGO_AB, CENTROS)
-    assert textos(r) == ["O material 999.999.999 não está mais disponível no catálogo."]
+    r = valida_ab(("999.999.999", "1"))
+    assert textos(r) == ["O material 999.999.999 não está mais no catálogo."]
     assert r.estoque_atual["999.999.999"] == 0
 
 
 def test_ab_mesmo_codigo_em_duas_linhas_soma_contra_o_estoque():
-    r = validar_pedido_ab(ab(("001.000.010", "6"), ("001.000.010", "6")), CATALOGO_AB, CENTROS)
+    r = valida_ab(("001.000.010", "6"), ("001.000.010", "6"))
     assert len(r.erros) == 1
-    ok = validar_pedido_ab(ab(("001.000.010", "5"), ("001.000.010", "5")), CATALOGO_AB, CENTROS)
+    ok = valida_ab(("001.000.010", "5"), ("001.000.010", "5"))
     assert len(ok.validos) == 1 and ok.validos[0].quantidade == 10
 
 
 def test_ab_um_item_invalido_em_tres_lista_so_ele():
-    r = validar_pedido_ab(
-        ab(("001.000.010", "1"), ("002.000.005", "9"), ("004.000.025", "1")), CATALOGO_AB, CENTROS
-    )
+    r = valida_ab(("001.000.010", "1"), ("002.000.005", "9"), ("004.000.025", "1"))
     assert [e.codigo for e in r.erros] == ["002.000.005"]
 
 
 def test_ab_campos_vazios_geram_tres_erros():
-    r = validar_pedido_ab(EnvioPedido(solicitante=" ", destino=""), CATALOGO_AB, CENTROS)
+    r = validar_pedido(EnvioPedido(solicitante=" ", destino=""), CATALOGO_AB, CENTROS)
     assert textos(r) == [
         "Informe o nome completo.",
         "Escolha o destino dos materiais na lista de centros de custo.",
@@ -141,37 +187,59 @@ def test_ab_campos_vazios_geram_tres_erros():
     ]
 
 
-def test_limpeza_aceita_decimal_br_e_recusa_ponto():
-    ok = validar_pedido_limpeza(limpeza(("023.001.002", "1,5")), CATALOGO_LIMPEZA, CENTROS)
+def test_limpeza_aceita_decimal_br_em_unidade_de_medida_e_recusa_ponto():
+    ok = valida_limpeza(("023.002.002", "1,5"))
     assert not ok.erros and ok.validos[0].quantidade == Decimal("1.5")
-    ruim = validar_pedido_limpeza(limpeza(("023.001.002", "1.5")), CATALOGO_LIMPEZA, CENTROS)
+    ruim = valida_limpeza(("023.002.002", "1.5"))
     assert textos(ruim) == [
-        "Quantidade inválida para DETERGENTE (use vírgula para decimais, ex.: 1,5)."
+        "CAFÉ (023.002.002): "
+        "Informe uma quantidade maior que zero (use vírgula para decimais, ex.: 1,5)."
+    ]
+
+
+def test_limpeza_aceita_ate_o_estoque_exato_inclusive_fracionado():
+    ok = valida_limpeza(("023.001.002", "10"), ("023.002.002", "2,5"))
+    assert not ok.erros and len(ok.validos) == 2
+
+
+def test_limpeza_nega_acima_do_estoque_e_sem_estoque():
+    r = valida_limpeza(("023.001.002", "11"), ("023.002.002", "2,6"), ("023.003.003", "1"))
+    assert textos(r) == [
+        "DETERGENTE (023.001.002): Quantidade acima do estoque. Estoque disponível: 10 UN.",
+        "CAFÉ (023.002.002): Quantidade acima do estoque. Estoque disponível: 2,5 KG.",
+        "SACO (023.003.003): Sem estoque.",
+    ]
+    assert r.estoque_atual == {
+        "023.001.002": Decimal(10),
+        "023.002.002": Decimal("2.5"),
+        "023.003.003": 0,
+    }
+    assert not r.validos
+
+
+def test_limpeza_soma_o_mesmo_material_no_limite():
+    r = valida_limpeza(("023.001.002", "6"), ("023.001.002", "5"))
+    assert textos(r) == [
+        "DETERGENTE (023.001.002): Quantidade acima do estoque. Estoque disponível: 10 UN."
     ]
 
 
 def test_destino_tem_de_ser_um_centro_de_custo_nos_dois_formularios():
     par = ("023.001.002", "1")
     aceito = "PICKUP 01 — ABC1D23"
-    assert not validar_pedido_limpeza(limpeza(par, destino=aceito), CATALOGO_LIMPEZA, CENTROS).erros
+    assert not valida_limpeza(par, destino=aceito).erros
     for destino, erro in (
         ("Lua", 'Destino "Lua" não está na lista de centros de custo.'),
         ("eta ii", 'Destino "eta ii" não está na lista de centros de custo.'),
         ("Outro", 'Destino "Outro" não está na lista de centros de custo.'),
         ("", "Escolha o destino dos materiais na lista de centros de custo."),
     ):
-        assert textos(
-            validar_pedido_limpeza(limpeza(par, destino=destino), CATALOGO_LIMPEZA, CENTROS)
-        ) == [erro]
-        assert erro in textos(
-            validar_pedido_ab(ab(("001.000.010", "1"), destino=destino), CATALOGO_AB, CENTROS)
-        )
+        assert textos(valida_limpeza(par, destino=destino)) == [erro]
+        assert erro in textos(valida_ab(("001.000.010", "1"), destino=destino))
 
 
 def test_limpeza_fora_do_catalogo_e_duplicado():
-    r = validar_pedido_limpeza(
-        limpeza(("999.999.999", "1"), ("023.009.009", "1")), CATALOGO_LIMPEZA, CENTROS
-    )
+    r = valida_limpeza(("999.999.999", "1"), ("023.009.009", "1"))
     assert textos(r) == [
         "O material 999.999.999 não está mais no catálogo.",
         "O material 023.009.009 está com cadastro duplicado. Avise o almoxarifado.",
@@ -237,23 +305,27 @@ def test_somar_por_codigo_mantem_a_ordem_e_separa_invalidos():
 
 def test_erros_de_nome_e_destino_dizem_o_campo_nos_dois_formularios():
     vazio = {"solicitante": " ", "destino": ""}
-    for r in (
-        validar_pedido_limpeza(limpeza(**vazio), CATALOGO_LIMPEZA, CENTROS),
-        validar_pedido_ab(ab(**vazio), CATALOGO_AB, CENTROS),
-    ):
+    for r in (valida_limpeza(**vazio), valida_ab(**vazio)):
         assert [(e.texto, e.campo) for e in r.erros] == [
             ("Informe o nome completo.", "solicitante"),
             ("Escolha o destino dos materiais na lista de centros de custo.", "destino"),
             ("Adicione ao menos um material ao pedido.", None),
         ]
-    fora = validar_pedido_limpeza(
-        limpeza(("023.001.002", "1"), destino="Lua"), CATALOGO_LIMPEZA, CENTROS
-    )
+    fora = valida_limpeza(("023.001.002", "1"), destino="Lua")
     assert [e.campo for e in fora.erros] == ["destino"]
 
 
 def test_erros_de_material_nao_tem_campo():
-    r = validar_pedido_ab(ab(("003.000.000", "1"), ("999.999.999", "x")), CATALOGO_AB, CENTROS)
+    r = valida_ab(("003.000.000", "1"), ("999.999.999", "x"))
     assert r.erros and all(e.campo is None and e.codigo for e in r.erros)
-    r = validar_pedido_limpeza(limpeza(("023.001.002", "1.5")), CATALOGO_LIMPEZA, CENTROS)
+    r = valida_limpeza(("023.001.002", "1.5"))
     assert r.erros and all(e.campo is None for e in r.erros)
+
+
+def test_a_origem_de_epis_e_publica_como_as_outras():
+    """A origem nova vale para o limite por nome e o reenvio sem mudar as regras."""
+    from pedidos.regras import AVULSA, EPIS, cabecalho_enviado, origem_publica
+
+    assert origem_publica(EPIS) and not origem_publica(AVULSA)
+    envio = EnvioPedido(solicitante=" Ana ", destino="ETA I", obs="x", itens=[])
+    assert cabecalho_enviado(EPIS, envio) == ("Ana", "ETA I", "x", "")

@@ -2,18 +2,20 @@
 
 ## Core Principles
 
-### I. Regras de negócio puras e fiéis à origem
+### I. Regras de negócio puras, com o próprio sistema como referência
 
 - Regras de negócio ficam em funções puras, sem ORM (`pedidos/regras.py`, `scpi/leitura.py`,
   `scpi/requisicoes.py`), testáveis sem banco.
-- Regra trazida do Apps Script ou de uma planilha DEVE dar os mesmos resultados e os mesmos
-  textos de erro da origem. Divergência só é permitida quando é deliberada e está registrada na
-  spec da funcionalidade, com o motivo.
+- O Central Almoxarifado é a referência das próprias regras: valem o código, os testes e as
+  specs vigentes. O Apps Script e as planilhas de onde vieram são histórico, não requisito: não
+  há compromisso de equivalência de resultados, textos ou estrutura com eles. Mudar uma regra
+  que veio deles segue o fluxo de qualquer mudança (spec, plano e teste), justificada pela
+  necessidade atual da operação.
 - Quantidades são `Decimal`, no formato pt-BR estrito ("1.5" é recusado). Códigos (CADPRO,
   placa) são comparados por `norm_u`, como a collation `utf8mb4_unicode_ci` do banco.
 
-Motivo: o sistema substitui um processo em uso; o almoxarifado precisa ver o mesmo resultado,
-e regra pura é a única que se testa por inteiro.
+Motivo: regra pura é a única que se testa por inteiro; e o sistema já substituiu o processo
+antigo, então reproduzi-lo só limitaria a evolução.
 
 ### II. Uma porta de gravação, transacional e idempotente
 
@@ -81,9 +83,8 @@ Motivo: o público é o almoxarifado e os funcionários da operação, e o servi
 - Configuração num único `config/settings.py` lido do `.env`; segredos só no `.env`, e cada
   variável nova documentada no `.env.example`.
 - Com `DEBUG=0`, `check --deploy --fail-level WARNING` DEVE passar sem avisos.
-- Migrations: até a importação das planilhas no servidor (passo 3 de `deploy/VIRADA.md`), mudança
-  de modelo regenera a migration existente do app. Depois dela, toda mudança de modelo ganha
-  migration nova, nunca regenerada.
+- Migrations: o banco de produção tem dados reais; toda mudança de modelo ganha migration nova,
+  nunca regenerada.
 
 ## Fluxo de desenvolvimento
 
@@ -107,4 +108,4 @@ Motivo: o público é o almoxarifado e os funcionários da operação, e o servi
 - Todo plano tem uma verificação de conformidade com estes princípios. Exceção a um princípio
   só com justificativa escrita no plano; o Princípio III não admite exceção.
 
-**Version**: 1.0.0 | **Ratified**: 2026-10-12 | **Last Amended**: 2026-10-12
+**Version**: 2.0.0 | **Ratified**: 2026-10-12 | **Last Amended**: 2026-10-22

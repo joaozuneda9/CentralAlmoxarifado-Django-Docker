@@ -85,7 +85,7 @@ def test_bloqueado_simular_e_a_acao_principal_e_lancar_mostra_o_motivo(
     assert '<rect width="18" height="11"' in botao(form, "Lançar no SCPI")  # cadeado
     assert (
         '<span class="dica-flutuante-texto" role="tooltip" id="dica-lancamento-real">'
-        "Lançamento real bloqueado até a virada: só a simulação roda.</span>"
+        "Lançamento real bloqueado neste ambiente: só a simulação roda.</span>"
     ) in form
 
 

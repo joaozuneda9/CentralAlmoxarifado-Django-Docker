@@ -1,0 +1,29 @@
+{% extends "interface/base_publico.html" %}
+{% load static pedidos_extras %}
+{% block title %}Consultar pedido de EPIs — Central Almoxarifado{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'pedidos/css/pedidos.css' %}">{% endblock %}
+{% block voltar %}<a class="link-voltar" href="{% url 'pedidos:inicio' %}">{% include "interface/_icone.html" with nome="seta-esquerda" %}Voltar ao início</a>{% endblock %}
+{% block rotulo %}Almoxarifado SAEP{% endblock %}
+{% block heading %}Consultar pedido de EPIs{% endblock %}
+{% block sub %}Digite o número do pedido para saber se a Segurança do Trabalho o autorizou.{% endblock %}
+{% block page %}
+<div class="pilha-larga">
+  <form method="post" class="cartao pilha-larga" action="{% url 'pedidos:consulta_epi' %}">
+    {% csrf_token %}
+    <div class="campo">
+      <label class="campo-rotulo" for="numero">Número do pedido</label>
+      <input id="numero" class="campo-entrada mono" type="text" name="numero" value="{{ numero }}" maxlength="20" placeholder="Ex.: P-000123" autocomplete="off" autocapitalize="characters" required>
+    </div>
+    <div class="acoes"><button type="submit" class="botao botao-primario">{% include "interface/_icone.html" with nome="busca" %}Consultar</button></div>
+  </form>
+  {% if frase %}
+  <section class="cartao" aria-live="polite">
+    <p><span class="selo {{ situacao|badge_autorizacao }}">{{ rotulo }}</span></p>
+    <p>{{ frase }}</p>
+    {% if motivo %}<p><strong>Motivo:</strong> {{ motivo }}</p>{% endif %}
+  </section>
+  {% elif aviso %}
+  <div class="aviso aviso-atencao" role="alert" aria-live="polite">{% include "interface/_icone.html" with nome="alerta" %}<p>{{ aviso }}</p></div>
+  {% endif %}
+</div>
+{% endblock %}

@@ -740,17 +740,18 @@
   document.addEventListener("DOMContentLoaded", sincronizarCentro);
   document.addEventListener("htmx:after:swap", sincronizarCentro);
 
-  // Depois de imprimir (pelo botão ou pelo Ctrl+P), aparece a confirmação de que os recibos
-  // saíram na impressora; antes disso, marcar como impressos não faz sentido.
+  // Depois de imprimir (pelo botão ou pelo Ctrl+P), abre o diálogo de confirmação
+  // (`dialog[data-apos-imprimir]`, dialogo.js) que pergunta se os recibos saíram na impressora; antes
+  // disso, marcar como impressos não faz sentido. "Ainda não" (ou Esc) só o fecha: ele volta a abrir
+  // na próxima impressão, e o recibo segue na lista de pendentes.
   function revelarConfirmacao() {
-    var form = document.querySelector(".confirmacao-impressao");
-    if (!form || form.hasAttribute("data-visivel")) return;
-    form.setAttribute("data-visivel", "");
-    form.scrollIntoView({ block: "nearest" });
+    var dialogo = document.querySelector("dialog[data-apos-imprimir]");
+    if (!dialogo || dialogo.open) return;
+    dialogo.showModal();
   }
   window.addEventListener("afterprint", revelarConfirmacao);
-  // O botão de imprimir só funciona com JavaScript: sem ele, fica escondido.
   document.addEventListener("DOMContentLoaded", function () {
+    // O botão de imprimir só funciona com JavaScript: sem ele, fica escondido.
     document.querySelectorAll("[data-imprimir][hidden]").forEach(function (b) { b.hidden = false; });
   });
 
@@ -1021,8 +1022,7 @@
   // material abre a quantidade (uma aberta por vez; tocar de novo na linha aberta a fecha), já com a do
   // pedido se ele estiver lá; "Confirmar" manda ao servidor como antes, e "Atualizar" (material já no
   // pedido) troca a quantidade da linha do pedido, sem somar. Esc ou o ✕ fecham. Com um aberto, as
-  // outras linhas ficam recuadas (pedidos.css), mas clicáveis. Sem JavaScript, a quantidade fica sempre
-  // à vista.
+  // outras linhas ficam recuadas (pedidos.css), mas clicáveis.
   var DURACAO_FEITO = 2000;
 
   function nomeDoMaterial(item) {
@@ -1653,4 +1653,101 @@
       setTimeout(function () { rotulo.textContent = antes; }, 2000);
     });
   });
+
+  // Folha (spec 006, contracts/folha.md): a lista de peças preenchida como o papel, num <dialog>
+  // dentro do <form>. O botão `data-folha-abrir` pede ao servidor o conteúdo já com as quantidades
+  // do pedido; aqui o diálogo abre, recebe o foco e fecha. "Pôr no pedido" (`data-folha-aplicar`)
+  // manda a folha inteira: sem erro, o servidor devolve o carrinho e o evento `folha-aplicada`; com
+  // erro, devolve a própria folha (HX-Retarget) e o foco vai para o resumo.
+  function folha() {
+    return document.getElementById("folha");
+  }
+
+  function botaoDaFolha() {
+    return document.querySelector("[data-folha-abrir]");
+  }
+
+  function fecharFolha() {
+    var d = folha();
+    if (d && d.open) d.close();
+  }
+
+  // Cada conteúdo novo do servidor chega marcado (`data-folha-nova`) e é mostrado uma vez: as outras
+  // trocas da página (o carrinho, a busca) não reabrem a folha.
+  document.addEventListener("htmx:after:swap", function () {
+    var d = folha();
+    var nova = d && d.querySelector("[data-folha-nova]");
+    if (!nova) return;
+    nova.removeAttribute("data-folha-nova");
+    if (!d.open && d.showModal) d.showModal();
+    var botao = botaoDaFolha();
+    if (botao) botao.setAttribute("aria-expanded", "true");
+    var resumo = nova.querySelector("[data-folha-resumo]");
+    var primeiro = nova.querySelector(".folha-qtd[aria-invalid='true']") || nova.querySelector(".folha-qtd");
+    if (resumo) resumo.focus();
+    else if (primeiro) primeiro.focus();
+  });
+
+  document.addEventListener("folha-aplicada", function () {
+    fecharFolha();
+    var anuncio = document.querySelector("[data-anuncio-adicionado]");
+    var n = document.querySelectorAll('#carrinho input[name="item_codigo"]').length;
+    if (anuncio) {
+      anuncio.textContent =
+        "Lista posta no pedido: " + n + (n === 1 ? " material." : " materiais.");
+    }
+  });
+
+  // Fechar (botão, Esc ou fundo) não muda o pedido; o foco volta ao botão que abriu.
+  document.addEventListener(
+    "close",
+    function (e) {
+      if (e.target.id !== "folha") return;
+      var botao = botaoDaFolha();
+      if (!botao) return;
+      botao.setAttribute("aria-expanded", "false");
+      botao.focus();
+    },
+    true
+  );
+
+  document.addEventListener("click", function (e) {
+    var alvo = e.target;
+    if (!alvo || !alvo.closest) return;
+    if (alvo.closest("[data-folha-fechar]")) return fecharFolha();
+    var d = folha();
+    if (d && d.open && alvo === d) {
+      var r = d.getBoundingClientRect();
+      if (e.clientY < r.top || e.clientY > r.bottom || e.clientX < r.left || e.clientX > r.right) {
+        fecharFolha();
+      }
+    }
+  });
+
+  // Enter numa linha da folha põe a folha no pedido; nunca envia o pedido inteiro.
+  document.addEventListener("keydown", function (e) {
+    if (e.key !== "Enter" || !e.target.matches || !e.target.matches(".folha-qtd")) return;
+    e.preventDefault();
+    var aplicar = document.querySelector("[data-folha-aplicar]");
+    if (aplicar) aplicar.click();
+  });
+
+  // Falha de rede ou do servidor ao abrir ou aplicar a folha: o que foi digitado fica, e o aviso
+  // aparece dentro dela (ou no topo do formulário, se ela nem abriu).
+  function avisarFalhaDaFolha(e) {
+    var origem = e.target;
+    if (!origem || !origem.closest) return;
+    if (!origem.closest("[data-folha-aplicar]") && !origem.closest("[data-folha-abrir]")) return;
+    var caixa = document.querySelector("[data-folha-falha]");
+    var d = folha();
+    if (!caixa || !d || !d.open) {
+      caixa = document.querySelector("[data-formulario-pedido] [data-erro-envio]");
+    }
+    if (!caixa) return;
+    caixa.className = "aviso aviso-erro";
+    caixa.textContent =
+      "Não foi possível pôr a lista no pedido. O que foi digitado foi mantido; tente de novo.";
+  }
+  document.addEventListener("htmx:error", avisarFalhaDaFolha);
+  document.addEventListener("htmx:response:error", avisarFalhaDaFolha);
 })();

@@ -12,8 +12,7 @@ from django.utils import timezone
 
 from catalogo.models import Importacao, Material, ParDePara
 from implantacao.depara import ler_pares
-from tests.depara_exemplo import ABA_MAPEAMENTO, abas_depara, salvar_depara
-from tests.planilha_exemplo import salvar_xlsx
+from tests.depara_exemplo import ABA_MAPEAMENTO, abas_depara, salvar_depara, salvar_xlsx
 
 ACEITOS = {
     ("000.029.872", "016.001.021", Decimal("1")),

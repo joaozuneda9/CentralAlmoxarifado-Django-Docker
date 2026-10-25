@@ -1,12 +1,14 @@
 from datetime import timedelta
 from decimal import Decimal
 
+from django.conf import settings
 from django.core.exceptions import ValidationError
 from django.core.validators import MinValueValidator
 from django.db import connection, models
 from django.utils import timezone
 
 from catalogo.depara import CicloDePara, Par, resolver_canonicos, validar_par
+from pedidos import regras
 from pedidos.regras import norm_placa, norm_u
 
 
@@ -41,6 +43,12 @@ class Opcao(models.Model):
         GRUPO_OCULTO_AB = "GRUPO_OCULTO_AB", "Grupos ocultos (AB)"
         CATEGORIA_LIMPEZA = "CATEGORIA_LIMPEZA", "Categorias (limpeza)"
         FUNCIONARIO = "FUNCIONARIO", "Funcionários"
+        # Unidades do SCPI em que a quantidade pode ter fração. Lista vazia = tudo inteiro.
+        UNIDADE_FRACIONAVEL = "UNIDADE_FRACIONAVEL", "Unidades fracionáveis"
+        # Grupos do SCPI cujos materiais o formulário da oficina mecânica oferece (spec 007).
+        GRUPO_OFICINA = "GRUPO_OFICINA", "Grupos (oficina)"
+        # Grupos do SCPI cujos materiais o formulário de EPIs oferece (spec 008).
+        GRUPO_EPI = "GRUPO_EPI", "Grupos (EPIs)"
 
     lista = models.CharField(max_length=30, choices=Lista.choices)
     valor = models.CharField(max_length=200)
@@ -64,6 +72,17 @@ class Opcao(models.Model):
         return list(cls.objects.filter(lista=lista, ativo=True).values_list("valor", flat=True))
 
 
+class Formulario(models.TextChoices):
+    """Os formulários públicos cujas opções a configuração administra (spec 009). O valor é o da
+    `Pedido.Origem` do formulário; a saída avulsa, que é do almoxarifado, não entra."""
+
+    LIMPEZA = regras.LIMPEZA, "Limpeza, copa e escritório"
+    AB = regras.AB, "Ferramentas, peças e materiais"
+    VIATURAS = regras.VIATURAS, "Reposição de peças das viaturas"
+    OFICINA = regras.OFICINA, "Oficina mecânica"
+    EPIS = regras.EPIS, "Equipamentos de proteção individual (EPIs)"
+
+
 class CentroCusto(models.Model):
     """Centro de custo do SCPI (substitui a aba `Centros de Custo`, lida pelo robô).
 
@@ -75,6 +94,16 @@ class CentroCusto(models.Model):
     descricao = models.CharField("descrição", max_length=200)
     codigo = models.CharField("código", max_length=20)
     placa = models.CharField(max_length=20, unique=True, null=True, blank=True)
+    # Obsoleto desde a spec 009: o destino de cada formulário vem de `CentroFormulario`. A marca
+    # foi transcrita pela migration `0006` e fica só como registro (não vale, e saiu do admin).
+    equipe_manutencao = models.BooleanField(
+        "equipe de manutenção",
+        default=False,
+        help_text="Não vale mais: os destinos são definidos na página Formulários.",
+    )
+    # Estado global (spec 009): o centro inativo não é oferecido nem aceito em pedido novo dos
+    # formulários públicos nem na saída avulsa nova; atendimento, edição e robô seguem resolvendo.
+    ativo = models.BooleanField(default=True)
 
     class Meta:
         ordering = ["descricao", "placa"]
@@ -101,6 +130,38 @@ class CentroCusto(models.Model):
     def save(self, *args, **kwargs):
         self.placa = norm_placa(self.placa) or None
         super().save(*args, **kwargs)
+
+
+class CentroFormulario(models.Model):
+    """A linha do cadastro de centros (centro mais placa) que é destino de um formulário (spec 009).
+
+    A presença da linha diz que ela é destino; sem linha, não é. Linha de centro inativo fica
+    guardada e sem efeito: reativar o centro a restaura.
+    """
+
+    centro = models.ForeignKey(CentroCusto, on_delete=models.CASCADE, related_name="formularios")
+    formulario = models.CharField(max_length=20, choices=Formulario.choices)
+    alterado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    alterado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["centro__descricao", "centro__placa"]
+        verbose_name = "centro no formulário"
+        verbose_name_plural = "centros nos formulários"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["centro", "formulario"], name="centro_unico_no_formulario"
+            ),
+        ]
+
+    def __str__(self):
+        return f"{self.get_formulario_display()}: {self.centro}"
 
 
 class ItemLimpeza(models.Model):
@@ -135,6 +196,93 @@ class ItemLimpeza(models.Model):
                     "de limpeza (Cadastros › Opções)."
                 }
             )
+
+
+class PecaViatura(models.Model):
+    """Peça da lista do formulário de reposição de peças das viaturas (spec 006): o quadro
+    "Materiais" da folha em papel. Uma linha, um material; o nome exibido, quando preenchido,
+    tem prioridade sobre o do cadastro do SCPI."""
+
+    material = models.OneToOneField(Material, on_delete=models.PROTECT, related_name="peca_viatura")
+    nome_exibido = models.CharField(max_length=255, blank=True)
+    ordem = models.PositiveIntegerField(default=0)
+
+    class Meta:
+        ordering = ["ordem", "material__nome"]
+        verbose_name = "peça das viaturas"
+        verbose_name_plural = "peças das viaturas"
+
+    def __str__(self):
+        return self.nome_exibido or str(self.material)
+
+
+class MaterialOficina(models.Model):
+    """Material avulso do formulário da oficina mecânica (spec 007), além dos grupos da lista
+    `GRUPO_OFICINA`: serve aos materiais de um grupo que não pode entrar inteiro (os óleos e
+    filtros do grupo `GERAL`)."""
+
+    material = models.OneToOneField(
+        Material, on_delete=models.PROTECT, related_name="material_oficina"
+    )
+
+    class Meta:
+        ordering = ["material__nome"]
+        verbose_name = "material da oficina"
+        verbose_name_plural = "materiais da oficina"
+
+    def __str__(self):
+        return str(self.material)
+
+
+class MaterialEpi(models.Model):
+    """Material avulso do formulário de EPIs (spec 008), além dos grupos da lista `GRUPO_EPI`:
+    serve ao EPI de um grupo que não pode entrar inteiro."""
+
+    material = models.OneToOneField(Material, on_delete=models.PROTECT, related_name="material_epi")
+
+    class Meta:
+        ordering = ["material__nome"]
+        verbose_name = "material de EPIs"
+        verbose_name_plural = "materiais de EPIs"
+
+    def __str__(self):
+        return str(self.material)
+
+
+class ExcecaoMaterial(models.Model):
+    """Decisão do administrador sobre um material num formulário, sobre a regra de origem (009).
+
+    `habilitado` verdadeiro acrescenta o material ao formulário; falso o retira. Sem linha, vale a
+    regra de origem de hoje. A disponibilidade efetiva é calculada (`catalogo.disponibilidade`).
+    """
+
+    material = models.ForeignKey(
+        Material, on_delete=models.PROTECT, related_name="excecoes_formulario"
+    )
+    formulario = models.CharField(max_length=20, choices=Formulario.choices, db_index=True)
+    habilitado = models.BooleanField()
+    alterado_por = models.ForeignKey(
+        settings.AUTH_USER_MODEL,
+        null=True,
+        blank=True,
+        on_delete=models.SET_NULL,
+        related_name="+",
+    )
+    alterado_em = models.DateTimeField(auto_now=True)
+
+    class Meta:
+        ordering = ["material__nome"]
+        verbose_name = "exceção de material"
+        verbose_name_plural = "exceções de material"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["material", "formulario"], name="excecao_unica_no_material_e_formulario"
+            ),
+        ]
+
+    def __str__(self):
+        acao = "acrescenta" if self.habilitado else "retira"
+        return f"{self.get_formulario_display()}: {acao} {self.material}"
 
 
 class SaidaSCPI(models.Model):

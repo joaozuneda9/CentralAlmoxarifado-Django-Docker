@@ -93,9 +93,8 @@ def test_data_tipo_codigo_entrega_e_inteira():
     assert textos(saida(), [ItemSaida("023.001.002", 0)]) == [
         "Informe ao menos um material com quantidade maior que zero."
     ]
-    assert textos(saida(), [ItemSaida("023.001.002", Decimal("1.5"))], regra_inteira=True) == [
-        "Pedido AB: a quantidade de 023.001.002 deve ser inteira."
-    ]
+    # A equipe aceita fração em qualquer unidade e em pedido de qualquer origem (spec 005).
+    assert textos(saida(), [ItemSaida("023.001.002", Decimal("1.5"))]) == []
     assert textos(saida(), [ItemSaida("023.001.002", None), ItemSaida("023.001.003", 1)]) == [
         "Quantidade inválida para 023.001.002."
     ]
@@ -206,7 +205,7 @@ def envio_ab(q="2", **extra):
 
 
 def test_reenvio_confere():
-    gravado = ("Maria", "ETA II", "")
+    gravado = ("Maria", "ETA II", "", "")  # nome, destino, observação, ocorrência
     itens = [("001.000.010", Decimal(2))]
     assert registro_confere(AB, gravado, itens, envio_ab()) is True
     assert registro_confere(AB, gravado, itens, envio_ab("3")) is False
@@ -219,7 +218,7 @@ def test_reenvio_confere():
         itens=(ItemEnviado("023.001.002", "1,5"),),
     )
     assert registro_confere(
-        LIMPEZA, ("Ana", "ETA III", ""), [("023.001.002", Decimal("1.500"))], limpeza
+        LIMPEZA, ("Ana", "ETA III", "", ""), [("023.001.002", Decimal("1.500"))], limpeza
     )
 
 
@@ -251,3 +250,20 @@ def test_marcado_nao_lancar():
     assert marcado_nao_lancar("Fora de estoque")
     assert marcado_nao_lancar("não lançar")
     assert not marcado_nao_lancar("lançar amanhã")
+
+
+def test_situacao_pedido_com_autorizacao_da_seguranca_do_trabalho():
+    # Aguardando ou recusada vale por cima de tudo; sem autorização, a regra de sempre.
+    aguardando = situacao_pedido("EPIS", False, [I(2, None)], "AGUARDANDO")
+    assert (aguardando.chave, aguardando.rotulo) == (
+        "aguardando_autorizacao",
+        "Aguardando autorização",
+    )
+    recusado = situacao_pedido("EPIS", False, [I(2, None)], "RECUSADO")
+    assert (recusado.chave, recusado.rotulo) == ("recusado", "Recusado")
+    # Autorizado segue a regra do atendimento.
+    assert situacao_pedido("EPIS", False, [I(2, None)], "AUTORIZADO").chave == "aguardando"
+    assert situacao_pedido("EPIS", True, [I(2, Decimal(2))], "AUTORIZADO").chave == "atendido"
+    assert situacao_pedido("EPIS", True, [I(2, Decimal(1))], "AUTORIZADO").chave == "parcial"
+    # None (formulário sem autorização) não muda nada.
+    assert situacao_pedido(AB, False, [I(2, None)], None).chave == "aguardando"

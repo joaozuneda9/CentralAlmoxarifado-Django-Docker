@@ -5,6 +5,10 @@ language: "pt-BR"
 reviews:
   profile: "chill"
   poem: false
+  auto_review:
+    # Os PRs de trabalho têm a develop como base; a main (padrão) já é revisada.
+    base_branches:
+      - "develop"
   path_filters:
     # Planos e specs são registro do processo; o DESIGN.md é cópia do WMS-Almoxarifado.
     - "!docs/superpowers/**"
@@ -12,12 +16,11 @@ reviews:
   path_instructions:
     - path: "**/migrations/*.py"
       instructions: |
-        O sistema ainda não tem dados reais: nenhum servidor em uso, só bancos locais de
-        desenvolvimento, recriados quando o schema muda. Mudança de modelo regenera a migration
-        existente do app em vez de empilhar uma nova. Não peça migrations de conversão de dados
-        antigos, checagem de colisão em dados existentes nem reversão segura de dados. Essa
-        regra vale até a importação das planilhas (subprojeto 5), quando passa a haver dados
-        de verdade.
+        O sistema está em produção com dados reais. Mudança de modelo ganha uma migration nova;
+        migration já existente nunca é regenerada, editada nem apagada (nem `migrate <app> zero`).
+        Aponte como problema qualquer alteração em migration já publicada. Em migration nova que
+        mexe em tabela com dados, vale pedir conversão dos dados existentes, checagem de colisão
+        e reversão segura quando fizer sentido.
     - path: "**/*.py"
       instructions: |
         Textos de interface, mensagens e nomes de código são em português (pt-BR), de propósito.

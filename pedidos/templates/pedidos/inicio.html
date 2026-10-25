@@ -7,19 +7,15 @@
 {% block sub %}Escolha o tipo de material. Cada tipo tem seu próprio formulário.{% endblock %}
 {% block page %}
 <div class="opcoes-formulario">
-  {% comment %}Títulos iguais aos `Fluxo.titulo` (pedidos/fluxos.py); exemplos entre os materiais mais pedidos de cada formulário.{% endcomment %}
-  <a class="cartao cartao-opcao" href="{% url 'pedidos:formulario' 'limpeza' %}">
-    {% include "interface/_icone.html" with nome="caixa" %}
-    <h2>Limpeza, copa e escritório</h2>
-    <span class="texto-secundario">Ex.: café, copo descartável, água sanitária, caneta</span>
+  {# Um cartão por formulário público de `FLUXOS` (pedidos/fluxos.py): título, exemplo e ícone vêm de lá. #}
+  {% for f in fluxos_publicos %}
+  <a class="cartao cartao-opcao" href="{% url 'pedidos:formulario' f.nome %}">
+    {% include "interface/_icone.html" with nome=f.icone %}
+    <h2>{{ f.titulo }}</h2>
+    <span class="texto-secundario">{{ f.exemplo_inicio }}</span>
     <span class="cartao-opcao-seta">{% include "interface/_icone.html" with nome="seta-direita" %}</span>
   </a>
-  <a class="cartao cartao-opcao" href="{% url 'pedidos:formulario' 'ab' %}">
-    {% include "interface/_icone.html" with nome="catalogo" %}
-    <h2>Ferramentas, peças e materiais</h2>
-    <span class="texto-secundario">Ex.: luva, botina, fita veda-rosca, cimento</span>
-    <span class="cartao-opcao-seta">{% include "interface/_icone.html" with nome="seta-direita" %}</span>
-  </a>
+  {% endfor %}
 </div>
 <p class="texto-suave texto-pequeno">Enviar um pedido não é a saída do material: o almoxarifado confere, separa e confirma o atendimento depois.</p>
 {% endblock %}

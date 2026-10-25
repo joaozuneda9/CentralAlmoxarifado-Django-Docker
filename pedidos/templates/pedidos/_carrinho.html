@@ -1,6 +1,6 @@
 {% comment %}
 "Seu pedido" (na saída avulsa, "Materiais da saída": os textos vêm do `fluxo`). No celular (com JavaScript), a barra fica fixa no rodapé e o pedido abre numa
-gaveta (`<dialog>`, `pedidos.js`); no desktop, ou sem JavaScript, a barra some e o pedido aparece
+gaveta (`<dialog>`, `pedidos.js`); no desktop, a barra some e o pedido aparece
 na página. Os campos `item_codigo` (escondido) e `item_qtd` (a quantidade, editável aqui) são
 o carrinho: o <dialog> fica dentro do <form>, então eles vão no envio mesmo com a gaveta
 fechada. Mudar a quantidade manda "alterar" com a última válida ("anterior"), para onde a linha
@@ -37,8 +37,7 @@ formulário (o rótulo do caso divergente vem de lá). Igual nos formulários p�
         quantidade (`material-abrir`, esticado sobre a linha; o lápis só indica que clica) e o
         "Remover" fica embaixo, à direita; aberta, a quantidade fica à esquerda, o "Confirmar" toma o
         lugar do "Remover" e o botão de fechar vai para o canto de cima (pedidos.js). O campo só manda a alteração
-        no "Confirmar" (evento `confirmar-quantidade`). Sem JavaScript, só o campo fica à vista (sem o
-        − / +) e vai com o envio.
+        no "Confirmar" (evento `confirmar-quantidade`).
         {% endcomment %}
         <button type="button" class="material-abrir" data-alterar-abrir aria-expanded="false" aria-controls="carrinho-qtd-area-{{ forloop.counter }}" aria-label="Alterar a quantidade de {{ linha.item.nome|default:linha.codigo }}">Alterar</button>
         <span class="material-dados"><span class="material-titulo"><strong>{{ linha.item.nome|default:linha.codigo }}</strong></span>{% if not fluxo.publico %}<span class="mono texto-secundario texto-pequeno">{{ linha.codigo }}</span>{% endif %}{% if linha.codigo in codigos_erro %}<span><span class="selo selo-erro">Corrigir</span></span>{% endif %}<span class="material-mais" aria-hidden="true">{% include "interface/_icone.html" with nome="lapis" %}</span></span>
@@ -48,7 +47,7 @@ formulário (o rótulo do caso divergente vem de lá). Igual nos formulários p�
             <label class="visually-hidden" for="carrinho-qtd-{{ forloop.counter }}">Quantidade de {{ linha.item.nome|default:linha.codigo }}{% if linha.item.unidade %} ({{ linha.item.unidade }}){% endif %}</label>
             <span class="quantidade">
               <button type="button" id="carrinho-menos-{{ forloop.counter }}" class="botao botao-icone" data-quantidade="menos" aria-label="Diminuir {{ linha.item.nome|default:linha.codigo }}">{% include "interface/_icone.html" with nome="menos" %}</button>
-              <input id="carrinho-qtd-{{ forloop.counter }}" class="quantidade-campo" type="text" name="item_qtd" value="{{ linha.texto }}" inputmode="{% if fluxo.inteiro %}numeric{% else %}decimal{% endif %}" autocomplete="off" data-qtd-carrinho
+              <input id="carrinho-qtd-{{ forloop.counter }}" class="quantidade-campo" type="text" name="item_qtd" value="{{ linha.texto }}" inputmode="decimal" autocomplete="off" data-qtd-carrinho
                      hx-post="{{ url_carrinho }}" hx-target="#carrinho" hx-trigger="confirmar-quantidade" hx-vals='{"alterar": "{{ linha.codigo|escapejs }}", "anterior": "{{ linha.texto|escapejs }}"}'>
               <button type="button" id="carrinho-mais-{{ forloop.counter }}" class="botao botao-icone" data-quantidade="mais" aria-label="Aumentar {{ linha.item.nome|default:linha.codigo }}">{% include "interface/_icone.html" with nome="mais" %}</button>
             </span>

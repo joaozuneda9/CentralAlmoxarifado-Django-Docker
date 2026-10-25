@@ -1,0 +1,80 @@
+{% extends "interface/base_almoxarifado.html" %}
+{% load static pedidos_extras %}
+{% block title %}Autorizações — Central Almoxarifado{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'pedidos/css/pedidos.css' %}">{% endblock %}
+{# A Segurança do Trabalho só tem esta fila: não há painel para onde voltar. #}
+{% block voltar %}{% endblock %}
+{% block rotulo %}Segurança do Trabalho{% endblock %}
+{% block heading %}Autorizações de EPIs{% endblock %}
+{% block sub %}Pedidos de EPI que esperam a sua decisão. Só depois de autorizado o almoxarifado atende o pedido.{% endblock %}
+
+{% block page %}
+<div class="pilha-larga">
+  <section class="cartao lista-autorizacoes" aria-labelledby="titulo-aguardando">
+    <h2 class="cartao-titulo" id="titulo-aguardando">Aguardando autorização ({{ aguardando|length }})</h2>
+    {% if aguardando %}
+    <div class="tabela-rolagem">
+      <table class="tabela tabela-pedidos">
+        <thead>
+          <tr>
+            <th scope="col">Nº</th>
+            <th scope="col">Enviado em</th>
+            <th scope="col">Servidor</th>
+            <th scope="col">Destino</th>
+            <th scope="col">Materiais</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in aguardando %}
+          <tr>
+            <td class="col-numero"><a href="{% url 'pedidos:autorizacao' a.pedido.numero %}"><span class="mono numero-pedido">{{ a.pedido.numero }}</span></a></td>
+            <td class="tabela-data col-data">{{ a.pedido.criado_em|date:"d/m/Y H:i" }}</td>
+            <td class="col-pessoa" data-rotulo="Servidor">{{ a.pedido.solicitante }}</td>
+            <td class="col-destino" data-rotulo="Destino">{{ a.pedido.destino }}</td>
+            <td class="col-extra" data-rotulo="Materiais">{{ a.n_itens }} {{ a.n_itens|pluralize:"material,materiais" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% else %}
+    <div class="vazio"><p class="vazio-titulo">Nenhum pedido aguardando autorização.</p></div>
+    {% endif %}
+  </section>
+
+  <section class="cartao lista-autorizacoes" aria-labelledby="titulo-decididas">
+    <h2 class="cartao-titulo" id="titulo-decididas">Já decididos</h2>
+    {% if decididas.paginator.count %}
+    <div class="tabela-rolagem">
+      <table class="tabela tabela-pedidos">
+        <thead>
+          <tr>
+            <th scope="col">Nº</th>
+            <th scope="col">Servidor</th>
+            <th scope="col">Decisão</th>
+            <th scope="col">Decidido por</th>
+            <th scope="col">Em</th>
+            <th scope="col">Motivo</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for a in decididas %}
+          <tr>
+            <td class="col-numero"><a href="{% url 'pedidos:autorizacao' a.pedido.numero %}"><span class="mono numero-pedido">{{ a.pedido.numero }}</span></a></td>
+            <td class="col-pessoa" data-rotulo="Servidor">{{ a.pedido.solicitante }}</td>
+            <td class="col-situacao" data-rotulo="Decisão"><span class="selo {{ a.situacao|badge_autorizacao }}">{{ a.get_situacao_display }}</span></td>
+            <td class="col-extra" data-rotulo="Decidido por">{{ a.decidido_por|nome_usuario }}</td>
+            <td class="tabela-data col-data">{{ a.decidido_em|date:"d/m/Y H:i" }}</td>
+            <td class="col-extra" data-rotulo="Motivo">{{ a.motivo|default:"—" }}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% include "interface/_paginacao.html" with pagina=decididas parametro="pagina" rotulo="Paginação dos pedidos decididos" rotulo_item="pedido" rotulo_item_plural="pedidos" %}
+    {% else %}
+    <div class="vazio"><p class="vazio-titulo">Nenhum pedido decidido ainda.</p></div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

@@ -1,0 +1,121 @@
+{% load interface_extras %}
+{% comment %}
+Aba Materiais: os materiais visíveis do catálogo (o cadastro do SCPI não muda) e se cada um é oferecido
+por {{ formulario_nome }}, com a origem em texto: pela regra do formulário, acrescentado ou retirado
+pelo administrador. "Disponível no formulário" não é "em estoque": o saldo aparece só como
+informação, e o formulário continua bloqueando o que está sem estoque. Busca, filtros e paginação
+no servidor; cada botão é um formulário POST com CSRF.
+{% endcomment %}
+<div class="cartao pilha">
+  <h2 class="cartao-titulo">Materiais de {{ formulario_nome }}</h2>
+  <p class="texto-secundario">Sem alteração, vale a regra do formulário (a lista, os grupos ou as saídas do SCPI). Acrescentar ou retirar um material muda só este formulário e não mexe no cadastro, no estoque nem nos pedidos já feitos.</p>
+
+  {# Restaurar a regra padrão do formulário: apaga todas as exceções de material dele. O botão abre o diálogo de confirmação (dialogo.js); sem JavaScript, o diálogo vem aberto na página e o botão não aparece. #}
+  {% with e=excecoes_do_formulario %}
+  <div class="regra-padrao">
+    <p class="texto-secundario">{% if e.total %}{{ e.total }} {% if e.total == 1 %}exceção{% else %}exceções{% endif %} à regra padrão deste formulário ({{ e.resumo }}).{% else %}Este formulário segue a regra padrão, sem exceções.{% endif %}</p>
+    {% if pode_alterar_materiais and e.total %}
+    <button type="button" class="botao botao-secundario botao-perigo" data-abrir-dialogo="dialogo-regra-padrao" aria-haspopup="dialog" hidden>Restaurar regra padrão…</button>
+    <dialog class="dialogo-confirmacao" id="dialogo-regra-padrao" open aria-labelledby="dialogo-regra-padrao-titulo">
+      <form method="post" action="{% url 'catalogo:formularios_regra' %}" class="dialogo-confirmacao-corpo">
+        {% csrf_token %}
+        <input type="hidden" name="formulario" value="{{ formulario }}">
+        <input type="hidden" name="confirmado" value="1">
+        <div class="dialogo-confirmacao-texto">
+          <h2 id="dialogo-regra-padrao-titulo" class="dialogo-confirmacao-titulo">Restaurar a regra padrão?</h2>
+          <p>{{ formulario_nome }} passa a seguir apenas a regra padrão: {{ e.efeito }}. Cadastro, estoque, pedidos e os demais formulários não são afetados.</p>
+        </div>
+        <div class="dialogo-confirmacao-acoes">
+          <button type="submit" formmethod="dialog" class="botao botao-secundario" data-fechar-dialogo autofocus>Cancelar</button>
+          <button type="submit" class="botao botao-secundario botao-perigo">Restaurar regra padrão</button>
+        </div>
+      </form>
+    </dialog>
+    {% endif %}
+  </div>
+  {% endwith %}
+
+  <form class="filtros" method="get" action="{% url 'catalogo:formularios' %}" data-filtros-auto>
+    <input type="hidden" name="formulario" value="{{ formulario }}">
+    <input type="hidden" name="aba" value="materiais">
+    <div class="campo filtros-campo">
+      <label class="campo-rotulo" for="{{ filtros_materiais.q.id_for_label }}">{{ filtros_materiais.q.label }}</label>
+      <div class="campo-busca">
+        {% include "interface/_icone.html" with nome="busca" %}
+        {{ filtros_materiais.q }}
+      </div>
+    </div>
+    <div class="campo filtros-campo">
+      <label class="campo-rotulo" for="{{ filtros_materiais.grupo.id_for_label }}">{{ filtros_materiais.grupo.label }}</label>
+      {{ filtros_materiais.grupo }}
+    </div>
+    <div class="campo filtros-campo">
+      <label class="campo-rotulo" for="{{ filtros_materiais.subgrupo.id_for_label }}">{{ filtros_materiais.subgrupo.label }}</label>
+      {{ filtros_materiais.subgrupo }}
+    </div>
+    <div class="campo filtros-campo">
+      <label class="campo-rotulo" for="{{ filtros_materiais.estado.id_for_label }}">{{ filtros_materiais.estado.label }}</label>
+      {{ filtros_materiais.estado }}
+    </div>
+    <div class="filtros-acoes">
+      <button type="submit" class="botao botao-secundario">Filtrar</button>
+      {% if filtros_ativos %}<a class="botao botao-texto" href="{% url 'catalogo:formularios' %}?formulario={{ formulario }}&aba=materiais">Limpar filtros</a>{% endif %}
+    </div>
+  </form>
+
+  <p class="texto-secundario" role="status">{{ total_materiais|separador_milhar }} {% if total_materiais == 1 %}material{% else %}materiais{% endif %}{% if filtros_ativos %} no filtro{% endif %}.</p>
+  {% if pode_alterar_materiais and total_materiais %}
+  <div class="acoes">
+    <a class="botao botao-secundario" href="{% url 'catalogo:formularios_lote' %}?{{ lote_query }}&acao=acrescentar">Acrescentar todos os {{ total_materiais|separador_milhar }} resultados</a>
+    <a class="botao botao-secundario" href="{% url 'catalogo:formularios_lote' %}?{{ lote_query }}&acao=retirar">Retirar todos os {{ total_materiais|separador_milhar }} resultados</a>
+  </div>
+  {% endif %}
+
+  <div class="tabela-rolagem">
+    <table class="tabela tabela-config">
+      <caption class="visually-hidden">Materiais do catálogo e se são oferecidos por {{ formulario_nome }}</caption>
+      <colgroup><col><col class="col-situacao">{% if pode_alterar_materiais %}<col class="col-acoes">{% endif %}</colgroup>
+      <thead>
+        <tr>
+          <th scope="col">Material</th>
+          <th scope="col">Neste formulário</th>
+          {% if pode_alterar_materiais %}<th scope="col"><span class="visually-hidden">Ação</span></th>{% endif %}
+        </tr>
+      </thead>
+      <tbody>
+        {% for l in linhas %}
+        <tr id="material-{{ l.material.pk }}">
+          <td>
+            <strong>{{ l.material.nome }}</strong>
+            <span class="material-info texto-suave">{% include "catalogo/_material_info.html" with material=l.material saldo=l.saldo %}</span>
+            <span class="material-info"><a class="botao botao-texto" href="{% url 'catalogo:formularios_material' l.material.codigo %}">Onde aparece</a></span>
+            {% if l.canonico %}<span class="material-info texto-suave">Código antigo: o canônico é <span class="mono">{{ l.canonico }}</span>.</span>{% endif %}
+            {% if l.material.duplicado %}<span class="material-info"><span class="selo selo-aviso">Cadastro duplicado</span> o formulário o mostra bloqueado.</span>{% endif %}
+          </td>
+          <td>
+            {% include "catalogo/_material_estado.html" %}
+          </td>
+          {% if pode_alterar_materiais %}
+          <td class="celula-acoes">
+            <form method="post" action="{% url 'catalogo:formularios_excecao' %}" class="acoes" data-manter-rolagem>
+              {% csrf_token %}
+              <input type="hidden" name="formulario" value="{{ formulario }}">
+              <input type="hidden" name="codigo" value="{{ l.material.codigo }}">
+              {% include "catalogo/_volta.html" with volta=volta_materiais %}
+              {% if l.estado.disponivel %}
+              <button type="submit" name="acao" value="retirar" class="botao botao-secundario">Retirar</button>
+              {% else %}
+              <button type="submit" name="acao" value="acrescentar" class="botao botao-secundario botao-destaque">Acrescentar</button>
+              {% endif %}
+            </form>
+          </td>
+          {% endif %}
+        </tr>
+        {% empty %}
+        <tr class="tabela-vazia"><td colspan="{% if pode_alterar_materiais %}3{% else %}2{% endif %}">Nenhum material encontrado.</td></tr>
+        {% endfor %}
+      </tbody>
+    </table>
+  </div>
+  {% include "interface/_paginacao.html" with pagina=pagina parametro="pagina" rotulo="Paginação dos materiais" rotulo_item="material" rotulo_item_plural="materiais" %}
+</div>

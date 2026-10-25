@@ -19,6 +19,7 @@ WHITENOISE_AUTOREFRESH = True
 # Nenhum teste avisa no Telegram de verdade, mesmo com o .env de desenvolvimento preenchido.
 TELEGRAM_TOKEN = ""
 TELEGRAM_CHAT_ID = ""
+TELEGRAM_CHAT_ID_SEGURANCA = ""
 # Os testes rodam o site na raiz, mesmo com PREFIXO_URL no .env de desenvolvimento; o prefixo
 # tem testes próprios (tests/test_prefixo.py e o teste de configuração em subprocesso).
 PREFIXO_URL = ""

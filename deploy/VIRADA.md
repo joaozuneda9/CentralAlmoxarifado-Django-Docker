@@ -1,6 +1,8 @@
 # Migração e virada: do Apps Script para o Django
 
-> Registro do roteiro histórico do Apps Script. O sistema já tem dados reais.
+> Registro do roteiro histórico do Apps Script, já executado. O sistema já tem dados reais.
+> O comando `importar_planilhas` e os módulos `conversao` e `migracao` citados aqui foram
+> removidos depois da virada (seção 7); o código fica na tag `v1.0.1`.
 > Para a nova produção no mesmo Docker Desktop, seguir [AMBIENTES.md](AMBIENTES.md).
 > Não repetir importações destrutivas nem os comandos de atualização deste roteiro
 > na instalação em uso. O atualizador legado está bloqueado.
@@ -220,9 +222,9 @@ ou o robô antigo lança uma saída que o Django lançaria de novo.
 
 ## 7. Depois da virada
 
-- `importar_planilhas` não roda mais: recusa com `LANCAMENTO_REAL=1`. Para não ficar tentação,
-  o app `implantacao` pode perder esse comando e seus módulos (`planilha`, `conversao`,
-  `migracao`) sem mexer no resto; o backup e `robos_em_andamento` ficam.
+- `importar_planilhas` e seus módulos (`conversao`, `migracao`) foram removidos do app
+  `implantacao`; o `planilha` ficou, reduzido ao leitor de `.xlsx` que o `importar_depara` usa.
+  O backup e `robos_em_andamento` ficam.
 - Mudança de modelo passa a ter **migration nova**, nunca regenerada (o banco agora tem dados
   reais). Atualizações pelo `deploy/atualizar.sh` (`INSTALACAO.md`, seção 9).
 - O backup diário segue valendo; copie a pasta de backup para outra máquina de vez em quando.

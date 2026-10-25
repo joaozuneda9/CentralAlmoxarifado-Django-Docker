@@ -13,6 +13,8 @@ from catalogo.saude import (
     saude_do_catalogo,
     situacao_do_catalogo,
 )
+from pedidos.regras import VIATURAS as ORIGEM_VIATURAS
+from tests.config_cenario import criar_centro, excecao
 
 pytestmark = pytest.mark.django_db
 
@@ -39,8 +41,8 @@ def test_banco_vazio_nao_quebra():
     assert (
         ItemSaude(
             "erro",
-            "Sem saldo importado: o formulário AB fica indisponível até a próxima importação "
-            "de estoque.",
+            "Sem saldo importado: os formulários públicos ficam indisponíveis até a próxima "
+            "importação de estoque.",
         )
         in itens
     )
@@ -280,3 +282,122 @@ def test_situacao_em_andamento(trava_importacao_ocupada):
     situacao = situacao_do_catalogo(AGORA)
     assert situacao.em_andamento.rotulo == "Saídas do SCPI"
     assert situacao.resumo == "Saídas do SCPI: importação em andamento desde 14:20."
+
+
+def test_formulario_de_limpeza_sem_itens_e_erro():
+    assert texto_de("Formulário de limpeza") == ItemSaude(
+        "erro", "Formulário de limpeza: nenhum item no catálogo; o formulário fica indisponível."
+    )
+
+
+def test_formulario_ab_sem_itens_e_erro_e_diz_por_que():
+    Material.objects.create(codigo="O", nome="O", oculto=True, estoque_em=AGORA)
+    SaidaSCPI.objects.create(id_requi="1", cadpro="O", data=date(2026, 1, 1), qtd=1, valor=0)
+    assert texto_de("Formulário AB") == ItemSaude(
+        "erro",
+        "Formulário AB: nenhum item no catálogo (1 códigos com saída no SCPI; 0 também na lista "
+        "de limpeza, que prevalece; 1 ocultos ou em grupo oculto); o formulário fica indisponível.",
+    )
+
+
+def test_formulario_ab_sem_saidas_na_janela_e_erro():
+    Material.objects.create(codigo="A", nome="A", estoque_em=AGORA)
+    (item,) = itens_de("Formulário AB")
+    assert item.nivel == "erro" and "nenhum item no catálogo" in item.texto
+
+
+# Formulário de reposição de peças das viaturas (spec 006, FR-008a e FR-013)
+
+VIATURAS = "Formulário de reposição de peças das viaturas"
+
+
+def lista_de_viaturas():
+    from catalogo.models import PecaViatura
+
+    for codigo, nome, oculto in [
+        ("1", "LUVA 3/4", False),
+        ("2", "TEE 3/4", False),
+        ("3", "PLUG", True),
+    ]:
+        PecaViatura.objects.create(
+            material=Material.objects.create(
+                codigo=codigo, nome=nome, unidade="UN", estoque=5, estoque_em=AGORA, oculto=oculto
+            )
+        )
+
+
+def test_viaturas_disponivel_conta_a_lista_e_o_ab():
+    lista_de_viaturas()
+    criar_centro("EQUIPE NORTE", "51", formularios=[ORIGEM_VIATURAS])
+    assert texto_de(VIATURAS) == ItemSaude(
+        "ok", f"{VIATURAS}: 2 peças na lista e 0 materiais do AB."
+    )
+    assert texto_de("Peças das viaturas ocultas") == ItemSaude(
+        "aviso", "Peças das viaturas ocultas no SCPI (não aparecem): 3."
+    )
+    assert situacao_do_catalogo(AGORA).viaturas == 2
+
+
+def test_viaturas_sem_centro_habilitado_fica_indisponivel():
+    lista_de_viaturas()
+    CentroCusto.objects.create(descricao="ETA I", codigo="12")
+    assert texto_de(VIATURAS) == ItemSaude(
+        "erro",
+        f"{VIATURAS}: nenhum centro de custo habilitado como destino; o formulário fica "
+        "indisponível.",
+    )
+
+
+def test_viaturas_sem_nada_a_oferecer_fica_indisponivel():
+    Material.objects.create(codigo="9", nome="X", estoque_em=AGORA)
+    criar_centro("EQUIPE NORTE", "51", formularios=[ORIGEM_VIATURAS])
+    assert texto_de(VIATURAS) == ItemSaude(
+        "erro",
+        f"{VIATURAS}: nenhuma peça na lista nem material no AB; o formulário fica indisponível.",
+    )
+
+
+def test_viaturas_sem_saldo_fica_so_no_aviso_geral():
+    assert not itens_de(VIATURAS)
+
+
+@pytest.mark.parametrize("com_saldo", [True, False])
+def test_situacao_calcula_cada_catalogo_uma_vez(monkeypatch, com_saldo):
+    """A visão geral se recarrega a cada 5 s: os avisos e os cartões dividem o mesmo cálculo de
+    cada formulário (a oficina e os EPIs leem o cadastro inteiro)."""
+    import catalogo.catalogos as catalogos
+    import catalogo.saude as saude
+    from catalogo.models import Formulario
+
+    material = Material.objects.create(
+        codigo="A", nome="A", estoque_em=AGORA if com_saldo else None
+    )
+    # Com centro de custo e uma exceção nas viaturas, a análise das exceções também lê a regra
+    # das viaturas: precisa reaproveitar a mesma lista.
+    criar_centro("ALMOX", "1")
+    excecao(Formulario.VIATURAS, material, True)
+    efetivos, viaturas = [], []
+    original_efetivo, original_viaturas = saude.catalogo_efetivo, saude.catalogo_viaturas
+
+    def efetivo(origem, ab=None, **kwargs):
+        efetivos.append(origem)
+        return original_efetivo(origem, ab, **kwargs)
+
+    def lista_viaturas():
+        viaturas.append(1)
+        return original_viaturas()
+
+    monkeypatch.setattr(saude, "catalogo_efetivo", efetivo)
+    monkeypatch.setattr(saude, "catalogo_viaturas", lista_viaturas)
+    # Também a chamada de dentro de `catalogos` (a base das viaturas no catálogo efetivo).
+    monkeypatch.setattr(catalogos, "catalogo_viaturas", lista_viaturas)
+
+    situacao = situacao_do_catalogo(AGORA)
+
+    assert len(efetivos) == len(set(efetivos))
+    assert len(viaturas) == 1
+    for formulario in (Formulario.LIMPEZA, Formulario.OFICINA, Formulario.EPIS):
+        assert formulario in efetivos
+    assert (Formulario.AB in efetivos) == com_saldo
+    assert (Formulario.VIATURAS in efetivos) == com_saldo
+    assert (situacao.limpeza, situacao.oficina, situacao.epis) == (0, 0, 0)

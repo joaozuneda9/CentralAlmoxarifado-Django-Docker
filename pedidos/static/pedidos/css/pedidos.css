@@ -29,8 +29,11 @@ html:not([data-gaveta]) .pedido-resumo .quantidade-campo { width: 44px; min-heig
 html:not([data-gaveta]) .acoes-final { display: none; }
 /* Formulários públicos e saída avulsa: no celular, o envio é pela gaveta ("Revisar e enviar" →
    "Enviar pedido"), então o botão do fim some também ali. Ele fica na página, porque a gaveta envia
-   por meio dele (rótulo do caso divergente) e, sem JavaScript, é o único envio. */
+   por meio dele (rótulo do caso divergente). */
 .js .acoes-final { display: none; }
+/* O formulário público depende do JavaScript (HTMX) para buscar e montar o pedido: sem ele, só o
+   aviso do <noscript> (formulario.html) aparece. A classe `js` é posta no <html> pelo base.html. */
+html:not(.js) .formulario-pedido { display: none; }
 @container (min-width: 960px) {
   .pedido-grade { grid-template-columns: minmax(0, 1fr) 340px; gap: var(--esp-3); }
   /* O cartão não manda na altura da linha (a coluna dos passos manda): ele preenche a coluna e
@@ -45,8 +48,7 @@ html:not([data-gaveta]) .acoes-final { display: none; }
 .js[data-gaveta] .pedido-resumo { display: block; padding: 0; background: none; border: 0; }
 .js[data-gaveta] .pedido-enviar { display: none; }
 
-/* Busca de materiais em destaque; os resultados abrem num painel preso a ela (pedidos.js).
-   Sem JavaScript, o painel fica na página. */
+/* Busca de materiais em destaque; os resultados abrem num painel preso a ela (pedidos.js). */
 .busca-area { position: relative; }
 .busca-materiais .campo-rotulo { font-size: 1rem; font-weight: 600; }
 /* Filtro de grupo (acima da busca): secundário, recolhido num <details> cujo resumo é um botão
@@ -387,10 +389,6 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 .assinaturas { display: none; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: var(--esp-4); margin-top: var(--esp-2); }
 .assinaturas p { display: flex; align-items: flex-end; gap: var(--esp-1); min-height: 48px; white-space: nowrap; }
 .assinaturas p::after { content: ""; flex: 1; border-bottom: 1px solid currentColor; }
-/* A confirmação de impressão só aparece depois de Imprimir (pedidos.js); sem JavaScript, fica à vista. */
-.confirmacao-impressao { display: grid; justify-items: start; gap: var(--esp-2); }
-.js .confirmacao-impressao:not([data-visivel]) { display: none; }
-.confirmacao-impressao .aviso { width: 100%; }
 @media print {
   .folha-recibo, .recibo-bloco { border: 0; border-radius: 0; box-shadow: none; padding: 0; background: none; }
   .recibo .selo { border: 1px solid #999999; background: none; color: #000000; }
@@ -501,7 +499,7 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 /* Lista do painel. A linha inteira leva ao detalhe (o link do Nº se estende sobre ela, selos
    incluídos: nenhum deles tem ação própria). As colunas de texto têm largura mínima, para o
    nome não quebrar palavra por palavra. */
-#lista-pedidos { container-type: inline-size; }
+#lista-pedidos, .lista-autorizacoes { container-type: inline-size; }
 .tabela-pedidos tbody tr { position: relative; }
 .tabela-pedidos .col-numero a::after { content: ""; position: absolute; inset: 0; }
 .tabela-pedidos .col-numero a:focus-visible { outline: none; }
@@ -525,6 +523,8 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
   .tabela-pedidos .col-destino { order: 4; flex-basis: 100%; font-size: 0.875em; color: var(--texto-secundario); }
   .tabela-pedidos .col-origem { order: 5; }
   .tabela-pedidos .col-situacao { order: 6; }
+  /* O que complementa a linha (materiais, quem decidiu, motivo): embaixo, em texto menor. */
+  .tabela-pedidos .col-extra { order: 7; flex-basis: 100%; font-size: 0.875em; color: var(--texto-secundario); }
   /* No cartão, os dois selos voltam a ficar lado a lado, quebrando linha se faltar largura. */
   .situacao-selos { flex-direction: row; flex-wrap: wrap; gap: 6px var(--esp-1); }
 }
@@ -599,8 +599,7 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
    direita só indica que clica. Fechada, a linha é só o nome e a informação, com o selo azul claro
    "N no pedido" quando o material já está lá. Aberta, a ação aparece no pé da célula: a quantidade à
    esquerda e o "Confirmar" (ou "Atualizar") no canto inferior direito; o ✕ (vermelho) fica no canto
-   superior direito, no lugar do "+". As outras linhas ficam recuadas, mas clicáveis. Sem JavaScript, a
-   quantidade fica à vista e o ✕, o "+" e o botão de abrir não aparecem. */
+   superior direito, no lugar do "+". As outras linhas ficam recuadas, mas clicáveis. */
 .material-qtd { display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-1); }
 .material-abrir, .material-cancelar, .material-mais { display: none; }
 .selo[hidden] { display: none; }
@@ -727,3 +726,48 @@ html:not(.js) [data-quantidade] { display: none; }
 .rodape-saida [data-contagem-alteracoes]:not(:empty) { margin-right: auto; align-self: center; }
 .nao-gravadas [data-copiar-resumo] { justify-self: start; }
 .rodape-saida [data-contagem-alteracoes]:empty { display: none; }
+
+/* Folha (spec 006): a lista de peças preenchida como o papel. No celular, o diálogo ocupa a tela;
+   no computador, um painel centrado que rola por dentro. A linha tem o material à esquerda e a
+   quantidade à direita, como as colunas "Materiais | QTDE" da folha impressa. */
+.folha-chamada { display: grid; justify-items: start; gap: var(--esp-meio); margin-bottom: var(--esp-2); }
+.folha {
+  width: min(640px, calc(100% - 2 * var(--esp-2))); max-height: calc(100vh - 2 * var(--esp-4));
+  padding: 0; color: inherit; background: var(--fundo); border: 1px solid var(--borda);
+  border-radius: var(--raio-cartao); box-shadow: var(--sombra-elevada);
+}
+.folha::backdrop { background: rgba(15, 14, 12, 0.4); }
+/* A barra "Fechar / Pôr no pedido" fica presa embaixo: a rolagem para o campo com foco desconta a
+   altura dela, para o foco nunca ficar escondido atrás (WCAG 2.4.11). */
+.folha { scroll-padding-bottom: 96px; }
+.folha-corpo { display: grid; gap: var(--esp-2); padding: var(--esp-3); }
+.folha-cabecalho { display: flex; align-items: flex-start; justify-content: space-between; gap: var(--esp-2); }
+.folha-titulo { margin: 0 0 var(--esp-meio); font-size: 20px; }
+.folha-lista { list-style: none; margin: 0; padding: 0; display: grid; }
+.folha-linha {
+  display: grid; grid-template-columns: minmax(0, 1fr) 96px; align-items: center; gap: var(--esp-meio) var(--esp-2);
+  padding: 10px 0; border-top: 1px solid var(--borda);
+}
+.folha-material { display: grid; gap: 2px; min-width: 0; overflow-wrap: anywhere; cursor: pointer; }
+.folha-qtd { width: 100%; text-align: right; font-variant-numeric: tabular-nums; }
+.folha-motivo { justify-self: end; }
+.folha-linha-bloqueada .folha-material { opacity: 0.6; cursor: default; }
+.folha-linha-erro { padding-left: 12px; box-shadow: inset 3px 0 0 var(--erro-texto); }
+.folha-erro { grid-column: 1 / -1; margin: 0; }
+.folha-acoes {
+  position: sticky; bottom: 0; display: flex; justify-content: flex-end; gap: var(--esp-1);
+  margin: 0 calc(-1 * var(--esp-3)) calc(-1 * var(--esp-3)); padding: var(--esp-2) var(--esp-3);
+  background: var(--fundo); border-top: 1px solid var(--borda);
+}
+@media (max-width: 640px) {
+  .folha { width: 100%; max-width: none; height: 100%; max-height: none; margin: 0; border: 0; border-radius: 0; }
+  .folha-corpo { padding: var(--esp-2); }
+  .folha-acoes { margin: 0 calc(-1 * var(--esp-2)) calc(-1 * var(--esp-2)); padding: var(--esp-2) var(--esp-2) calc(var(--esp-2) + env(safe-area-inset-bottom)); }
+  .folha-acoes .botao { white-space: nowrap; }
+  .folha-acoes .botao-primario { flex: 1; }
+}
+
+/* Âncora `#pedidos` do painel: ao chegar pelos atalhos, o cartão dos filtros fica com um respiro no
+   alto; até 1286px (layouts.css), abaixo da barra fixa do topo (49px). */
+#pedidos { scroll-margin-top: var(--esp-2); }
+@media (max-width: 1286px) { #pedidos { scroll-margin-top: 65px; } }

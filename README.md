@@ -1,8 +1,8 @@
 # Central Almoxarifado (Django)
 
-Nova versão do sistema de requisições do almoxarifado SAEP, em Django, sem
-dependência da plataforma Google. Substitui o Central Almoxarifado em Google
-Apps Script.
+Sistema de requisições do almoxarifado SAEP, em Django, sem dependência da
+plataforma Google. Substituiu o Central Almoxarifado em Google Apps Script, que
+hoje é só histórico: o sistema não depende dele nem precisa reproduzi-lo.
 
 Design: [docs/superpowers/specs/2026-10-10-central-almoxarifado-django-design.md](docs/superpowers/specs/2026-10-10-central-almoxarifado-django-design.md)
 
@@ -11,6 +11,8 @@ Design: [docs/superpowers/specs/2026-10-10-central-almoxarifado-django-design.md
 - **Formulários públicos** (`/`, sem login): pedido de limpeza, copa/cozinha e escritório e
   pedido de materiais AB (limitado ao estoque do SCPI). Cada pedido novo avisa no Telegram
   (`TELEGRAM_TOKEN` e `TELEGRAM_CHAT_ID` no `.env`).
+  O formulário de EPIs passa antes pela autorização da Segurança do Trabalho (grupo
+  `Segurança do Trabalho` no admin; `TELEGRAM_CHAT_ID_SEGURANCA` no `.env` avisa a fila dela).
 - **Área do almoxarifado** (`/painel/`, login por matrícula): painel com filtros,
   atendimento dos pedidos, saída avulsa, recibo impresso do detalhe do pedido e a página Automações, com as
   importações e o lançamento no SCPI. Cada saída vira linhas que o robô do SCPI lança depois.
@@ -98,15 +100,12 @@ do ambiente, conforme `deploy/AMBIENTES.md`.
 
 - [deploy/INSTALACAO.md](deploy/INSTALACAO.md): ambiente Windows confirmado,
   preparação da produção nova e restrições da máquina. Guia para o André.
-- [deploy/VIRADA.md](deploy/VIRADA.md): roteiro da migração do Apps Script e da virada.
+- [deploy/VIRADA.md](deploy/VIRADA.md): registro histórico da migração do Apps Script, já feita.
 
-Três coisas a saber:
+Duas coisas a saber:
 
-- `LANCAMENTO_REAL` (no `.env`, padrão `0`) libera o lançamento real no SCPI. Fica `0` durante o
-  período em paralelo com o Apps Script, para não lançar duas vezes as mesmas saídas; vira `1` na
-  virada.
-- `uv run python manage.py importar_planilhas --arquivo <xlsx> [--dry-run]` importa o `.xlsx`
-  exportado das planilhas do Apps Script (migração única, antes da virada). A importação
-  substitui os pedidos e recusa com `LANCAMENTO_REAL=1`.
+- `LANCAMENTO_REAL` (no `.env`, padrão `0`) libera o lançamento real no SCPI. Fica `0` em todo
+  ambiente que não é o que lança de verdade (desenvolvimento, cópias de teste), para não lançar
+  duas vezes as mesmas saídas; só a produção o liga.
 - `uv run python manage.py backup_banco` grava o dump comprimido em `BACKUP_DIR` e apaga os com
   mais de 60 dias (roda todo dia pelo agendador do compose).

@@ -1,0 +1,2 @@
+{% comment %}Código, unidade, grupo e saldo de um material da página Formulários. Recebe `material` e `saldo`.{% endcomment %}
+<span class="mono">{{ material.codigo }}</span>{% if material.unidade %} · {{ material.unidade }}{% endif %}{% if material.grupo %} · {{ material.grupo }}{% if material.subgrupo %} › {{ material.subgrupo }}{% endif %}{% endif %} · saldo {{ saldo }}

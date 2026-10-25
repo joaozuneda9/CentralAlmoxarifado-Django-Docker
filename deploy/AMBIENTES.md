@@ -77,7 +77,7 @@ Usar chaves/senhas novas, sem copiar `.env` de produção para desenvolvimento.
 | `DB_NAME`, `DB_USER` | `almoxarifado`, `almox` (banco isolado pelo volume/rede) |
 | `DB_PASSWORD` | Senha nova, diferente da instalação antiga |
 | `LANCAMENTO_REAL` | `0` |
-| `SAEP_USER`, `SAEP_PASS`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID` | Vazios |
+| `SAEP_USER`, `SAEP_PASS`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_CHAT_ID_SEGURANCA` | Vazios |
 
 Em `.env.banco`, preencher apenas `MARIADB_ROOT_PASSWORD`, outra senha forte.
 Senhas contendo `$` devem usar aspas simples nos arquivos dotenv. Mudar os

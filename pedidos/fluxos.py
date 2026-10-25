@@ -1,15 +1,45 @@
-"""Os formulários que montam um carrinho de materiais: limpeza e AB (públicos) e saída avulsa.
+"""Os formulários que montam um carrinho de materiais: limpeza, AB e viaturas (públicos) e saída
+avulsa.
 
-Cada fluxo diz de que catálogo lê, se a quantidade é inteira e se o estoque limita o pedido.
+Cada formulário é uma entrada de `FLUXOS`, com só o que muda: o catálogo, os textos, a origem, a
+regra de quantidade e, se precisar, a folha, os destinos aceitos e o número da ocorrência. Busca,
+carrinho, envio, proteções e recibo são o núcleo, igual para todos, e não perguntam pelo nome nem
+pela origem do formulário. Um formulário novo é uma entrada aqui, uma função de catálogo e um valor
+novo em `Pedido.Origem` (com a migration de `choices`).
 """
 
+from collections.abc import Callable
 from dataclasses import dataclass
+from functools import partial
 
 from django.conf import settings
 from django.http import Http404
 
-from catalogo.catalogos import ItemCatalogo
-from pedidos.regras import AB, AVULSA, LIMPEZA, normalizar_busca
+from catalogo.catalogos import (
+    ItemCatalogo,
+    centros_do_formulario,
+    folha_viaturas,
+    formulario_ab,
+    formulario_avulsa,
+    formulario_epis,
+    formulario_limpeza,
+    formulario_oficina,
+    formulario_viaturas,
+)
+from pedidos.regras import (
+    AB,
+    AVULSA,
+    EPIS,
+    LIMPEZA,
+    OFICINA,
+    REGRA_LIVRE,
+    REGRA_POR_UNIDADE,
+    VIATURAS,
+    Centro,
+    maximo_pedivel,
+    normalizar_busca,
+    qtd_br,
+)
 
 LIMITE_RESULTADOS = 50
 
@@ -17,11 +47,29 @@ LIMITE_RESULTADOS = 50
 @dataclass(frozen=True)
 class Fluxo:
     nome: str  # usado na URL
-    origem: str
+    origem: str  # o valor gravado em `Pedido.origem`
     titulo: str  # nos formulários públicos, o nome que o funcionário vê (o interno é o da Origem)
-    inteiro: bool
-    com_estoque: bool
-    publico: bool
+    # O catálogo do formulário: None quando ele está indisponível (saldo nunca importado ou
+    # nenhum item), nunca uma lista vazia.
+    catalogo: Callable[[], list[ItemCatalogo] | None]
+    exemplo_busca: str  # o exemplo no campo de busca
+    exemplo_inicio: str = ""  # o exemplo no cartão da página inicial
+    icone: str = "caixa"  # o ícone do cartão da página inicial
+    exemplo_destino: str = "Posto de trabalho, placa do veículo ou setor"  # no campo de destino
+    publico: bool = True
+    # Quem pede segue a unidade do material (`por_unidade`); a equipe aceita fração em qualquer
+    # unidade (`livre`).
+    regra_quantidade: str = REGRA_POR_UNIDADE
+    # Os códigos da folha (a lista preenchida de uma vez, num diálogo), na ordem; None: sem folha.
+    folha: Callable[[], list[str]] | None = None
+    # Os centros de custo aceitos como destino; None: todos os cadastrados (a saída avulsa). Os
+    # formulários públicos leem a configuração (`centros_do_formulario`, spec 009).
+    centros: Callable[[], list[Centro]] | None = None
+    # Mostra, grava e compara no reenvio o "Nº da ocorrência" (opcional para quem pede).
+    pede_ocorrencia: bool = False
+    # O pedido passa por autorização da Segurança do Trabalho antes do atendimento (spec 008): o
+    # registro cria a `AutorizacaoPedido` e o aviso ao almoxarifado só sai depois de autorizado.
+    exige_autorizacao: bool = False
 
     @property
     def max_itens(self) -> int | None:
@@ -47,23 +95,68 @@ class Fluxo:
 
 FLUXOS: dict[str, Fluxo] = {
     "limpeza": Fluxo(
-        "limpeza",
-        LIMPEZA,
-        "Limpeza, copa e escritório",
-        inteiro=False,
-        com_estoque=False,
-        publico=True,
+        nome="limpeza",
+        origem=LIMPEZA,
+        titulo="Limpeza, copa e escritório",
+        catalogo=formulario_limpeza,
+        exemplo_busca="Ex.: detergente, café",
+        exemplo_inicio="Ex.: café, copo descartável, água sanitária, caneta",
+        icone="caixa",
+        centros=partial(centros_do_formulario, LIMPEZA),
     ),
     "ab": Fluxo(
-        "ab",
-        AB,
-        "Ferramentas, peças e materiais",
-        inteiro=True,
-        com_estoque=True,
-        publico=True,
+        nome="ab",
+        origem=AB,
+        titulo="Ferramentas, peças e materiais",
+        catalogo=formulario_ab,
+        exemplo_busca="Ex.: luva, fita veda rosca",
+        exemplo_inicio="Ex.: luva, botina, fita veda-rosca, cimento",
+        icone="catalogo",
+        centros=partial(centros_do_formulario, AB),
+    ),
+    "viaturas": Fluxo(
+        nome="viaturas",
+        origem=VIATURAS,
+        titulo="Reposição de peças das viaturas",
+        catalogo=formulario_viaturas,
+        exemplo_busca="Ex.: luva, tubo, registro",
+        exemplo_inicio="Ex.: cotovelo, luva, tee, registro, tubo",
+        icone="atualizar",
+        exemplo_destino="Centro de custo da equipe",
+        folha=folha_viaturas,
+        centros=partial(centros_do_formulario, VIATURAS),
+        pede_ocorrencia=True,
+    ),
+    "oficina": Fluxo(
+        nome="oficina",
+        origem=OFICINA,
+        titulo="Oficina mecânica",
+        catalogo=formulario_oficina,
+        exemplo_busca="Ex.: filtro de óleo, pneu",
+        exemplo_inicio="Ex.: filtro, óleo, pneu, aditivo, lâmpada",
+        icone="caixa-check",
+        exemplo_destino="Oficina mecânica ou placa da viatura",
+        centros=partial(centros_do_formulario, OFICINA),
+    ),
+    "epis": Fluxo(
+        nome="epis",
+        origem=EPIS,
+        titulo="Equipamentos de proteção individual (EPIs)",
+        catalogo=formulario_epis,
+        exemplo_busca="Ex.: luva, capacete, óculos",
+        exemplo_inicio="Ex.: luva, botina, capacete, protetor auricular",
+        icone="escudo",
+        centros=partial(centros_do_formulario, EPIS),
+        exige_autorizacao=True,
     ),
     "avulsa": Fluxo(
-        "avulsa", AVULSA, "Saída avulsa", inteiro=False, com_estoque=False, publico=False
+        nome="avulsa",
+        origem=AVULSA,
+        titulo="Saída avulsa",
+        catalogo=formulario_avulsa,
+        exemplo_busca="Ex.: luva, fita veda rosca, 016.005.010",
+        publico=False,
+        regra_quantidade=REGRA_LIVRE,
     ),
 }
 
@@ -75,14 +168,24 @@ def fluxo_publico(nome: str) -> Fluxo:
     return fluxo
 
 
+def fluxos_publicos() -> list[Fluxo]:
+    """Os formulários que o funcionário vê na página inicial, na ordem de `FLUXOS`."""
+    return [f for f in FLUXOS.values() if f.publico]
+
+
+def fluxo_da_origem(origem: str) -> Fluxo | None:
+    return next((f for f in FLUXOS.values() if f.origem == origem), None)
+
+
 def _ordenados(valores) -> list[str]:
     return sorted({v for v in valores if v}, key=normalizar_busca)
 
 
 def opcoes_filtro(fluxo: Fluxo, catalogo) -> list:
-    """Limpeza e AB: [(grupo, [subgrupos])] dos materiais do catálogo. Avulsa: nenhum filtro."""
+    """Formulários públicos: [(grupo, [subgrupos])] dos materiais do catálogo. Avulsa: nenhum
+    filtro."""
     catalogo = catalogo or []
-    if fluxo.origem in (LIMPEZA, AB):
+    if fluxo.publico:
         return [
             (grupo, _ordenados(i.subgrupo for i in catalogo if i.grupo == grupo))
             for grupo in _ordenados(i.grupo for i in catalogo)
@@ -97,7 +200,7 @@ def classe_ab(item: ItemCatalogo) -> str:
 def _passa(fluxo: Fluxo, item: ItemCatalogo, filtro: str) -> bool:
     if not filtro:
         return True
-    if fluxo.origem in (LIMPEZA, AB):
+    if fluxo.publico:
         return filtro in (item.grupo, classe_ab(item))
     return True
 
@@ -131,8 +234,17 @@ class Resultado:
 
     item: ItemCatalogo
     motivo: str  # por que não pode ser pedido ("" se pode)
-    info: str  # unidade, ou o estoque disponível no AB
+    info: str  # a unidade ("—" sem unidade)
     classe: str
+    # "Estoque N": o máximo que o formulário aceita (o mesmo número do limite e das mensagens),
+    # sem zeros à direita.
+    estoque: str = ""
+
+    @property
+    def linha_publica(self) -> str:
+        """A informação do formulário público (sem código nem grupo): estoque e unidade."""
+        unidade = "" if self.info == "—" else self.info
+        return " · ".join(p for p in (self.estoque, unidade) if p) or self.info
 
 
 def resultados(fluxo: Fluxo, itens) -> list[Resultado]:
@@ -140,14 +252,8 @@ def resultados(fluxo: Fluxo, itens) -> list[Resultado]:
 
     lista = []
     for i in itens:
-        if fluxo.com_estoque:
-            info = (
-                f"{i.disponivel} {i.unidade} disponíveis"
-                if i.unidade
-                else f"{i.disponivel} disponíveis"
-            )
-        else:
-            info = i.unidade or "—"
-        classe = i.grupo if fluxo.origem == AVULSA else classe_ab(i)
-        lista.append(Resultado(i, motivo_bloqueio(fluxo, i), info, classe))
+        maximo = maximo_pedivel(i.estoque, i.fracionavel, fluxo.regra_quantidade)
+        estoque = f"Estoque {qtd_br(maximo)}"
+        classe = classe_ab(i) if fluxo.publico else i.grupo
+        lista.append(Resultado(i, motivo_bloqueio(fluxo, i), i.unidade or "—", classe, estoque))
     return lista

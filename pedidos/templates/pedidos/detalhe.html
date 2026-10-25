@@ -28,17 +28,27 @@
   {% if editando %}{% include "pedidos/_edicao_faixa.html" %}
   {% elif a %}{% include "pedidos/_edicao_aviso.html" %}{% endif %}
   {% if a and not a.recibo_impresso_em and not editando %}
-  {# Depois de imprimir, a confirmação de que o recibo saiu na impressora (pedidos.js a mostra). #}
-  <form method="post" action="{% url 'pedidos:marcar_impressos' %}" class="confirmacao-impressao nao-imprimir">
-    {% csrf_token %}
-    <input type="hidden" name="atendimento" value="{{ a.id }}">
-    <input type="hidden" name="versao-{{ a.id }}" value="{{ pedido.versao }}">
-    <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
-    <div class="aviso aviso-atencao" role="note">{% include "interface/_icone.html" with nome="alerta" %}<p><strong>O recibo saiu na impressora?</strong> Confirme para marcá-lo como impresso. Sem a confirmação, ele continua na lista de recibos pendentes.</p></div>
-    <button type="submit" class="botao botao-primario">{% include "interface/_icone.html" with nome="check" %}Saiu na impressora — marcar como impresso</button>
-  </form>
+  {# Depois de imprimir, a confirmação de que o recibo saiu na impressora (pedidos.js a abre como diálogo modal, dialogo.js). Sem JavaScript, o `open` a deixa à vista na página. #}
+  <dialog class="dialogo-confirmacao nao-imprimir" id="dialogo-impressao" data-apos-imprimir open aria-labelledby="dialogo-impressao-titulo">
+    <form method="post" action="{% url 'pedidos:marcar_impressos' %}" class="dialogo-confirmacao-corpo">
+      {% csrf_token %}
+      <input type="hidden" name="atendimento" value="{{ a.id }}">
+      <input type="hidden" name="versao-{{ a.id }}" value="{{ pedido.versao }}">
+      <input type="hidden" name="voltar" value="{{ request.get_full_path }}">
+      <div class="dialogo-confirmacao-texto">
+        <h2 id="dialogo-impressao-titulo" class="dialogo-confirmacao-titulo">O recibo saiu na impressora?</h2>
+        <p>Confirme para marcá-lo como impresso. Sem a confirmação, ele continua na lista de recibos pendentes.</p>
+      </div>
+      <div class="dialogo-confirmacao-acoes">
+        <button type="submit" formmethod="dialog" class="botao botao-secundario" data-fechar-dialogo>Ainda não</button>
+        <button type="submit" class="botao botao-primario" autofocus>{% include "interface/_icone.html" with nome="check" %}Saiu na impressora</button>
+      </div>
+    </form>
+  </dialog>
   {% endif %}
   {% endwith %}
+
+  {% include "pedidos/_autorizacao.html" %}
 
   <article class="folha-recibo">{% include "pedidos/_recibo.html" %}</article>
 

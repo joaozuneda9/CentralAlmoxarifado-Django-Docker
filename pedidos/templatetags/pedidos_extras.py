@@ -4,11 +4,19 @@ import re
 
 from django import template
 
-from pedidos.regras import LIMPEZA, frase_diferenca
+from pedidos.regras import (
+    AUTORIZACAO_AGUARDANDO,
+    AUTORIZACAO_AUTORIZADA,
+    AUTORIZACAO_RECUSADA,
+    LIMPEZA,
+    frase_diferenca,
+)
 
 register = template.Library()
 
 _SITUACAO = {
+    "aguardando_autorizacao": "selo-aviso",
+    "recusado": "selo-erro",
     "aguardando": "selo-info",
     "atendido": "selo-ok",
     "parcial": "selo-aviso",
@@ -19,6 +27,11 @@ _SCPI = {
     "parcial": "selo-aviso",
     "lancado": "selo-ok",
     "atencao": "selo-erro",
+}
+_AUTORIZACAO = {
+    AUTORIZACAO_AGUARDANDO: "selo-aviso",
+    AUTORIZACAO_AUTORIZADA: "selo-ok",
+    AUTORIZACAO_RECUSADA: "selo-erro",
 }
 
 
@@ -39,6 +52,17 @@ def badge_situacao(chave: str) -> str:
 @register.filter
 def badge_scpi(chave: str) -> str:
     return _SCPI.get(chave, "selo-neutro")
+
+
+@register.filter
+def badge_autorizacao(situacao: str) -> str:
+    return _AUTORIZACAO.get(situacao, "selo-neutro")
+
+
+@register.filter
+def nome_usuario(usuario) -> str:
+    """Nome completo do usuário, ou a matrícula quando não tem nome."""
+    return usuario.get_full_name() or usuario.username
 
 
 @register.filter(name="frase_diferenca")
@@ -64,6 +88,13 @@ def proximos_passos(pedido) -> list[str]:
     """O que o almoxarifado ainda precisa fazer neste estágio do pedido (texto da tela; as regras
     de situação ficam em `regras.py`)."""
     chave = pedido.situacao.chave
+    if chave == "aguardando_autorizacao":
+        return [
+            "Aguarde a autorização da Segurança do Trabalho: o pedido ainda não pode ser atendido.",
+            "O aviso do pedido chega ao almoxarifado depois que ela autorizar.",
+        ]
+    if chave == "recusado":
+        return ["Pedido recusado pela Segurança do Trabalho: está encerrado e não há o que fazer."]
     if chave == "aguardando":
         return [
             "Confira e preencha as quantidades separadas na tabela de materiais.",

@@ -308,13 +308,14 @@ def test_duas_edicoes_ao_mesmo_tempo(pedido, usuario):
     assert Pedido.objects.get().versao == 1
 
 
-def test_ab_recusa_decimal(usuario):
+def test_ab_aceita_decimal_na_edicao(usuario):
+    """A equipe aceita fração em qualquer unidade, também ao editar pedido do AB (spec 005)."""
     montar_cenario()
     p = registrar(AB, envio_ab()).pedido
     atender(p, usuario, qtds={"016.005.010": "3"})
     r = editar(p, usuario, qtds={"016.005.010": "1,5"})
-    assert not r.ok
-    assert "Quantidade inválida para 016.005.010." in textos(r)
+    assert r.ok, textos(r)
+    assert not editar(p, usuario, qtds={"016.005.010": "1.5"}).ok  # ponto: recusado
 
 
 def test_acrescentado_oculto_inalterado_e_aceito(pedido, usuario):

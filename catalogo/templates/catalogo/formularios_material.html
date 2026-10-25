@@ -1,0 +1,50 @@
+{% extends "interface/base_almoxarifado.html" %}
+{% load static interface_extras %}
+
+{% block title %}{{ material.nome }} — Formulários — Central Almoxarifado{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'catalogo/css/catalogo.css' %}">{% endblock %}
+{% block voltar %}<a class="link-voltar" href="{% url 'catalogo:formularios' %}?aba=materiais">{% include "interface/_icone.html" with nome="seta-esquerda" %}Voltar aos formulários</a>{% endblock %}
+{% block rotulo %}Onde aparece{% endblock %}
+{% block heading %}{{ material.nome }}{% endblock %}
+{% block sub %}{% include "catalogo/_material_info.html" %}{% endblock %}
+
+{% block page %}
+{% comment %}
+Consulta por material (spec 009, US4): em quais dos cinco formulários o material é oferecido e por
+quê. "Oferecido no formulário" não é "em estoque": o saldo vem só como informação. Somente leitura;
+quem pode alterar faz isso na lista de materiais de cada formulário.
+{% endcomment %}
+<div class="pilha-larga">
+  <section class="cartao pilha" aria-labelledby="titulo-onde">
+    <h2 class="cartao-titulo" id="titulo-onde">Os cinco formulários</h2>
+    {% if material.oculto %}
+    <p class="aviso aviso-atencao">Este material está oculto no cadastro do SCPI: nenhum formulário o oferece, qualquer que seja a configuração.</p>
+    {% endif %}
+    {% if material.duplicado %}
+    <p class="aviso aviso-atencao"><span class="selo selo-aviso">Cadastro duplicado</span> Onde estiver disponível, o formulário o mostra bloqueado.</p>
+    {% endif %}
+    {% if canonico %}
+    <p class="aviso aviso-info">Código antigo: o canônico é <span class="mono">{{ canonico }}</span>. O AB oferece o canônico.</p>
+    {% endif %}
+    <div class="tabela-rolagem">
+      <table class="tabela tabela-config">
+        <caption class="visually-hidden">Formulários e se oferecem o material</caption>
+        <thead>
+          <tr><th scope="col">Formulário</th><th scope="col">Neste formulário</th><th scope="col"><span class="visually-hidden">Abrir</span></th></tr>
+        </thead>
+        <tbody>
+          {% for l in linhas %}
+          <tr data-formulario="{{ l.origem }}">
+            <td>{{ l.nome }}</td>
+            <td>
+              {% include "catalogo/_material_estado.html" %}
+            </td>
+            <td><a class="botao botao-texto" href="{{ l.url }}">Ver na lista</a></td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+{% endblock %}

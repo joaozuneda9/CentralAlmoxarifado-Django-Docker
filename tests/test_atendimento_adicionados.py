@@ -17,6 +17,7 @@ from pedidos.servicos import catalogo_de, centros, confirmar_atendimento, regist
 from scpi.requisicoes import selecionar
 from tests.cenario import (
     criar_pedido,
+    dar_saldo,
     envio_ab,
     envio_limpeza,
     montar_cenario,
@@ -38,6 +39,8 @@ def usuario():
 @pytest.fixture
 def pedido():
     montar_cenario()
+    # A saída avulsa só lista material com saldo: os do pedido e o primeiro livre vêm zerados.
+    dar_saldo("023.001.002", "008.001.002", "013.006.001")
     return registrar(LIMPEZA, envio_limpeza()).pedido
 
 
@@ -213,17 +216,14 @@ def test_fora_do_catalogo_usa_a_mensagem_do_cadastro(pedido, usuario):
     assert textos(r) == ["Material 999.999.999 não encontrado no cadastro."]
 
 
-def test_ab_acrescentado_so_inteiro(usuario):
+def test_ab_acrescentado_aceita_fracao(usuario):
+    """A equipe aceita fração em qualquer unidade, também nos pedidos do AB (spec 005)."""
     montar_cenario()
     p = registrar(AB, envio_ab()).pedido
     x = livres(p)[0].codigo
     r = atender(p, usuario, {"016.005.010": "3", x: "1,5"}, [Adicionado(x)])
-    assert r.ok is False
-    assert textos(r) == [f"Pedido AB: a quantidade de {x} deve ser inteira."]
-    assert [e.codigo for e in r.erros] == [x]
-    assert not Atendimento.objects.exists() and not LinhaSaida.objects.exists()
-    assert not ItemPedido.objects.filter(origem=ItemPedido.Origem.ALMOXARIFADO).exists()
-    assert atender(p, usuario, {"016.005.010": "3", x: "2"}, [Adicionado(x)]).ok
+    assert r.ok, textos(r)
+    assert ItemPedido.objects.get(pedido=p, codigo=x).qtd_entregue == Decimal("1.5")
 
 
 def test_so_acrescentado_entregue_basta(pedido, usuario):
@@ -380,7 +380,9 @@ def test_adicionar_recusa_material_do_pedido_e_vinculos_invalidos(client, pedido
     r = client.post(url, {"adicionar": "999.999.999", "qtd-999.999.999": "1"})
     assert _recusa(r) == "Material não encontrado no catálogo."
     r = client.post(url, {"adicionar": x.codigo, f"qtd-{x.codigo}": "0"})
-    assert _recusa(r) == "Informe uma quantidade maior que zero."
+    assert _recusa(r) == (
+        "Informe uma quantidade maior que zero (use vírgula para decimais, ex.: 1,5)."
+    )
     Material.objects.filter(codigo=x.codigo).update(duplicado=True)
     r = client.post(url, {"adicionar": x.codigo, f"qtd-{x.codigo}": "1"})
     assert "não pode ser adicionado" in _recusa(r)

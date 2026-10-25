@@ -1,0 +1,64 @@
+{% extends "interface/base_almoxarifado.html" %}
+{% load static pedidos_extras interface_extras %}
+{% block title %}{{ pedido.numero }} — Autorização — Central Almoxarifado{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'pedidos/css/pedidos.css' %}">{% endblock %}
+{% block voltar %}<a class="link-voltar" href="{% url 'pedidos:autorizacoes' %}">{% include "interface/_icone.html" with nome="seta-esquerda" %}Voltar às autorizações</a>{% endblock %}
+{% block rotulo %}Segurança do Trabalho{% endblock %}
+{% block heading %}Pedido de EPIs <span class="mono">{{ pedido.numero }}</span>{% endblock %}
+{% block sub %}O pedido é só de leitura: você autoriza ou recusa, sem alterar materiais nem quantidades.{% endblock %}
+
+{% block page %}
+<div class="pilha-larga">
+  <section class="cartao" aria-labelledby="titulo-pedido">
+    <h2 class="cartao-titulo" id="titulo-pedido">Pedido</h2>
+    <dl class="dados">
+      <div><dt>Enviado em</dt><dd>{{ pedido.criado_em|date:"d/m/Y H:i" }}</dd></div>
+      <div><dt>Servidor</dt><dd>{{ pedido.solicitante }}</dd></div>
+      <div><dt>Destino</dt><dd>{{ pedido.destino|default:"—" }}</dd></div>
+      <div><dt>Observação</dt><dd>{{ pedido.obs|default:"—" }}</dd></div>
+    </dl>
+    <div class="tabela-rolagem">
+      <table class="tabela">
+        <thead>
+          <tr>
+            <th scope="col">Material</th>
+            <th scope="col">Quantidade pedida</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for i in pedido.itens.all %}
+          <tr>
+            <td>{{ i.material }} <span class="mono texto-secundario">{{ i.codigo }}</span></td>
+            <td>{{ i.qtd_pedida|quantidade }}{% if i.unidade %} {{ i.unidade }}{% endif %}</td>
+          </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="cartao" aria-labelledby="titulo-decisao">
+    <h2 class="cartao-titulo" id="titulo-decisao">Decisão</h2>
+    {% if autorizacao.situacao == "AGUARDANDO" %}
+    <form method="post" action="{% url 'pedidos:decidir' pedido.numero %}" class="pilha-larga">
+      {% csrf_token %}
+      {% if mensagem %}<div class="aviso aviso-erro" role="alert">{% include "interface/_icone.html" with nome="alerta" %}<p>{{ mensagem }}</p></div>{% endif %}
+      <div class="campo">
+        <label class="campo-rotulo" for="motivo">Motivo da recusa</label>
+        <input id="motivo" class="campo-entrada" type="text" name="motivo" maxlength="200" autocomplete="off" value="{{ motivo|default:'' }}" aria-describedby="dica-motivo">
+        <p class="campo-dica" id="dica-motivo">Obrigatório só para recusar. O motivo será visto pelo servidor, na consulta, e pelo almoxarifado: não escreva dado sensível.</p>
+      </div>
+      <div class="acoes">
+        <button type="submit" name="decisao" value="autorizar" class="botao botao-primario">{% include "interface/_icone.html" with nome="check" %}Autorizar</button>
+        <button type="submit" name="decisao" value="recusar" class="botao botao-perigo">{% include "interface/_icone.html" with nome="fechar" %}Recusar</button>
+      </div>
+      <p class="texto-secundario texto-pequeno">A decisão é definitiva: se foi um engano, o servidor faz um pedido novo.</p>
+    </form>
+    {% else %}
+    <p><span class="selo {{ autorizacao.situacao|badge_autorizacao }}">{{ autorizacao.get_situacao_display }}</span>
+      por {{ autorizacao.decidido_por|nome_usuario }} em {{ autorizacao.decidido_em|date:"d/m/Y H:i" }}.</p>
+    {% if autorizacao.motivo %}<p><strong>Motivo:</strong> {{ autorizacao.motivo }}</p>{% endif %}
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

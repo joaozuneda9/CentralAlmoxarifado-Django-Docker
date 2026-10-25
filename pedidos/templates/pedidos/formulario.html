@@ -8,5 +8,7 @@
 {% block heading %}{{ fluxo.titulo }}{% endblock %}
 {% block voltar %}<a href="{% url 'pedidos:inicio' %}" class="link-voltar">{% include "interface/_icone.html" with nome="seta-esquerda" %}Trocar tipo de material</a>{% endblock %}
 {% block page %}
+{# Os formulários dependem do HTMX para buscar, adicionar, alterar e remover: sem JavaScript, o aviso explica e o formulário fica escondido (pedidos.css). #}
+<noscript><div class="aviso aviso-atencao" role="alert">{% include "interface/_icone.html" with nome="alerta" %}<p>Este formulário precisa de JavaScript para funcionar. Ative o JavaScript no navegador, use outro navegador ou procure o almoxarifado.</p></div></noscript>
 <div id="formulario">{% if sucesso %}{% include "pedidos/_sucesso.html" %}{% else %}{% include "pedidos/_formulario.html" %}{% endif %}</div>
 {% endblock %}

@@ -1,7 +1,8 @@
 /*
  * Abas (componente comum, `[data-abas]`): troca o painel, guarda a aba na URL (`?aba=`) e anda com
  * as setas, Home e End (padrão WAI-ARIA). Quando as abas não cabem, marca de que lado a lista
- * continua (`data-mais-inicio`/`data-mais-fim`). Carregado no <head> com defer, em todas as páginas.
+ * continua (`data-mais-inicio`/`data-mais-fim`). Ao abrir uma aba, dispara `abas:ativada` no
+ * painel. Carregado no <head> com defer, em todas as páginas.
  * Sem JavaScript, todos os painéis ficam à vista, empilhados.
  */
 (function () {
@@ -31,9 +32,15 @@
       if (ativa) mostrar(aba);
       if (ativa && focar) aba.focus();
     });
+    var ativado = null;
     raiz.querySelectorAll("[role=tabpanel]").forEach(function (painel) {
-      painel.classList.toggle("aba-painel-ativo", painel.id === "painel-" + chave);
+      var ativo = painel.id === "painel-" + chave;
+      painel.classList.toggle("aba-painel-ativo", ativo);
+      if (ativo) ativado = painel;
     });
+    // Avisa o painel que abriu (`abas:ativada`, sobe pelo DOM): um painel que veio vazio se carrega
+    // por aí (`hx-trigger="abas:ativada[...]"`, com o filtro de quem usa).
+    if (ativado) ativado.dispatchEvent(new CustomEvent("abas:ativada", { bubbles: true }));
     // A aba fica na URL: recarregar a página (ou voltar de um envio com erro) mantém a aba.
     try {
       // (a página pode ter vindo de um envio com erro, em outra URL; a aba vai na da própria página)

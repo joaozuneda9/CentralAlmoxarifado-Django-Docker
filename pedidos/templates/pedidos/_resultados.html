@@ -7,7 +7,7 @@
     <div class="material-dados">
       <span class="material-titulo"><strong>{{ r.item.nome }}</strong></span>
       {# Com o material no pedido, o selo "N no pedido" aparece ao lado da informação (pedidos.js). Unidade longa: o selo desce para a linha de baixo, no mesmo alinhamento à esquerda. #}
-      <span class="material-info"><span class="texto-secundario texto-pequeno">{% if fluxo.publico %}{{ r.info }}{% else %}<span class="mono">{{ r.item.codigo }}</span> · {{ r.info }}{% if r.classe %} · {{ r.classe }}{% endif %}{% endif %}</span>{% if not r.motivo and not um_passo %}<span class="selo selo-info material-no-pedido" data-selo-pedido hidden>{% include "interface/_icone.html" with nome="check" %}<span data-selo-texto></span></span>{% endif %}</span>
+      <span class="material-info"><span class="texto-secundario texto-pequeno">{% if fluxo.publico %}{{ r.linha_publica }}{% else %}<span class="mono">{{ r.item.codigo }}</span> · {% if r.estoque %}{{ r.estoque }} · {% endif %}{{ r.info }}{% if r.classe %} · {{ r.classe }}{% endif %}{% endif %}</span>{% if not r.motivo and not um_passo %}<span class="selo selo-info material-no-pedido" data-selo-pedido hidden>{% include "interface/_icone.html" with nome="check" %}<span data-selo-texto></span></span>{% endif %}</span>
       {% if r.motivo %}<span><span class="selo selo-aviso">{{ r.motivo }}</span></span>{% endif %}
       {# A linha inteira abre a quantidade: o botão se estica sobre ela (pedidos.css); o "+" só indica que clica. #}
       {% if not r.motivo and not um_passo %}<button type="button" class="material-abrir" data-adicionar-abrir aria-expanded="false" aria-controls="qtd-area-{{ forloop.counter }}" aria-label="Adicionar {{ r.item.nome }}">Adicionar</button><span class="material-mais" aria-hidden="true">{% include "interface/_icone.html" with nome="mais" %}</span>{% endif %}
@@ -15,17 +15,16 @@
     {% if not r.motivo %}
     {% comment %}
     Formulários públicos e saída avulsa: tocar na linha (o botão `material-abrir`, acima) abre a
-    quantidade, que se confirma (pedidos.js; uma aberta por vez). Sem JavaScript, a quantidade e o
-    botão de envio (que diz "Adicionar") ficam à vista. No painel do atendimento (`um_passo`), o
+    quantidade, que se confirma (pedidos.js; uma aberta por vez). No painel do atendimento (`um_passo`), o
     botão adiciona direto: o painel já é a escolha; na troca, ele diz "Trocar" (`acao_rotulo`,
     `acao_aria`, `acao_primaria`).
     {% endcomment %}
     <div class="material-acao"{% if not um_passo %} data-adicionar{% endif %}>
       <div class="material-qtd" id="qtd-area-{{ forloop.counter }}">
-        <label class="visually-hidden" for="qtd-{{ forloop.counter }}">Quantidade{% if fluxo.inteiro %} (inteira){% endif %} de {{ r.item.nome }}{% if r.item.unidade %} ({{ r.item.unidade }}){% endif %}</label>
+        <label class="visually-hidden" for="qtd-{{ forloop.counter }}">Quantidade de {{ r.item.nome }}{% if r.item.unidade %} ({{ r.item.unidade }}){% endif %}</label>
         <div class="quantidade">
           <button type="button" class="botao botao-icone" data-quantidade="menos" aria-label="Diminuir">{% include "interface/_icone.html" with nome="menos" %}</button>
-          <input id="qtd-{{ forloop.counter }}" class="quantidade-campo campo-qtd" type="text" name="qtd-{{ r.item.codigo }}" value="{{ qtd_inicial|default:'1' }}" inputmode="{% if fluxo.inteiro %}numeric{% else %}decimal{% endif %}">
+          <input id="qtd-{{ forloop.counter }}" class="quantidade-campo campo-qtd" type="text" name="qtd-{{ r.item.codigo }}" value="{{ qtd_inicial|default:'1' }}" inputmode="decimal">
           <button type="button" class="botao botao-icone" data-quantidade="mais" aria-label="Aumentar">{% include "interface/_icone.html" with nome="mais" %}</button>
         </div>
         <button type="button" class="botao {% if not um_passo or acao_primaria %}botao-primario{% else %}botao-secundario{% endif %}" data-adicionar-confirmar hx-post="{{ url_carrinho }}" hx-target="{{ alvo_resultado|default:'#carrinho' }}" hx-swap="{{ troca_resultado|default:'innerHTML' }}"{% if inclusao_resultado %} hx-include="{{ inclusao_resultado }}"{% endif %}{% if sincronia_resultado %} hx-sync="{{ sincronia_resultado }}"{% endif %}

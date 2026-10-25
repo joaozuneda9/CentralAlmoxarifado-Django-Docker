@@ -15,7 +15,7 @@
 {% if editando %}{% include "pedidos/_edicao_faixa.html" %}{% endif %}
 <form method="post" action="{% if editando %}{% url 'pedidos:editar' pedido.numero %}{% else %}{% url 'pedidos:avulsa' %}{% endif %}" class="pilha-larga"{% if editando %} data-editando{% endif %}>
   {% csrf_token %}
-  {% if editando %}<input type="hidden" name="versao" value="{{ versao }}">{% else %}<input type="hidden" name="envio_id" value="{{ envio_id }}">{% endif %}
+  {% if editando %}<input type="hidden" name="versao" value="{{ versao }}"><input type="hidden" name="pedido" value="{{ pedido.numero }}">{% else %}<input type="hidden" name="envio_id" value="{{ envio_id }}">{% endif %}
 
   {% if mensagem %}
   <div class="aviso aviso-erro" role="alert">{% include "interface/_icone.html" with nome="alerta" %}<div><p>{{ mensagem }}</p>{% if erros %}<ul>{% for erro in erros %}<li>{{ erro.texto }}</li>{% endfor %}</ul>{% endif %}</div></div>

@@ -8,6 +8,8 @@ from dataclasses import dataclass
 
 from django.urls import reverse
 
+from contas.acesso import da_seguranca_trabalho
+
 
 @dataclass(frozen=True)
 class ItemMenu:
@@ -15,6 +17,8 @@ class ItemMenu:
     rota: str
     icone: str = ""
     so_equipe: bool = False
+    # Quem vê o item: o almoxarifado (os usuários de sempre) ou a Segurança do Trabalho (spec 008).
+    para: str = "almoxarifado"
 
 
 ITENS_MENU: tuple[ItemMenu, ...] = (
@@ -22,7 +26,9 @@ ITENS_MENU: tuple[ItemMenu, ...] = (
     ItemMenu("Saída avulsa", "pedidos:avulsa", "saida"),
     ItemMenu("Automações", "automacoes:pagina", "robo"),
     ItemMenu("Curva ABC", "catalogo:curva", "grafico"),
+    ItemMenu("Formulários", "catalogo:formularios", "caixa-check"),
     ItemMenu("Cadastros", "admin:index", "cadastros", so_equipe=True),
+    ItemMenu("Autorizações", "pedidos:autorizacoes", "escudo", para="seguranca"),
 )
 
 
@@ -33,6 +39,7 @@ def menu(request) -> dict:
         return {}
     correspondencia = getattr(request, "resolver_match", None)
     atual = correspondencia.view_name if correspondencia else None
+    seguranca = da_seguranca_trabalho(usuario)
     return {
         "menu": [
             {
@@ -42,6 +49,10 @@ def menu(request) -> dict:
                 "atual": item.rota == atual,
             }
             for item in ITENS_MENU
-            if usuario.is_staff or not item.so_equipe
-        ]
+            # A Segurança do Trabalho só vê o que é dela; os demais, o que viam, sem o dela.
+            if (item.para == "seguranca") == seguranca
+            and (seguranca or usuario.is_staff or not item.so_equipe)
+        ],
+        # A marca do menu leva ao ponto de partida de cada um: o painel, ou a fila de autorização.
+        "menu_inicio": reverse("pedidos:autorizacoes" if seguranca else "pedidos:painel"),
     }

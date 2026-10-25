@@ -1,0 +1,44 @@
+{% comment %}
+Conteúdo do diálogo da folha (spec 006, contracts/folha.md): a lista de peças preenchida como o papel
+e posta no pedido de uma vez. Vem do servidor já com as quantidades que as peças têm no pedido; depois
+de uma recusa, com o que foi digitado e o erro de cada linha (nada foi posto no pedido). Fica dentro do
+<form>: o "Pôr no pedido" leva o carrinho (`item_codigo`/`item_qtd`) e os `folha-<código>`.
+O `data-folha-nova` diz ao pedidos.js que é um conteúdo novo, a mostrar (uma vez).
+Recebe `linhas` ({r: Resultado, valor, erro}), `n_erros`, `erro_geral` e `url_carrinho`.
+{% endcomment %}
+<div class="folha-corpo" data-folha-nova>
+<div class="folha-cabecalho">
+  <div>
+    <h2 id="folha-titulo" class="folha-titulo">Lista de peças</h2>
+    <p class="texto-secundario">Preencha só as peças que precisa repor. As que ficarem em branco não entram no pedido.</p>
+  </div>
+  <button type="button" class="botao botao-texto botao-icone" data-folha-fechar aria-label="Fechar">{% include "interface/_icone.html" with nome="fechar" %}</button>
+</div>
+{% if n_erros or erro_geral %}
+<div class="aviso aviso-erro resumo-erros" role="alert" tabindex="-1" data-folha-resumo>{% include "interface/_icone.html" with nome="alerta" %}<div>{% if n_erros %}<p class="resumo-erros-titulo">{% if n_erros == 1 %}Corrija 1 linha para pôr no pedido.{% else %}Corrija {{ n_erros }} linhas para pôr no pedido.{% endif %}</p><ul>{% for linha in linhas %}{% if linha.erro %}<li><a href="#folha-{{ desenho }}-{{ forloop.counter }}">{{ linha.r.item.nome }}: {{ linha.erro }}</a></li>{% endif %}{% endfor %}</ul>{% endif %}{% if erro_geral %}<p>{{ erro_geral }}</p>{% endif %}</div></div>
+{% endif %}
+<div class="aviso" data-folha-falha role="alert"></div>
+<ol class="folha-lista">
+  {% for linha in linhas %}{% with r=linha.r %}
+  <li class="folha-linha{% if r.motivo %} folha-linha-bloqueada{% endif %}{% if linha.erro %} folha-linha-erro{% endif %}">
+    <label class="folha-material" for="folha-{{ desenho }}-{{ forloop.counter }}">
+      <strong>{{ r.item.nome }}</strong>
+      <span class="texto-secundario texto-pequeno">{{ r.linha_publica }}</span>
+    </label>
+    {% if r.motivo %}
+    <span class="selo selo-aviso folha-motivo">{{ r.motivo }}</span>
+    {% else %}
+    <input id="folha-{{ desenho }}-{{ forloop.counter }}" class="campo-entrada folha-qtd" type="text" name="folha-{{ r.item.codigo }}" value="{{ linha.valor }}"
+           inputmode="{% if r.item.fracionavel %}decimal{% else %}numeric{% endif %}" autocomplete="off" placeholder="0"
+           {% if linha.erro %}aria-invalid="true" aria-describedby="folha-{{ desenho }}-{{ forloop.counter }}-erro"{% endif %}>
+    {% if linha.erro %}<p id="folha-{{ desenho }}-{{ forloop.counter }}-erro" class="campo-erro folha-erro">{% include "interface/_icone.html" with nome="alerta" %}<span>{{ linha.erro }}</span></p>{% endif %}
+    {% endif %}
+  </li>
+  {% endwith %}{% endfor %}
+</ol>
+<div class="folha-acoes">
+  <button type="button" class="botao botao-secundario" data-folha-fechar>Fechar</button>
+  <button type="button" class="botao botao-primario" data-folha-aplicar hx-post="{{ url_carrinho }}" hx-target="#carrinho" hx-swap="innerHTML"
+          hx-vals='{"folha": "1"}'>{% include "interface/_icone.html" with nome="caixa-check" %}Pôr no pedido</button>
+</div>
+</div>

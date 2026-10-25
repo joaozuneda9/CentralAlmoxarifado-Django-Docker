@@ -8,7 +8,7 @@ leva a lista do que corrigir.
 import logging
 import uuid
 from collections.abc import Sequence
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from datetime import date, datetime, timedelta
 from decimal import Decimal
 
@@ -17,12 +17,15 @@ from django.db import transaction
 from django.db.models import Q
 from django.utils import timezone
 
-from catalogo.catalogos import ItemCatalogo, catalogo_ab, catalogo_avulsa, catalogo_limpeza
+from catalogo.catalogos import ItemCatalogo
 from catalogo.models import CentroCusto, Opcao
+from contas.acesso import da_seguranca_trabalho
+from pedidos.fluxos import fluxo_da_origem
 from pedidos.models import (
     TRAVA_LANCAMENTO,
     AlteracaoPedido,
     Atendimento,
+    AutorizacaoPedido,
     ExecucaoRobo,
     ItemPedido,
     LinhaSaida,
@@ -30,12 +33,10 @@ from pedidos.models import (
     Sequencia,
 )
 from pedidos.regras import (
-    AB,
     AVULSA,
     EM_LANCAMENTO,
     ERRO,
     LANCADA,
-    LIMPEZA,
     NAO_LANCAR,
     PENDENTE,
     ROTULOS_CABECALHO,
@@ -57,22 +58,19 @@ from pedidos.regras import (
     marcado_nao_lancar,
     norm_placa,
     norm_u,
-    parse_inteiro,
     parse_qtd_br,
     registro_confere,
     requisicao_valida,
     somar_por_codigo,
     texto,
-    validar_pedido_ab,
-    validar_pedido_limpeza,
+    truncar_qtd,
+    validar_pedido,
     validar_saida,
 )
-from pedidos.telegram import notificar_pedido
+from pedidos.telegram import notificar_autorizacao_pendente, notificar_pedido
 from scpi.execucao import trava
 
 logger = logging.getLogger("pedidos")
-
-PREFIXOS = {LIMPEZA: "P-", AB: "P-", AVULSA: "AV-"}
 
 
 @dataclass
@@ -80,14 +78,17 @@ class Resposta:
     ok: bool
     mensagem: str = ""
     erros: list[Erro] = field(default_factory=list)
-    estoque_atual: dict[str, int] = field(default_factory=dict)
+    estoque_atual: dict[str, int | Decimal] = field(default_factory=dict)
     numero: str = ""
     reenvio: bool = False
     divergente: bool = False
     pedido: Pedido | None = None
     telegram: str = ""
-    motivo: str = ""  # recusa da edição: "lancamento" ou "versao"
+    # Por que a operação foi recusada: na edição, "lancamento" ou "versao"; na decisão da
+    # autorização, "grupo", "decisao", "motivo", "nao_encontrada" ou "ja_decidida".
+    motivo: str = ""
     diferencas: list[dict] = field(default_factory=list)
+    autorizacao: AutorizacaoPedido | None = None  # a decisão gravada (ou já gravada) do pedido
 
 
 def mensagem_divergente(numero: str) -> str:
@@ -105,20 +106,21 @@ def travar_sequencia() -> Sequencia:
 
 
 def proximo_numero(sequencia: Sequencia, origem: str) -> str:
-    """Próximo Nº de uma sequência única para pedidos (P-) e saídas avulsas (AV-)."""
+    """Próximo Nº de uma sequência única para pedidos (P-, de qualquer formulário público) e
+    saídas avulsas (AV-)."""
     sequencia.ultimo += 1
     sequencia.save(update_fields=["ultimo"])
-    return f"{PREFIXOS[origem]}{sequencia.ultimo:06d}"
+    prefixo = "AV-" if origem == AVULSA else "P-"
+    return f"{prefixo}{sequencia.ultimo:06d}"
 
 
 def catalogo_de(origem: str) -> list[ItemCatalogo] | None:
-    """Catálogo do formulário, ou None quando ele está indisponível."""
-    if origem == LIMPEZA:
-        return catalogo_limpeza() or None
-    if origem == AB:
-        ab = catalogo_ab()
-        return ab.itens if ab is not None else None
-    return catalogo_avulsa() or None
+    """Catálogo do formulário da origem, ou None quando ele está indisponível: o saldo nunca foi
+    importado (a limpeza e o AB limitam pelo saldo) ou o catálogo não tem item algum (nos dois
+    formulários, para o funcionário não preencher um formulário que não pode ser enviado). Quem
+    diz de onde vem o catálogo é o `Fluxo` da origem."""
+    fluxo = fluxo_da_origem(origem)
+    return fluxo.catalogo() if fluxo is not None else None
 
 
 def _itens_gravados(pedido: Pedido) -> list[tuple[str, Decimal]]:
@@ -188,9 +190,11 @@ def _limite_atingido(ip: str | None, solicitante: str, agora: datetime) -> str:
             return MENSAGEM_LIMITE_IP
     if solicitante:
         # A collation do banco já ignora maiúsculas e acentos.
-        do_nome = Pedido.objects.filter(
-            origem__in=[LIMPEZA, AB], solicitante=solicitante, criado_em__gte=dia
-        ).count()
+        do_nome = (
+            Pedido.objects.exclude(origem=AVULSA)
+            .filter(solicitante=solicitante, criado_em__gte=dia)
+            .count()
+        )
         if do_nome >= settings.PEDIDOS_LIMITE_SOLICITANTE_DIA:
             return MENSAGEM_LIMITE_SOLICITANTE
     return ""
@@ -205,13 +209,22 @@ def registrar_pedido(
     url_painel: str = "",
     agora: datetime | None = None,
 ) -> Resposta:
-    """Pedido dos formulários de limpeza e AB (`registrarPedido`)."""
+    """Pedido dos formulários públicos (`registrarPedido`)."""
     agora = agora or timezone.now()
+    # O catálogo (o do AB é uma conta pesada) e os centros são lidos antes de travar a numeração:
+    # o estoque é só um teto, nada é reservado, e os outros envios não podem esperar essa conta.
+    # A ordem das respostas abaixo não muda (reenvio, limite, indisponível, validação).
+    catalogo = catalogo_de(origem)
+    fluxo = fluxo_da_origem(origem)  # None só para origem desconhecida, que não tem catálogo
+    lista_centros = centros_do_fluxo(fluxo)
+    # O número da ocorrência só vale no formulário que o pede; nos outros, o que vier é ignorado.
+    if fluxo is None or not fluxo.pede_ocorrencia:
+        envio = replace(envio, ocorrencia="")
     with transaction.atomic():
         seq = travar_sequencia()
         anterior = Pedido.objects.filter(pk=envio_id).first()
         if anterior is not None:
-            gravado = (anterior.solicitante, anterior.destino, anterior.obs)
+            gravado = (anterior.solicitante, anterior.destino, anterior.obs, anterior.ocorrencia)
             if anterior.origem == origem and registro_confere(
                 origem, gravado, _itens_gravados(anterior), envio
             ):
@@ -227,24 +240,20 @@ def registrar_pedido(
         if limite:
             return Resposta(ok=False, mensagem=limite)
 
-        catalogo = catalogo_de(origem)
-        if catalogo is None:
+        if fluxo is None or catalogo is None:
             return Resposta(
                 ok=False,
                 mensagem="O catálogo deste formulário não está disponível agora. "
                 "Avise o almoxarifado.",
             )
-        lista_centros = centros()
         if not lista_centros:
             return Resposta(
                 ok=False,
                 mensagem="Não há centros de custo cadastrados para escolher o destino. "
                 "Avise o almoxarifado.",
             )
-        if origem == AB:
-            v = validar_pedido_ab(envio, catalogo, lista_centros)
-        else:
-            v = validar_pedido_limpeza(envio, catalogo, lista_centros)
+        # A regra de quantidade é a do formulário, a mesma do carrinho dele.
+        v = validar_pedido(envio, catalogo, lista_centros, fluxo.regra_quantidade)
         tamanhos = erros_de_tamanho(
             {
                 "Nome completo": envio.solicitante,
@@ -270,14 +279,112 @@ def registrar_pedido(
             solicitante=texto(envio.solicitante),
             destino=texto(envio.destino),
             obs=texto(envio.obs),
+            ocorrencia=texto(envio.ocorrencia),
         )
         _gravar_itens(pedido, v.validos)
+        if fluxo.exige_autorizacao:
+            # Na mesma transação do pedido: não existe pedido de EPI sem autorização (spec 008).
+            AutorizacaoPedido.objects.create(pedido=pedido)
         resposta = Resposta(ok=True, numero=pedido.numero, pedido=pedido)
 
         def avisar():
-            resposta.telegram = notificar_pedido(pedido, url_painel)
+            if fluxo.exige_autorizacao:
+                # O almoxarifado só é avisado depois de autorizado (`decidir_autorizacao`);
+                # agora quem precisa saber é a Segurança do Trabalho, com o botão para a fila.
+                resposta.telegram = notificar_autorizacao_pendente(pedido, url_painel)
+            else:
+                resposta.telegram = notificar_pedido(pedido, url_painel)
 
         transaction.on_commit(avisar)
+    return resposta
+
+
+def _nome_do_usuario(usuario) -> str:
+    return usuario.get_full_name().strip() or usuario.get_username()
+
+
+def _ja_decidida(pedido: Pedido, autorizacao: AutorizacaoPedido) -> Resposta:
+    """A decisão que já estava gravada: quem e quando (nada é alterado)."""
+    decisao = (
+        "autorizado"
+        if autorizacao.situacao == AutorizacaoPedido.Situacao.AUTORIZADO
+        else "recusado"
+    )
+    quando = timezone.localtime(autorizacao.decidido_em).strftime("%d/%m/%Y %H:%M")
+    quem = _nome_do_usuario(autorizacao.decidido_por)
+    return Resposta(
+        ok=False,
+        motivo="ja_decidida",
+        mensagem=f"Este pedido já foi {decisao} por {quem} em {quando}.",
+        numero=pedido.numero,
+        pedido=pedido,
+        autorizacao=autorizacao,
+    )
+
+
+def decidir_autorizacao(
+    numero: str, decisao: str, motivo: str, usuario, *, url_painel: str = ""
+) -> Resposta:
+    """A Segurança do Trabalho autoriza ou recusa um pedido de EPI (spec 008, FR-011 a FR-016).
+
+    `decisao` é "autorizar" ou "recusar"; a recusa exige o `motivo`. Só quem é do grupo da
+    Segurança do Trabalho decide (nem o administrador, FR-021). A decisão é definitiva e vale a
+    primeira: o pedido é travado como no atendimento, e a segunda tentativa devolve a decisão já
+    gravada sem alterar nada. Ao autorizar, o almoxarifado é avisado depois do commit (nunca
+    desfaz a decisão), e o pedido passa a poder ser atendido."""
+    if not da_seguranca_trabalho(usuario):
+        return Resposta(
+            ok=False,
+            motivo="grupo",
+            mensagem="Só a Segurança do Trabalho pode autorizar ou recusar pedidos de EPI.",
+        )
+    if decisao not in ("autorizar", "recusar"):
+        return Resposta(ok=False, motivo="decisao", mensagem="Escolha autorizar ou recusar.")
+    motivo = texto(motivo) if decisao == "recusar" else ""
+    if decisao == "recusar":
+        if not motivo:
+            return Resposta(ok=False, motivo="motivo", mensagem="Informe o motivo da recusa.")
+        if len(motivo) > settings.PEDIDOS_MAX_TEXTO:
+            return Resposta(
+                ok=False,
+                motivo="motivo",
+                mensagem=f"Motivo da recusa: no máximo {settings.PEDIDOS_MAX_TEXTO} caracteres.",
+            )
+    with transaction.atomic():
+        # O mesmo travamento do atendimento: decidir e atender o mesmo pedido não se cruzam.
+        pedido = Pedido.objects.select_for_update().filter(numero=numero).first()
+        autorizacao = (
+            AutorizacaoPedido.objects.select_for_update()
+            .select_related("decidido_por")
+            .filter(pedido=pedido)
+            .first()
+            if pedido is not None
+            else None
+        )
+        if autorizacao is None:
+            return Resposta(
+                ok=False,
+                motivo="nao_encontrada",
+                mensagem="Pedido de EPIs não encontrado.",
+            )
+        if autorizacao.situacao != AutorizacaoPedido.Situacao.AGUARDANDO:
+            return _ja_decidida(pedido, autorizacao)
+        autorizacao.situacao = (
+            AutorizacaoPedido.Situacao.AUTORIZADO
+            if decisao == "autorizar"
+            else AutorizacaoPedido.Situacao.RECUSADO
+        )
+        autorizacao.decidido_por = usuario
+        autorizacao.decidido_em = timezone.now()
+        autorizacao.motivo = motivo
+        autorizacao.save()
+        resposta = Resposta(ok=True, numero=pedido.numero, pedido=pedido, autorizacao=autorizacao)
+        if decisao == "autorizar":
+
+            def avisar():
+                resposta.telegram = notificar_pedido(pedido, url_painel)
+
+            transaction.on_commit(avisar)
     return resposta
 
 
@@ -287,7 +394,22 @@ def registrar_pedido(
 
 
 def centros() -> list[Centro]:
+    """Todas as linhas do cadastro de centros, ativas ou não: é o que o atendimento, a edição e o
+    robô do SCPI resolvem (spec 009, FR-012)."""
     return [Centro(c.descricao, c.codigo, c.placa or "") for c in CentroCusto.objects.all()]
+
+
+def centros_ativos() -> list[Centro]:
+    """As linhas de centro ativas: o que a saída avulsa **nova** oferece e aceita. O centro
+    inativo continua resolvido por `centros()` onde já foi usado (spec 009, FR-008)."""
+    return [
+        Centro(c.descricao, c.codigo, c.placa or "") for c in CentroCusto.objects.filter(ativo=True)
+    ]
+
+
+def centros_do_fluxo(fluxo) -> list[Centro]:
+    """Os destinos aceitos pelo formulário: os do `Fluxo` quando ele restringe, senão todos."""
+    return fluxo.centros() if fluxo is not None and fluxo.centros is not None else centros()
 
 
 def tipos_saida() -> list[str]:
@@ -375,9 +497,8 @@ def _gravar_linhas(atendimento: Atendimento, pares, lote: str) -> None:
 
 
 def _qtd_adicionada(qtds: dict[str, str], codigo: str) -> Decimal | None:
-    """Quantidade de um acrescentado: vírgula decimal (o inteiro do AB é conferido pela regra
-    do `validar_saida`, com a mensagem "deve ser inteira"); campo vazio ou ausente vale 0, que
-    pede a quantidade."""
+    """Quantidade de um acrescentado: vírgula decimal, em qualquer unidade (a equipe não segue a
+    regra por unidade); campo vazio ou ausente vale 0, que pede a quantidade."""
     return parse_qtd_br(texto(qtds.get(codigo)) or "0")
 
 
@@ -439,6 +560,7 @@ def _erros_dos_adicionados(
     qtds_adicionadas: dict[str, Decimal | None],
     catalogo: dict[str, ItemCatalogo],
     validar,
+    limites: dict[str, Decimal],
 ) -> tuple[list[Adicionado], list[Erro]]:
     """Regras dos acrescentados: repetição, vínculo de troca, catálogo e quantidade. Devolve
     os que não repetem código (os que vão para a validação comum) e os erros."""
@@ -451,7 +573,13 @@ def _erros_dos_adicionados(
     # (os dos dados da saída já vêm da validação do pedido inteiro).
     if not unicos:
         return unicos, erros
-    v = validar([ItemSaida(a.codigo, qtds_adicionadas[a.codigo]) for a in unicos], catalogo)
+    v = validar(
+        [
+            ItemSaida(a.codigo, qtds_adicionadas[a.codigo], estoque=limites.get(a.codigo))
+            for a in unicos
+        ],
+        catalogo,
+    )
     dos_materiais = [e for e in v.erros if e.codigo is not None]
     com_erro = {e.codigo for e in dos_materiais}
     erros += dos_materiais
@@ -506,13 +634,18 @@ def _validar_atendimento(
             tipos=tipos,
             hoje=hoje,
             catalogo=catalogo,
-            regra_inteira=pedido.origem == AB,
         )
 
     catalogo = {c.codigo: c for c in catalogo_de(AVULSA) or []} if adicionados else {}
+    base = dict(catalogo)
     catalogo.update(catalogo_extra or {})
     unicos, erros_adicionados = _erros_dos_adicionados(
-        adicionados, itens, qtds_adicionadas, catalogo, validar
+        adicionados,
+        itens,
+        qtds_adicionadas,
+        catalogo,
+        validar,
+        _limites_de_estoque(catalogo, base=base),
     )
     # Os acrescentados entram aqui só para contar no "ao menos um material"; seus erros
     # por material vêm de `_erros_dos_adicionados`.
@@ -585,6 +718,23 @@ def estado_enviado(
     )
 
 
+def _recusa_por_falta_de_autorizacao(pedido: Pedido) -> str:
+    """O motivo de o atendimento não poder seguir por causa da autorização da Segurança do
+    Trabalho, ou "" (o pedido não exige autorização, ou já está autorizado)."""
+    autorizacao = pedido.autorizacao_ou_none
+    if autorizacao is None or autorizacao.situacao == AutorizacaoPedido.Situacao.AUTORIZADO:
+        return ""
+    if autorizacao.situacao == AutorizacaoPedido.Situacao.RECUSADO:
+        return (
+            f"O pedido {pedido.numero} foi recusado pela Segurança do Trabalho e está encerrado. "
+            "Nada foi gravado."
+        )
+    return (
+        f"O pedido {pedido.numero} ainda não foi autorizado pela Segurança do Trabalho e não "
+        "pode ser atendido. Nada foi gravado."
+    )
+
+
 def confirmar_atendimento(
     pedido_id: uuid.UUID,
     atendimento_id: uuid.UUID,
@@ -606,8 +756,8 @@ def confirmar_atendimento(
             return Resposta(ok=False, mensagem="Pedido não encontrado.")
         todos = list(pedido.itens.all())
         itens = [i for i in todos if i.origem == ItemPedido.Origem.PEDIDO]
-        conv = parse_inteiro if pedido.origem == AB else parse_qtd_br
-        parsed = {i.codigo: conv(qtds.get(i.codigo, "")) for i in itens}
+        # A equipe aceita fração em qualquer unidade e em pedido de qualquer origem.
+        parsed = {i.codigo: parse_qtd_br(qtds.get(i.codigo, "")) for i in itens}
         qtds_adicionadas = {a.codigo: _qtd_adicionada(qtds, a.codigo) for a in adicionados}
 
         anterior = pedido.atendimento_ou_none
@@ -632,6 +782,11 @@ def confirmar_atendimento(
                 "Nada foi gravado.",
             )
 
+        # O portão da autorização (spec 008): antes de qualquer gravação, na mesma transação que
+        # trava o pedido, para o pedido de EPI aguardando ou recusado nunca virar atendimento nem
+        # linha de saída (o robô só lê as linhas).
+        if mensagem := _recusa_por_falta_de_autorizacao(pedido):
+            return Resposta(ok=False, mensagem=mensagem)
         unicos, catalogo, erros = _validar_atendimento(
             pedido,
             itens,
@@ -680,7 +835,8 @@ MENSAGEM_NADA_MUDOU = "Nada mudou; nada foi gravado."
 
 
 def item_catalogo_gravado(item: ItemPedido) -> ItemCatalogo:
-    """Material já gravado no pedido, aceito na edição mesmo que tenha saído do catálogo."""
+    """Material já gravado no pedido, aceito na edição mesmo que tenha saído do catálogo. O
+    estoque é a quantidade entregue gravada: o teto de quem já saiu (ver `_limites_de_estoque`)."""
     return ItemCatalogo(
         codigo=item.codigo,
         nome=item.material,
@@ -688,7 +844,7 @@ def item_catalogo_gravado(item: ItemPedido) -> ItemCatalogo:
         categoria="",
         grupo=item.grupo,
         subgrupo=item.subgrupo,
-        estoque=Decimal(0),
+        estoque=item.qtd_entregue or Decimal(0),
         disponivel=0,
         duplicado=False,
     )
@@ -830,8 +986,8 @@ def editar_atendimento(
         itens = [i for i in todos if i.origem == ItemPedido.Origem.PEDIDO]
         gravados = {i.codigo: i for i in todos if i.origem == ItemPedido.Origem.ALMOXARIFADO}
         por_id = {i.id: i for i in todos}
-        conv = parse_inteiro if pedido.origem == AB else parse_qtd_br
-        parsed = {i.codigo: conv(qtds.get(i.codigo, "")) for i in itens}
+        # A equipe aceita fração em qualquer unidade e em pedido de qualquer origem.
+        parsed = {i.codigo: parse_qtd_br(qtds.get(i.codigo, "")) for i in itens}
         qtds_adicionadas = {a.codigo: _qtd_adicionada(qtds, a.codigo) for a in adicionados}
 
         mantidos = {
@@ -921,13 +1077,30 @@ def editar_atendimento(
     )
 
 
-def _validar_saida_avulsa(envio: EnvioSaida, *, hoje: date, catalogo: dict):
-    """Regras da saída avulsa (e da edição dela). Devolve a soma por código e os erros."""
+def _limites_de_estoque(catalogo: dict, gravados=(), base: dict | None = None) -> dict:
+    """Teto da quantidade de cada material da saída: o saldo do catálogo truncado a 3 casas (o
+    mesmo número da lista e das mensagens), ou a quantidade já gravada se for maior (o SCPI pode
+    ter abatido o saldo, ou o material ter saído do catálogo, e quem já está na saída continua
+    valendo). `base` é o catálogo de verdade, quando `catalogo` já traz os gravados por cima."""
+    limites = {c: truncar_qtd(i.estoque) for c, i in catalogo.items()}
+    for c, i in (base or {}).items():
+        limites[c] = max(limites.get(c, Decimal(0)), truncar_qtd(i.estoque))
+    for item in gravados:
+        limites[item.codigo] = max(limites.get(item.codigo, Decimal(0)), item.qtd_entregue or 0)
+    return limites
+
+
+def _validar_saida_avulsa(
+    envio: EnvioSaida, *, hoje: date, catalogo: dict, limites: dict, so_ativos: bool = False
+):
+    """Regras da saída avulsa (e da edição dela). Devolve a soma por código e os erros. Com
+    `so_ativos` (a saída nova), o centro inativo não está na lista; a edição de uma saída já
+    registrada aceita qualquer centro."""
     soma = somar_por_codigo(envio.itens, parse_qtd_br)
     v = validar_saida(
         envio.dados,
-        [ItemSaida(c, soma.soma[c]) for c in soma.ordem],
-        centros=centros(),
+        [ItemSaida(c, soma.soma[c], estoque=limites.get(c)) for c in soma.ordem],
+        centros=centros_ativos() if so_ativos else centros(),
         tipos=tipos_saida(),
         hoje=hoje,
         catalogo=catalogo,
@@ -993,7 +1166,11 @@ def registrar_saida_avulsa(
             return Resposta(ok=False, mensagem="O cadastro de materiais não está disponível agora.")
         por_codigo = {i.codigo: i for i in catalogo}
         soma, erros = _validar_saida_avulsa(
-            envio, hoje=hoje or timezone.localdate(), catalogo=por_codigo
+            envio,
+            hoje=hoje or timezone.localdate(),
+            catalogo=por_codigo,
+            limites=_limites_de_estoque(por_codigo),
+            so_ativos=True,
         )
         if erros:
             return Resposta(ok=False, mensagem="Corrija os itens abaixo.", erros=erros)
@@ -1033,10 +1210,12 @@ def editar_saida_avulsa(
             return Resposta(ok=False, mensagem="O cadastro de materiais não está disponível agora.")
         por_codigo = {i.codigo: i for i in catalogo}
         # Material já na saída continua aceito, mesmo que tenha saído do catálogo.
-        for item in pedido.itens.all():
+        gravados = list(pedido.itens.all())
+        limites = _limites_de_estoque(por_codigo, gravados)
+        for item in gravados:
             por_codigo.setdefault(item.codigo, item_catalogo_gravado(item))
         soma, erros = _validar_saida_avulsa(
-            envio, hoje=hoje or timezone.localdate(), catalogo=por_codigo
+            envio, hoje=hoje or timezone.localdate(), catalogo=por_codigo, limites=limites
         )
         nomes = {c: por_codigo[c].nome for c in soma.ordem if c in por_codigo}
         diferencas = diferencas_atendimento(

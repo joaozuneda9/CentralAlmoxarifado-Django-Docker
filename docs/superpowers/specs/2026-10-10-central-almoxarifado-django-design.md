@@ -1,6 +1,11 @@
 # Central Almoxarifado em Django — design
 
-Data: 2026-10-10 · Situação: aguardando revisão
+Data: 2026-10-10 · Situação: executada (registro histórico da reescrita)
+
+> Esta spec descreve a migração do Apps Script. O que ela diz sobre manter os fluxos, as regras
+> e os textos do sistema antigo valia para a migração, já concluída, e não é requisito atual:
+> o comportamento vigente é o do código, dos testes e das specs posteriores (constituição,
+> Princípio I).
 
 ## 1. Objetivo
 
@@ -146,14 +151,32 @@ uma a uma e com os mesmos textos de erro:
 ### Catálogos dos formulários (consulta ao banco, sem cache)
 
 - **Limpeza:** `ItemLimpeza` cujo material existe e não está oculto; nome e
-  unidade exibidos têm prioridade sobre o cadastro.
+  unidade exibidos têm prioridade sobre o cadastro (a regra de quantidade, porém,
+  olha a unidade do SCPI).
 - **AB:** materiais de `SaidaSCPI` ordenados por número de ocorrências
   (desc.), excluindo os que estão em `ItemLimpeza`, os ocultos e os de grupo
-  em `GRUPO_OCULTO_AB`; estoque disponível = parte inteira do saldo; código
-  ausente do estoque = 0. Se não houver saldo importado, o formulário AB fica
-  indisponível, como hoje.
-- **Saída avulsa:** todo material não oculto.
+  em `GRUPO_OCULTO_AB`; estoque disponível = o máximo pedível (ver abaixo); código
+  ausente do estoque = 0. O catálogo do AB continua vindo do histórico de saídas
+  porque o cadastro do SCPI tem muitos materiais desatualizados.
+- **Saída avulsa:** todo material não oculto e com saldo positivo.
 - Em todos, material `duplicado` aparece bloqueado.
+- **Indisponível:** se o saldo nunca foi importado ou o catálogo não tem item algum, o
+  formulário (limpeza ou AB) fica indisponível, com a mesma mensagem nos dois e um aviso de saúde
+  no painel. Se há itens e todos estão sem estoque, o formulário abre com um aviso no topo.
+
+### Quantidade e estoque (spec 005, substitui "AB só inteiros")
+
+- A quantidade segue a **unidade do material** (a do cadastro do SCPI; no AB, a do código
+  canônico), igual nos dois formulários públicos. Unidade fracionável (lista mantida no admin,
+  inicialmente `M`, `MT`, `MTS`, `KM`, `KG`, `L`, `LT`, `M²`, `M³` e `T`) aceita até 3 casas
+  decimais; qualquer outra, ou material sem unidade, só inteiro, e a fração é recusada na hora.
+- O **máximo pedível** é o saldo truncado a 3 casas (para unidade contada, a parte inteira). É o
+  mesmo número na lista ("Estoque N · UN"), no teto de adicionar e alterar, na validação do envio
+  e no texto "Estoque disponível". Nenhum número mostra zeros à direita.
+- A equipe (atendimento e saída avulsa) aceita fração em qualquer unidade, com o teto no saldo
+  truncado a 3 casas.
+- Divergências deliberadas do Apps Script: o AB passa a aceitar fração (a origem só aceitava
+  inteiro, sem motivo registrado) e a limpeza passa a limitar pelo saldo (a origem não limitava).
 
 ## 5. Fluxos
 
@@ -170,7 +193,11 @@ uma a uma e com os mesmos textos de erro:
    - campo isca (honeypot) e tempo mínimo de preenchimento (envio menos de
      5 s após abrir a página é recusado);
    - tamanho máximo do pedido: 40 itens; textos livres limitados a 200 caracteres;
-   - CSRF e toda validação no servidor.
+   - CSRF e toda validação no servidor;
+   - token sem validade (o identificador é único e o reenvio igual só confirma); token
+     inválido e envio rápido demais têm mensagem própria, com os dados mantidos, e só a isca
+     recebe a mensagem genérica;
+   - o JavaScript é requisito: sem ele, a página mostra só um aviso.
    Ao atingir um limite, a mensagem pede para procurar o almoxarifado. Os
    valores ficam no `settings` para ajuste. Atenção: aparelhos atrás do mesmo
    IP (rede de operadora ou NAT) dividem o limite por IP.

@@ -1,0 +1,47 @@
+{% extends "interface/base_almoxarifado.html" %}
+{% load static %}
+
+{% block title %}Formulários — Central Almoxarifado{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'catalogo/css/catalogo.css' %}">{% endblock %}
+{% block heading %}Formulários{% endblock %}
+{% block sub %}Escolha quais centros de custo e quais materiais cada formulário oferece.{% endblock %}
+
+{% block page %}
+{% comment %}
+Configuração das opções por formulário (spec 009). Um formulário por vez (links, `?formulario=`) e
+duas abas, Centros de custo e Materiais (o componente comum `[data-abas]`, com `?aba=`). O servidor
+só monta a aba ativa; a outra vem como painel vazio, que o HTMX carrega (`hx-get`, evento
+`abas:ativada` do abas.js) quando ela abre, enquanto o painel vazio estiver lá: carregado, o
+evento deixa de pedir; se o pedido falhou, a próxima abertura tenta de novo. Sem JavaScript, os dois painéis ficam à
+vista, o vazio com um link para a aba, e cada ação é um formulário comum com CSRF. Quem não pode
+alterar vê tudo, sem os controles; o servidor recusa a gravação de qualquer forma.
+{% endcomment %}
+<div class="pilha-larga">
+  <nav class="cartao cartao-sutil formularios-seletor" aria-label="Formulários">
+    <p class="rotulo-secao">Formulário</p>
+    <ul class="formularios-seletor-lista">
+      {% for valor, rotulo in lista_de_formularios %}
+      <li><a class="botao {% if valor == formulario %}botao-primario{% else %}botao-secundario{% endif %}" href="{% url 'catalogo:formularios' %}?formulario={{ valor }}&aba={{ aba }}"{% if valor == formulario %} aria-current="page"{% endif %}>{{ rotulo }}</a></li>
+      {% endfor %}
+    </ul>
+    {% if not pode_alterar_algo %}
+    <p class="aviso aviso-info">Somente consulta: para alterar, peça a permissão a quem administra os cadastros.</p>
+    {% endif %}
+  </nav>
+
+  <div class="abas" data-abas data-url="{% url 'catalogo:formularios' %}?formulario={{ formulario }}">
+    <div class="abas-lista" role="tablist" aria-label="Configuração de {{ formulario_nome }}">
+      {% for chave, rotulo in abas %}
+      <button type="button" role="tab" class="aba{% if chave == aba %} aba-ativa{% endif %}" id="aba-{{ chave }}" data-aba="{{ chave }}" aria-controls="painel-{{ chave }}" aria-selected="{% if chave == aba %}true{% else %}false{% endif %}" tabindex="{% if chave == aba %}0{% else %}-1{% endif %}">{{ rotulo }}</button>
+      {% endfor %}
+    </div>
+
+    <section role="tabpanel" id="painel-centros" class="aba-painel{% if aba == 'centros' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-centros"{% if aba != 'centros' %} hx-get="{{ urls_das_abas.centros }}" hx-trigger="abas:ativada[this.querySelector('.aba-vazia')]" hx-swap="innerHTML"{% endif %}>
+      {% if aba == 'centros' %}{% include "catalogo/_formularios_centros.html" %}{% else %}{% include "catalogo/_formularios_aba_vazia.html" with rotulo="Centros de custo" url=urls_das_abas.centros %}{% endif %}
+    </section>
+    <section role="tabpanel" id="painel-materiais" class="aba-painel{% if aba == 'materiais' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-materiais"{% if aba != 'materiais' %} hx-get="{{ urls_das_abas.materiais }}" hx-trigger="abas:ativada[this.querySelector('.aba-vazia')]" hx-swap="innerHTML"{% endif %}>
+      {% if aba == 'materiais' %}{% include "catalogo/_formularios_materiais.html" %}{% else %}{% include "catalogo/_formularios_aba_vazia.html" with rotulo="Materiais" url=urls_das_abas.materiais %}{% endif %}
+    </section>
+  </div>
+</div>
+{% endblock %}

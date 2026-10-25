@@ -13,7 +13,7 @@ Enquanto atendível, a quantidade entregue é o campo do atendimento. Nunca most
       <div class="entrega-caixa">
         <svg class="entrega-forma" viewBox="0 0 112 38" aria-hidden="true" focusable="false"><use href="#entrega-corpo" class="corpo"/><use href="#entrega-barra-topo" class="barra"/><use href="#entrega-barra-base" class="barra"/></svg>
         <button type="button" class="entrega-passo" data-entrega-passo="-1" aria-label="Diminuir a quantidade entregue de {{ i.material }}">{% include "interface/_icone.html" with nome="menos" %}</button>
-        <input id="entregue-{{ forloop.counter }}" class="entrega-campo" type="text" form="form-atendimento" name="entregue-{{ i.codigo }}" value="{{ entregues|obter:i.codigo }}" inputmode="{% if pedido.origem == 'AB' %}numeric{% else %}decimal{% endif %}" autocomplete="off" data-pedido="{{ i.qtd_pedida|quantidade }}" aria-label="Quantidade entregue de {{ i.material }}{% if unidade %}, em {{ unidade }}{% endif %}">
+        <input id="entregue-{{ forloop.counter }}" class="entrega-campo" type="text" form="form-atendimento" name="entregue-{{ i.codigo }}" value="{{ entregues|obter:i.codigo }}" inputmode="decimal" autocomplete="off" data-pedido="{{ i.qtd_pedida|quantidade }}" aria-label="Quantidade entregue de {{ i.material }}{% if unidade %}, em {{ unidade }}{% endif %}">
         {% if unidade %}<span class="entrega-un" aria-hidden="true">{{ unidade }}</span>{% endif %}
         <button type="button" class="entrega-passo" data-entrega-passo="1" aria-label="Aumentar a quantidade entregue de {{ i.material }}">{% include "interface/_icone.html" with nome="mais" %}</button>
         {# Confirmada, a própria caixa reabre a edição: o botão a cobre, com o lápis à direita. #}

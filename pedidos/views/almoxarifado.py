@@ -27,7 +27,6 @@ from pedidos.consultas import (
 from pedidos.fluxos import FLUXOS
 from pedidos.models import Atendimento, ExecucaoRobo, ItemPedido, Pedido
 from pedidos.regras import (
-    AB,
     AVULSA,
     ERRO,
     NAO_LANCAR,
@@ -85,9 +84,12 @@ def painel(request):
     return resposta
 
 
-def opcoes_saida() -> dict:
-    """Listas dos campos de uma saída: funcionários, centros, placas e tipos."""
-    linhas = list(CentroCusto.objects.all())
+def opcoes_saida(*, so_ativos: bool = False) -> dict:
+    """Listas dos campos de uma saída: funcionários, centros, placas e tipos. Com `so_ativos` (a
+    saída avulsa nova), o centro inativo não é oferecido; o atendimento e a edição listam todos
+    (spec 009)."""
+    consulta = CentroCusto.objects.filter(ativo=True) if so_ativos else CentroCusto.objects.all()
+    linhas = list(consulta)
     return {
         "funcionarios": Opcao.valores(Opcao.Lista.FUNCIONARIO),
         "centros": list(dict.fromkeys((c.descricao, c.codigo) for c in linhas)),
@@ -121,7 +123,11 @@ def _dados_do_atendimento(post) -> tuple[DadosSaida, bool]:
 
 def _pedido(numero):
     consulta = Pedido.objects.select_related(
-        "atendimento", "atendimento__atendido_por", "registrado_por"
+        "atendimento",
+        "atendimento__atendido_por",
+        "registrado_por",
+        "autorizacao",
+        "autorizacao__decidido_por",
     ).prefetch_related("itens", "atendimento__linhas")
     return get_object_or_404(consulta, numero=numero)
 
@@ -138,8 +144,9 @@ def _saida_do_destino(destino: str, opcoes: dict) -> dict:
 
 
 def _formatar_qtd(pedido, q) -> str:
-    """Quantidade no campo da entrega: inteira no AB, pt-BR nos demais."""
-    return str(int(q)) if pedido.origem == AB else qtd_br(q)
+    """Quantidade no campo da entrega: pt-BR exata, sem zeros à direita, em qualquer origem (a
+    equipe aceita fração em qualquer unidade, também nos pedidos do AB)."""
+    return qtd_br(q)
 
 
 def _contexto_edicao(pedido) -> dict:
@@ -156,13 +163,17 @@ def _contexto_edicao(pedido) -> dict:
 
 
 def _contexto_detalhe(pedido, **extra) -> dict:
+    autorizacao = pedido.autorizacao_ou_none
     contexto = {
         "pedido": pedido,
         "atendivel": False,
+        "autorizacao": autorizacao,
         "unidades_scpi": unidades_scpi([pedido]),
         **_contexto_edicao(pedido),
     }
-    if pedido.origem != AVULSA and pedido.atendimento_ou_none is None:
+    # O pedido de EPI só abre o atendimento depois de autorizado (spec 008).
+    sem_bloqueio = autorizacao is None or autorizacao.situacao == "AUTORIZADO"
+    if pedido.origem != AVULSA and pedido.atendimento_ou_none is None and sem_bloqueio:
         opcoes = opcoes_saida()
         contexto.update(
             atendivel=True,
@@ -512,8 +523,12 @@ def _pedido_com_atendimento_aberto(numero):
     acrescenta ou troca material."""
     pedido = _pedido(numero)
     atendido = pedido.atendimento_ou_none is not None
-    if pedido.origem == AVULSA or (
-        atendido and not edicao_permitida(True, pedido.linhas).permitida
+    autorizacao = pedido.autorizacao_ou_none
+    if (
+        pedido.origem == AVULSA
+        or (atendido and not edicao_permitida(True, pedido.linhas).permitida)
+        # Pedido de EPI aguardando ou recusado não tem atendimento aberto (spec 008).
+        or (autorizacao is not None and autorizacao.situacao != "AUTORIZADO")
     ):
         raise Http404("Pedido sem atendimento aberto.")
     return pedido
@@ -585,9 +600,12 @@ def atendimento_adicionar(request, numero):
         if len(depois) > len(antes):
             erro = depois[len(antes)].texto
     if not erro:
-        # A regra da quantidade é a da origem do pedido (AB só inteiros), maior que zero.
-        regra = FLUXOS["ab"] if pedido.origem == AB else FLUXOS["limpeza"]
-        qtd, erro = carrinho_mod.quantidade(regra, request.POST.get(f"qtd-{codigo}", ""))
+        # A equipe aceita fração em qualquer unidade e em pedido de qualquer origem: vale a regra
+        # da saída avulsa, maior que zero.
+        qtd, erro = carrinho_mod.quantidade(FLUXOS["avulsa"], request.POST.get(f"qtd-{codigo}", ""))
+        # O material vem do catálogo da saída avulsa: o teto é o saldo dele, qualquer que seja
+        # a origem do pedido.
+        erro = erro or carrinho_mod.acima_do_estoque(FLUXOS["avulsa"], item, qtd)
     if erro:
         resposta = render(request, "pedidos/_adicionado.html", {"erro": erro})
         resposta["HX-Retarget"] = "#adicionar-erro"
@@ -623,7 +641,7 @@ def avulsa(request):
         "filtros": [],
         **contexto_busca(fluxo, catalogo or []),
         **urls_do_fluxo(fluxo),
-        **opcoes_saida(),
+        **opcoes_saida(so_ativos=True),
     }
     if request.method != "POST":
         return render(request, "pedidos/avulsa.html", contexto)

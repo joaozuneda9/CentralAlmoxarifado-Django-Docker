@@ -1,0 +1,22 @@
+{% comment %}
+Autorização da Segurança do Trabalho no detalhe do pedido de EPI (spec 008). Só aparece para pedido
+com autorização; não faz parte do recibo (a folha impressa não muda). Recebe `autorizacao`.
+{% endcomment %}
+{% load pedidos_extras %}
+{% if autorizacao %}
+<section class="cartao nao-imprimir" aria-labelledby="titulo-autorizacao">
+  <h2 class="cartao-titulo" id="titulo-autorizacao">Autorização da Segurança do Trabalho</h2>
+  {% if autorizacao.situacao == "AGUARDANDO" %}
+  <p><span class="selo {{ autorizacao.situacao|badge_autorizacao }}">{{ autorizacao.get_situacao_display }}</span></p>
+  <div class="aviso aviso-info" role="note">{% include "interface/_icone.html" with nome="info" %}<p>Este pedido ainda não foi autorizado pela Segurança do Trabalho e não pode ser atendido.</p></div>
+  {% elif autorizacao.situacao == "RECUSADO" %}
+  <p><span class="selo {{ autorizacao.situacao|badge_autorizacao }}">{{ autorizacao.get_situacao_display }}</span></p>
+  <p>Recusado por {{ autorizacao.decidido_por|nome_usuario }} em {{ autorizacao.decidido_em|date:"d/m/Y H:i" }}.</p>
+  <p>Motivo: {{ autorizacao.motivo }}</p>
+  <p class="texto-secundario">O pedido está encerrado e não pode ser atendido.</p>
+  {% else %}
+  <p><span class="selo {{ autorizacao.situacao|badge_autorizacao }}">{{ autorizacao.get_situacao_display }}</span></p>
+  <p>Autorizado por {{ autorizacao.decidido_por|nome_usuario }} em {{ autorizacao.decidido_em|date:"d/m/Y H:i" }}.</p>
+  {% endif %}
+</section>
+{% endif %}

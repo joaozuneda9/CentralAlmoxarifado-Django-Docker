@@ -8,7 +8,13 @@ from django.urls import reverse
 from catalogo.models import CentroCusto
 from pedidos import servicos
 from pedidos.models import Pedido
-from pedidos.protecao import MENSAGEM_EXPIRADO, MENSAGEM_RECUSA, emitir, ler
+from pedidos.protecao import (
+    MENSAGEM_RAPIDO,
+    MENSAGEM_RECUSA,
+    MENSAGEM_TOKEN_INVALIDO,
+    emitir,
+    ler,
+)
 from pedidos.servicos import mensagem_divergente
 from tests.cenario import montar_cenario
 
@@ -92,10 +98,8 @@ def test_fluxo_desconhecido_ou_interno_da_404(client):
 def test_ab_indisponivel_sem_saldo(client):
     montar_cenario(com_estoque=False)
     r = client.get(reverse("pedidos:formulario", args=["ab"]))
-    assert (
-        "Este formulário está indisponível no momento (estoque ou catálogo não carregou). "
-        "Avise o almoxarifado." in r.text
-    )
+    assert "Este formulário está indisponível no momento. Avise o almoxarifado." in r.text
+    assert "estoque ou catálogo" not in r.text  # a mesma mensagem da limpeza
     assert 'name="token"' not in r.text
 
 
@@ -129,20 +133,40 @@ def test_divergente_troca_o_identificador_e_o_novo_envio_grava(client):
     assert "P-000002" in postar(client, "limpeza", novo, destino="ETA I", itens=LIMPEZA_ITENS).text
 
 
-def test_isca_e_envio_rapido_sao_recusados(client):
+def test_isca_recusa_com_a_mensagem_generica(client):
     r = postar(client, "limpeza", token(), itens=LIMPEZA_ITENS, isca="http://spam")
-    assert MENSAGEM_RECUSA in r.text
-    rapido = emitir().token
-    assert MENSAGEM_RECUSA in postar(client, "limpeza", rapido, itens=LIMPEZA_ITENS).text
+    assert MENSAGEM_RECUSA in r.text and MENSAGEM_RAPIDO not in r.text
     assert not Pedido.objects.exists()
 
 
-def test_token_invalido(client):
-    r = postar(client, "limpeza", "adulterado", itens=LIMPEZA_ITENS)
-    assert MENSAGEM_EXPIRADO in r.text
+def test_envio_rapido_demais_diz_para_esperar_e_mantem_os_dados(client):
+    rapido = emitir().token
+    r = postar(client, "limpeza", rapido, solicitante="Ana Paula", itens=LIMPEZA_ITENS)
+    assert MENSAGEM_RAPIDO == "Aguarde alguns segundos e toque em Enviar de novo."
+    assert MENSAGEM_RAPIDO in r.text and MENSAGEM_RECUSA not in r.text
+    assert 'value="Ana Paula"' in r.text
+    assert 'name="item_codigo" value="023.001.002"' in r.text
+    assert "expirou" not in r.text
+    assert not Pedido.objects.exists()
+
+
+def test_token_invalido_mantem_os_dados_e_o_envio_seguinte_entra(client, settings):
+    r = postar(client, "limpeza", "adulterado", solicitante="Ana Paula", itens=LIMPEZA_ITENS)
+    assert MENSAGEM_TOKEN_INVALIDO == (
+        "Houve um problema ao confirmar o formulário. Seus dados foram mantidos: "
+        "toque em Enviar de novo."
+    )
+    assert MENSAGEM_TOKEN_INVALIDO in r.text and "expirou" not in r.text
+    assert 'value="Ana Paula"' in r.text
+    assert 'name="item_codigo" value="023.001.002"' in r.text
     novo = re.search(r'name="token" value="([^"]+)"', r.text).group(1)
     assert ler(novo) is not None
     assert not Pedido.objects.exists()
+    # Reenviar logo depois cai no tempo mínimo (o ingresso novo nasce agora)...
+    assert MENSAGEM_RAPIDO in postar(client, "limpeza", novo, itens=LIMPEZA_ITENS).text
+    # ...e, passado o prazo, o pedido é aceito.
+    settings.PEDIDOS_TEMPO_MINIMO = 0
+    assert "Pedido registrado" in postar(client, "limpeza", novo, itens=LIMPEZA_ITENS).text
 
 
 def test_erros_mantem_o_preenchido_e_marcam_o_item(client):
@@ -154,7 +178,7 @@ def test_erros_mantem_o_preenchido_e_marcam_o_item(client):
         destino="Elevatória",
         itens=[("016.005.010", "3"), ("013.006.001", "3")],
     )
-    assert "BOTINA (013.006.001): pedido 3 UN, estoque atual 2 UN." in r.text
+    assert "BOTINA (013.006.001): Quantidade acima do estoque. Estoque disponível: 2 UN." in r.text
     assert 'value="Bruno"' in r.text and 'value="Elevatória"' in r.text
     assert 'name="item_codigo" value="013.006.001"' in r.text
     assert "Corrigir" in r.text
@@ -223,7 +247,9 @@ def test_sem_htmx_devolve_a_pagina_inteira(client):
 
 def test_inicio_no_estilo_clean(client):
     r = client.get(reverse("pedidos:inicio"))
-    assert r.text.count('class="cartao cartao-opcao"') == 2
+    # Limpeza, AB, reposição de peças das viaturas (spec 006), oficina mecânica (spec 007) e EPIs
+    # (spec 008).
+    assert r.text.count('class="cartao cartao-opcao"') == 5
     assert '<p class="rotulo-secao">Almoxarifado SAEP</p>' in r.text
 
 
@@ -402,7 +428,10 @@ def test_um_erro_so_e_erro_de_material_ficam_no_resumo(client):
     r = postar(client, "ab", token(), itens=[("013.006.001", "3")]).text
     resumo = _resumo(r)
     assert "Falta 1 coisa para enviar" in resumo
-    assert "<li>BOTINA (013.006.001): pedido 3 UN, estoque atual 2 UN.</li>" in resumo
+    assert (
+        "<li>BOTINA (013.006.001): Quantidade acima do estoque. Estoque disponível: 2 UN.</li>"
+        in resumo
+    )
     assert 'aria-invalid="true"' not in r and "Corrigir" in r
 
 
@@ -415,7 +444,7 @@ def test_campos_sem_erro_nao_ficam_marcados(client):
 def test_mensagem_sem_lista_fica_so_no_resumo(client):
     r = postar(client, "limpeza", "adulterado", itens=LIMPEZA_ITENS).text
     resumo = _resumo(r)
-    assert MENSAGEM_EXPIRADO in resumo and "coisa" not in resumo
+    assert MENSAGEM_TOKEN_INVALIDO in resumo and "coisa" not in resumo
 
 
 def test_pedidos_js_foca_o_resumo_e_limpa_o_erro_ao_corrigir():
@@ -555,3 +584,182 @@ def test_pedidos_js_so_cancela_a_alteracao_aberta_com_hx_post_de_botao():
     trecho = js[js.index('closest("[hx-post]")') :]
     trecho = trecho[: trecho.index("forEach")]
     assert 'matches("form")' in trecho
+
+
+# --- itens com problema ficam no pedido (spec 005, US4) ----------------------------------------
+
+
+def _linha_do_pedido(html, codigo):
+    """O <li> do item no pedido (na gaveta e na coluna), com o que o funcionário vê."""
+    inicio = html.index('<li class="carrinho-linha')
+    lista = html[inicio : html.index("</ul>", inicio)]
+    (item,) = [i for i in re.split(r"(?=<li class=\"carrinho-linha)", lista) if codigo in i]
+    return item
+
+
+def test_recusa_por_estoque_mantem_o_pedido_e_corrigir_envia(client):
+    t = token()
+    r = postar(client, "ab", t, itens=[("016.005.010", "3"), ("013.006.001", "3")])
+    texto = "BOTINA (013.006.001): Quantidade acima do estoque. Estoque disponível: 2 UN."
+    assert texto in r.text
+    assert 'name="item_codigo" value="016.005.010"' in r.text  # o item sem problema fica
+    assert "Corrigir" in _linha_do_pedido(r.text, "013.006.001")
+    assert "Corrigir" not in _linha_do_pedido(r.text, "016.005.010")
+    # Corrigir a quantidade e reenviar com o mesmo ingresso registra o pedido.
+    r = postar(client, "ab", t, itens=[("016.005.010", "3"), ("013.006.001", "2")])
+    assert "Pedido registrado" in r.text
+
+
+def test_quantidade_ilegivel_continua_no_pedido_com_o_texto_digitado(client):
+    r = postar(client, "limpeza", token(), itens=[("023.001.002", "2"), ("008.001.002", "1,5x")])
+    assert (
+        "CAFÉ 500 G (008.001.002): "
+        "Informe uma quantidade maior que zero (use vírgula para decimais, ex.: 1,5)." in r.text
+    )
+    linha = _linha_do_pedido(r.text, "008.001.002")
+    assert 'name="item_codigo" value="008.001.002"' in linha
+    assert 'value="1,5x"' in linha and "Corrigir" in linha
+    assert "Corrigir" not in _linha_do_pedido(r.text, "023.001.002")
+    assert not Pedido.objects.exists()
+
+
+def test_fracao_em_material_contado_continua_no_pedido_marcada(client):
+    r = postar(client, "limpeza", token(), itens=[("023.004.001", "2,5")])  # PAPEL, em UN
+    assert "Este material só é pedido em quantidade inteira (unidade: UN)." in r.text
+    linha = _linha_do_pedido(r.text, "023.004.001")
+    assert 'value="2,5"' in linha and "Corrigir" in linha
+
+
+def _itens_do_carrinho(html):
+    codigos = re.findall(r'name="item_codigo" value="([^"]*)"', html)
+    quantidades = re.findall(r'name="item_qtd" value="([^"]*)"', html)
+    return list(zip(codigos, quantidades, strict=True))
+
+
+@pytest.mark.parametrize(
+    ("fluxo", "codigo", "invalida", "corrigida"),
+    [
+        ("limpeza", "008.001.002", "1,5x", "1,5"),
+        ("limpeza", "023.004.001", "2,5", "2"),
+        ("ab", "013.006.001", "1,5", "1"),
+    ],
+)
+def test_corrigir_linha_invalida_pelo_carrinho_permite_reenviar(
+    client, fluxo, codigo, invalida, corrigida
+):
+    t = token()
+    recusado = postar(client, fluxo, t, itens=[(codigo, invalida)])
+    assert _itens_do_carrinho(recusado.text) == [(codigo, invalida)]
+    assert "Corrigir" in _linha_do_pedido(recusado.text, codigo)
+    assert not Pedido.objects.exists()
+
+    r = client.post(
+        reverse("pedidos:carrinho", args=[fluxo]),
+        {
+            "item_codigo": [codigo],
+            "item_qtd": [corrigida],
+            "alterar": codigo,
+            "anterior": invalida,
+        },
+    )
+    assert _itens_do_carrinho(r.text) == [(codigo, corrigida)]
+    assert "Corrigir" not in r.text and "data-carrinho-alerta" not in r.text
+    enviado = postar(client, fluxo, t, itens=_itens_do_carrinho(r.text))
+    assert "Pedido registrado" in enviado.text
+    assert Pedido.objects.get().itens.get().codigo == codigo
+
+
+@pytest.mark.parametrize(
+    ("acao", "esperados"),
+    [
+        ({"remover": "023.001.002"}, [("008.001.002", "1,5x")]),
+        (
+            {"adicionar": "023.004.001", "qtd-023.004.001": "1"},
+            [("023.001.002", "2"), ("008.001.002", "1,5x"), ("023.004.001", "1")],
+        ),
+        (
+            {"alterar": "023.001.002", "anterior": "2"},
+            [("023.001.002", "3"), ("008.001.002", "1,5x")],
+        ),
+        (
+            {"adicionar": "008.001.002", "qtd-008.001.002": "1"},
+            [("023.001.002", "2"), ("008.001.002", "1,5x")],
+        ),
+        ({"remover": "008.001.002"}, [("023.001.002", "2")]),
+    ],
+    ids=["remover-outro", "adicionar-outro", "alterar-outro", "somar-invalido", "remover-invalido"],
+)
+def test_operacoes_do_carrinho_preservam_linha_invalida_ate_corrigir_ou_remover(
+    client, acao, esperados
+):
+    recusado = postar(
+        client, "limpeza", token(), itens=[("023.001.002", "2"), ("008.001.002", "1,5x")]
+    )
+    itens = _itens_do_carrinho(recusado.text)
+    if "alterar" in acao:
+        itens[0] = ("023.001.002", "3")
+    r = client.post(
+        reverse("pedidos:carrinho", args=["limpeza"]),
+        {"item_codigo": [c for c, _ in itens], "item_qtd": [q for _, q in itens], **acao},
+    )
+    assert _itens_do_carrinho(r.text) == esperados
+    if ("008.001.002", "1,5x") in esperados:
+        assert "Corrigir" in _linha_do_pedido(r.text, "008.001.002")
+    else:
+        assert "Corrigir" not in r.text
+    if acao.get("adicionar") == "008.001.002":
+        assert "data-carrinho-alerta" in r.text
+    assert not Pedido.objects.exists()
+
+
+def test_nova_correcao_invalida_mantem_o_texto_anterior_para_corrigir(client):
+    codigo = "008.001.002"
+    r = client.post(
+        reverse("pedidos:carrinho", args=["limpeza"]),
+        {"item_codigo": [codigo], "item_qtd": ["x"], "alterar": codigo, "anterior": "1,5x"},
+    )
+    assert _itens_do_carrinho(r.text) == [(codigo, "1,5x")]
+    assert "Corrigir" in _linha_do_pedido(r.text, codigo)
+    assert "data-carrinho-alerta" in r.text
+
+
+# --- JavaScript é requisito dos formulários públicos (spec 005, US7) ---------------------------
+
+AVISO_SEM_JS = (
+    "Este formulário precisa de JavaScript para funcionar. Ative o JavaScript no navegador, "
+    "use outro navegador ou procure o almoxarifado."
+)
+
+
+@pytest.mark.parametrize("fluxo", ["limpeza", "ab"])
+def test_pagina_traz_o_aviso_de_javascript_dentro_de_noscript(client, fluxo):
+    html = client.get(reverse("pedidos:formulario", args=[fluxo])).text
+    noscript = html[html.index("<noscript>") : html.index("</noscript>")]
+    assert AVISO_SEM_JS in noscript
+    assert 'role="alert"' in noscript
+    # O aviso vem antes do formulário.
+    assert html.index("<noscript>") < html.index('id="formulario"')
+
+
+def test_css_esconde_o_formulario_publico_sem_a_classe_js():
+    from django.contrib.staticfiles import finders
+
+    css = open(finders.find("pedidos/css/pedidos.css"), encoding="utf-8").read()
+    assert "html:not(.js) .formulario-pedido { display: none; }" in css
+
+
+@pytest.mark.parametrize("modelo", ["_materiais.html", "_carrinho.html", "_resultados.html"])
+def test_modelos_nao_prometem_funcionar_sem_javascript(modelo):
+    """Texto do arquivo, não o navegador: o formulário público (e a saída avulsa, que usa os
+    mesmos trechos) depende do HTMX para buscar, adicionar, alterar e remover."""
+    from pathlib import Path
+
+    texto = (Path("pedidos/templates/pedidos") / modelo).read_text(encoding="utf-8")
+    assert "sem javascript" not in texto.lower()
+
+
+def test_formulario_ab_e_limpeza_so_escondem_o_formulario_quando_nao_ha_javascript(client):
+    """Com JavaScript (a classe `js` no <html>), nada muda: o aviso fica dentro de <noscript>."""
+    html = client.get(reverse("pedidos:formulario", args=["ab"])).text
+    assert 'document.documentElement.classList.add("js")' in html
+    assert html.count("<noscript>") == 1

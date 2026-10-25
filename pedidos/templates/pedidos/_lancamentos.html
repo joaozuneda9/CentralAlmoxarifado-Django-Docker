@@ -20,7 +20,7 @@ em andamento, nunca ficam numa seção recarregada (perderiam o que o usuário d
         {% else %}
         <span class="dica-flutuante">
           <button type="button" class="botao botao-secundario" aria-disabled="true" aria-describedby="dica-lancamento-real">{% include "interface/_icone.html" with nome="robo" %}Lançar no SCPI{% include "interface/_icone.html" with nome="cadeado" %}</button>
-          <span class="dica-flutuante-texto" role="tooltip" id="dica-lancamento-real">Lançamento real bloqueado até a virada: só a simulação roda.</span>
+          <span class="dica-flutuante-texto" role="tooltip" id="dica-lancamento-real">Lançamento real bloqueado neste ambiente: só a simulação roda.</span>
         </span>
         {% endif %}
       </div>

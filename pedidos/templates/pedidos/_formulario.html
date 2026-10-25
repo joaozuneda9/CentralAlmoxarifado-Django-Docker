@@ -6,7 +6,7 @@ campo de cada erro de campo, e se repetem embaixo do próprio campo (`erros_por_
 {% endcomment %}
 {% load pedidos_extras %}
 {% if indisponivel or sem_destinos %}
-<div class="aviso aviso-atencao" role="alert">{% include "interface/_icone.html" with nome="alerta" %}<p>{% if indisponivel and fluxo.nome == "ab" %}Este formulário está indisponível no momento (estoque ou catálogo não carregou). Avise o almoxarifado.{% else %}Este formulário está indisponível no momento. Avise o almoxarifado.{% endif %}</p></div>
+<div class="aviso aviso-atencao" role="alert">{% include "interface/_icone.html" with nome="alerta" %}<p>Este formulário está indisponível no momento. Avise o almoxarifado.</p></div>
 {% else %}
 <form method="post" action="{% url 'pedidos:formulario' fluxo.nome %}" class="pilha-larga formulario-pedido"
       hx-post="{% url 'pedidos:formulario' fluxo.nome %}" hx-target="#formulario" hx-swap="innerHTML show:top" data-formulario-pedido>
@@ -16,6 +16,9 @@ campo de cada erro de campo, e se repetem embaixo do próprio campo (`erros_por_
     <label for="confirmacao-extra">Não preencha este campo</label>
     <input id="confirmacao-extra" type="text" name="confirmacao_extra" tabindex="-1" autocomplete="off">
   </div>
+  {% if sem_estoque_agora %}
+  <div class="aviso aviso-atencao" role="status">{% include "interface/_icone.html" with nome="alerta" %}<p>Nenhum material deste formulário tem estoque agora.</p></div>
+  {% endif %}
   <div class="aviso" data-erro-envio role="alert"></div>
   {% if mensagem %}
   <div class="aviso aviso-erro resumo-erros" role="alert" tabindex="-1" data-resumo-erros>{% include "interface/_icone.html" with nome="alerta" %}<div>{% if erros %}<p class="resumo-erros-titulo">{% if erros|length == 1 %}Falta 1 coisa para enviar{% else %}Faltam {{ erros|length }} coisas para enviar{% endif %}</p>{% endif %}<p>{{ mensagem }}</p>{% if erros %}<ul>{% for erro in erros %}<li>{% if erro.campo %}<a href="#{{ erro.campo }}">{{ erro.texto }}</a>{% else %}{{ erro.texto }}{% endif %}</li>{% endfor %}</ul>{% endif %}</div></div>
@@ -43,13 +46,21 @@ campo de cada erro de campo, e se repetem embaixo do próprio campo (`erros_por_
       <div class="campo{% if erros_destino %} campo-com-erro{% endif %}">
         <label class="campo-rotulo" for="destino">Destino dos materiais</label>
         <div class="com-acao">
-          <input id="destino" class="campo-entrada" type="text" name="destino" maxlength="200" list="destinos" autocomplete="off" placeholder="Posto de trabalho, placa do veículo ou setor" value="{{ campos.destino }}"{% if erros_destino %} aria-describedby="destino-erro" aria-invalid="true"{% endif %}>
+          <input id="destino" class="campo-entrada" type="text" name="destino" maxlength="200" list="destinos" autocomplete="off" placeholder="{{ fluxo.exemplo_destino }}" value="{{ campos.destino }}"{% if erros_destino %} aria-describedby="destino-erro" aria-invalid="true"{% endif %}>
           <button type="button" class="botao-suave acao-campo acao-limpar" data-limpar-campo="destino" aria-label="Limpar o destino" hidden>{% include "interface/_icone.html" with nome="fechar" %}<span>Limpar</span></button>
         </div>
         {% include "pedidos/_erro_campo.html" with nome="destino" erros=erros_destino %}
         <datalist id="destinos">{% for d in destinos %}<option value="{{ d }}">{% endfor %}</datalist>
       </div>
       {% endwith %}
+      {% if fluxo.pede_ocorrencia %}{% with erros_ocorrencia=erros_por_campo|obter:"ocorrencia" %}
+      <div class="campo{% if erros_ocorrencia %} campo-com-erro{% endif %}">
+        <label class="campo-rotulo" for="ocorrencia">Nº da ocorrência <span class="texto-secundario">(opcional)</span></label>
+        <input id="ocorrencia" class="campo-entrada" type="text" name="ocorrencia" maxlength="20" autocomplete="off" value="{{ campos.ocorrencia }}" aria-describedby="ocorrencia-dica{% if erros_ocorrencia %} ocorrencia-erro{% endif %}"{% if erros_ocorrencia %} aria-invalid="true"{% endif %}>
+        <p id="ocorrencia-dica" class="campo-dica">Se as peças foram usadas numa ocorrência, o número dela.</p>
+        {% include "pedidos/_erro_campo.html" with nome="ocorrencia" erros=erros_ocorrencia %}
+      </div>
+      {% endwith %}{% endif %}
     </div>
   </section>
 
@@ -73,12 +84,12 @@ campo de cada erro de campo, e se repetem embaixo do próprio campo (`erros_por_
   </section>
 
   </div>
-  {% include "pedidos/_resumo_pedido.html" with rotulo="Enviar pedido" rotulo_novo="Já conferi com o almoxarifado — enviar como novo pedido" icone="enviar" %}
+  {% include "pedidos/_resumo_pedido.html" with rotulo=fluxo.rotulo_enviar rotulo_novo="Já conferi com o almoxarifado — enviar como novo pedido" icone=fluxo.icone_enviar %}
   </div>
   </div>
 
   <div class="acoes acoes-final">
-    {% include "pedidos/_enviar.html" with rotulo="Enviar pedido" rotulo_novo="Já conferi com o almoxarifado — enviar como novo pedido" icone="enviar" %}
+    {% include "pedidos/_enviar.html" with rotulo=fluxo.rotulo_enviar rotulo_novo="Já conferi com o almoxarifado — enviar como novo pedido" icone=fluxo.icone_enviar %}
   </div>
 </form>
 {% endif %}

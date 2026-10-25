@@ -24,7 +24,7 @@ Lista do painel (a view devolve só este trecho quando recebe `HX-Request`). Na 
         <td class="col-origem"><span class="selo selo-neutro" title="{{ p.get_origem_display }}">{{ p|origem_curta }}</span></td>
         <td class="tabela-data col-data">{{ p.criado_em|date:"d/m/Y H:i" }}</td>
         <td class="col-pessoa"{% if p.origem != "AVULSA" %} data-rotulo="Solicitante"{% endif %}>{% if p.origem == "AVULSA" %}<span class="texto-secundario">Recebedor:</span> {{ a.recebedor|default:"—" }}{% else %}{{ p.solicitante }}{% if a %}<span class="texto-secundario">, recebeu:</span> {{ a.recebedor }}{% endif %}{% endif %}</td>
-        <td class="col-destino" data-rotulo="{% if p.origem == "AVULSA" %}Centro de custo{% else %}Destino{% endif %}">{% if p.origem == "AVULSA" %}{{ a.centro_custo }} · {{ a.tipo_saida }}{% else %}{{ p.destino }}{% endif %}</td>
+        <td class="col-destino" data-rotulo="{% if p.origem == "AVULSA" %}Centro de custo{% else %}Destino{% endif %}">{% if p.origem == "AVULSA" %}{{ a.centro_custo }} · {{ a.tipo_saida }}{% else %}{{ p.destino }}{% if p.ocorrencia %}<span class="texto-secundario texto-pequeno"><br>Ocorrência <span class="mono">{{ p.ocorrencia }}</span></span>{% endif %}{% endif %}</td>
         <td class="col-situacao"><div class="situacao-selos"><span class="selo {{ situacao.chave|badge_situacao }}">{{ situacao.rotulo }}</span><span class="selo {{ scpi.chave|badge_scpi }}">SCPI: {{ scpi.rotulo }}</span></div></td>
       </tr>
       {% endwith %}

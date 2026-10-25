@@ -7,6 +7,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
+from catalogo.models import Material
 from pedidos.models import LinhaSaida, Pedido
 from pedidos.regras import AB, EnvioSaida
 from pedidos.servicos import registrar_saida_avulsa
@@ -19,6 +20,8 @@ HOJE = date(2026, 10, 9)
 @pytest.fixture
 def usuario():
     montar_cenario()
+    # A saída avulsa só lista material com saldo: o "ITEM ANTIGO" do cenário vem zerado.
+    Material.objects.filter(codigo="000.000.900").update(estoque=Decimal(10))
     return get_user_model().objects.create_user(username="12345", password="x")
 
 

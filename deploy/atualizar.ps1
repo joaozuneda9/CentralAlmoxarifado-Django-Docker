@@ -117,7 +117,8 @@ try {
     }
     foreach ($servico in @('web', 'agendador')) {
         $vars = $config.services.$servico.environment
-        $integracoes = @('SAEP_USER', 'SAEP_PASS', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID')
+        $integracoes = @('SAEP_USER', 'SAEP_PASS', 'TELEGRAM_TOKEN', 'TELEGRAM_CHAT_ID',
+            'TELEGRAM_CHAT_ID_SEGURANCA')
         if (-not $AtivarOperacao) {
             if ((Get-Valor $vars 'LANCAMENTO_REAL') -ne '0' -or
                 @($integracoes | Where-Object { (Get-Valor $vars $_) -ne '' }).Count) {

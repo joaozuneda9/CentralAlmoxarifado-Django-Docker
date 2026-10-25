@@ -40,7 +40,7 @@ logger = logging.getLogger("scpi.lancamento")
 JOURNAL = "lancar_saidas_journal.jsonl"
 
 LANCAMENTO_BLOQUEADO = (
-    "O lançamento real no SCPI está bloqueado (LANCAMENTO_REAL=0 no .env): até a virada, "
+    "O lançamento real no SCPI está bloqueado neste ambiente (LANCAMENTO_REAL=0 no .env): "
     "só a simulação roda."
 )
 

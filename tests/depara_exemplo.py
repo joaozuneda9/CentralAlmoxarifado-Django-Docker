@@ -3,7 +3,7 @@
 
 from pathlib import Path
 
-from tests.planilha_exemplo import salvar_xlsx
+import openpyxl
 
 ABA_MAPEAMENTO = "Planilha de mapeamento depara"
 
@@ -50,6 +50,20 @@ def abas_depara(aba_mapeamento: str = ABA_MAPEAMENTO) -> dict[str, list[dict[str
             _depara("004.000.022", "004.001.022", "zero"),
         ],
     }
+
+
+def salvar_xlsx(abas: dict[str, list[dict[str, object]]], caminho: Path) -> Path:
+    """Grava uma aba por chave; o cabeçalho são as chaves da primeira linha, sem `_linha`."""
+    livro = openpyxl.Workbook()
+    livro.remove(livro.active)
+    for nome, linhas in abas.items():
+        folha = livro.create_sheet(nome)
+        cabecalho = [chave for chave in linhas[0] if chave != "_linha"]
+        folha.append(cabecalho)
+        for linha in linhas:
+            folha.append([linha.get(chave) for chave in cabecalho])
+    livro.save(caminho)
+    return caminho
 
 
 def salvar_depara(caminho: Path, abas=None) -> Path:

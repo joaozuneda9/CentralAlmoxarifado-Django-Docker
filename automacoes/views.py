@@ -15,7 +15,6 @@ from django.http import Http404
 from django.shortcuts import redirect, render
 from django.urls import reverse
 from django.utils import timezone
-from django.utils.cache import patch_vary_headers
 from django.views.decorators.http import require_POST
 
 from automacoes.historico import FiltrosHistorico, SequenciaHistorico, consultas
@@ -24,6 +23,7 @@ from catalogo.curva import INICIO_DADOS_CONFIAVEIS
 from catalogo.forms import ROBOS, ROBOS_POR_CHAVE
 from catalogo.models import Importacao
 from catalogo.saude import situacao_do_catalogo
+from interface.htmx import regiao_pedida, render_regiao
 from pedidos import andamento
 from pedidos.consultas import fila_do_robo, lotes_travados
 from pedidos.forms import LancamentoForm
@@ -43,12 +43,6 @@ ABAS = [
 ]
 CHAVES_ABAS = [chave for chave, _ in ABAS]
 
-# Regiões que o HTMX recarrega, pelo cabeçalho HX-Target (`tag#id` no HTMX 4).
-REGIOES = {
-    "section#situacao-catalogo": "catalogo/_situacao.html",
-    "section#lancamentos": "pedidos/_lancamentos.html",
-    "div#historico": "automacoes/_historico.html",
-}
 LINHAS_POR_PAGINA = 20
 
 # Depois do clique, o processo leva alguns segundos para criar a primeira Importacao; entre
@@ -84,12 +78,16 @@ def importacao_em_andamento(request, agora: datetime | None = None) -> bool:
     return Importacao.em_andamento(agora).exists() or _disparo_recente(request, agora)
 
 
+def _terminou_agora(agora: datetime) -> bool:
+    """Alguma importação terminou há pouco: a página ainda acompanha, para mostrar o resultado."""
+    return Importacao.objects.filter(fim__gte=agora - CARENCIA).exists()
+
+
 def contexto_catalogo(request, formularios: dict | None = None) -> dict:
     """Situação do catálogo e, por robô, o formulário (com o que a pessoa já preencheu, se houver
     erro) e a última importação daquele tipo."""
     agora = timezone.now()
     em_andamento = importacao_em_andamento(request, agora)
-    terminou_agora = Importacao.objects.filter(fim__gte=agora - CARENCIA).exists()
     formularios = formularios or {}
     situacao = situacao_do_catalogo(agora)
     fontes = {fonte.tipo: fonte for fonte in situacao.fontes}
@@ -97,7 +95,7 @@ def contexto_catalogo(request, formularios: dict | None = None) -> dict:
         "situacao": situacao,
         "fontes": fontes,
         "importacao_em_andamento": em_andamento,
-        "acompanhar_catalogo": em_andamento or terminou_agora,
+        "acompanhar_catalogo": em_andamento or _terminou_agora(agora),
         "inicio_dados": INICIO_DADOS_CONFIAVEIS,
         # Fontes com aba de robô: a linha da fonte na situação leva até ela.
         "tipos_com_aba": [r.chave.upper() for r in ROBOS],
@@ -142,23 +140,8 @@ def contexto_lancamento() -> dict:
     }
 
 
-def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
-    """Tudo o que a página mostra; também usado quando o formulário de um robô volta com erro."""
-    catalogo = contexto_catalogo(request, formularios)
-    lancamento = contexto_lancamento()
-    execucao = lancamento["execucao"]
-    linha = linha_lancamento(
-        pendentes=lancamento["fila"].total,
-        travados=len(lancamento["travados"]),
-        ultima=execucao,
-        em_andamento=lancamento["lancamento_em_andamento"],
-        interrompida=bool(execucao and execucao.interrompida),
-        agora=timezone.now(),
-    )
-    resumo = catalogo["situacao"].resumo
-    if lancamento["travados"]:
-        resumo += f" Lançamento no SCPI: {linha.selo}."
-    fontes = catalogo["fontes"]
+def _contexto_historico(request) -> dict:
+    """Lista paginada do histórico, com os filtros da query."""
     filtros = FiltrosHistorico(request.GET)
     ativos = filtros.filtros()
     historico = SequenciaHistorico(*consultas(ativos, timezone.now()))
@@ -168,34 +151,90 @@ def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
         "pagina_historico": Paginator(historico, LINHAS_POR_PAGINA).get_page(
             request.GET.get("pagina")
         ),
+    }
+
+
+def _linha_do_lancamento(lancamento: dict):
+    execucao = lancamento["execucao"]
+    return linha_lancamento(
+        pendentes=lancamento["fila"].total,
+        travados=len(lancamento["travados"]),
+        ultima=execucao,
+        em_andamento=lancamento["lancamento_em_andamento"],
+        interrompida=bool(lancamento["andamento"] and lancamento["andamento"]["interrompida"]),
+        agora=timezone.now(),
+    )
+
+
+def _contexto_situacao(request, formularios: dict | None = None) -> dict:
+    """O que `catalogo/_situacao.html` lê: a situação do catálogo (com o que a visão geral mostra
+    do lançamento: a linha e o resumo) e as marcas de acompanhamento."""
+    catalogo = contexto_catalogo(request, formularios)
+    lancamento = contexto_lancamento()
+    linha = _linha_do_lancamento(lancamento)
+    resumo = catalogo["situacao"].resumo
+    if lancamento["travados"]:
+        resumo += f" Lançamento no SCPI: {linha.selo}."
+    return {
         **catalogo,
         **lancamento,
         "linha_lancamento": linha,
         "resumo_geral": resumo,
-        # A visão geral também acompanha o lançamento, para a linha dele se atualizar.
-        "acompanhar_catalogo": catalogo["acompanhar_catalogo"]
-        or lancamento["lancamento_em_andamento"],
+    }
+
+
+def _contexto_acompanhamento(request) -> dict:
+    """Só as duas marcas de acompanhamento que `automacoes/_historico.html` lê, sem montar a
+    situação do catálogo nem o lançamento."""
+    agora = timezone.now()
+    return {
+        "acompanhar_catalogo": importacao_em_andamento(request, agora) or _terminou_agora(agora),
+        "acompanhar_lancamento": ExecucaoRobo.em_andamento(agora).exists(),
+    }
+
+
+def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
+    """Tudo o que a página mostra; também usado quando o formulário de um robô volta com erro."""
+    situacao = _contexto_situacao(request, formularios)
+    fontes = situacao["fontes"]
+    return {
+        **_contexto_historico(request),
+        **situacao,
         "aba": aba,
         # (chave, rótulo, estado): a aba mostra o selo quando pede atenção ou está rodando.
         "abas": [
             ("visao-geral", "Visão geral", None),
-            ("lancamento", "Lançamento no SCPI", linha),
+            ("lancamento", "Lançamento no SCPI", situacao["linha_lancamento"]),
             *((r.chave, r.rotulo, fontes.get(r.chave.upper())) for r in ROBOS),
         ],
     }
 
 
+def _contexto_regiao_historico(request) -> dict:
+    return {**_contexto_acompanhamento(request), **_contexto_historico(request)}
+
+
+# Regiões que o HTMX recarrega, pelo cabeçalho HX-Target (`tag#id` no HTMX 4): o parcial e a função
+# que monta só o contexto dele (o mesmo que `contexto_pagina` daria para as variáveis que ele lê;
+# a recarga de uma região não paga o contexto das outras).
+REGIOES = {
+    "section#situacao-catalogo": ("catalogo/_situacao.html", _contexto_situacao),
+    "section#lancamentos": ("pedidos/_lancamentos.html", lambda request: contexto_lancamento()),
+    "div#historico": ("automacoes/_historico.html", _contexto_regiao_historico),
+}
+
+
 @login_required
 def pagina(request):
-    contexto = contexto_pagina(request, aba_pedida(request))
-    # Com HX-Request, só a região pedida (recarga enquanto há algo em andamento); ao restaurar
-    # o histórico (botão Voltar) o HTMX também manda HX-Request, mas precisa da página inteira.
-    modelo = "automacoes/pagina.html"
-    if request.headers.get("HX-Request") and not request.headers.get("HX-History-Restore-Request"):
-        modelo = REGIOES.get(request.headers.get("HX-Target", ""), modelo)
-    resposta = render(request, modelo, contexto)
-    patch_vary_headers(resposta, ["HX-Request", "HX-Target", "HX-History-Restore-Request"])
-    return resposta
+    # Com HX-Request, só a região pedida (recarga enquanto há algo em andamento), com só o contexto
+    # dela; o resto, a página inteira.
+    regiao = regiao_pedida(request, REGIOES)
+    if regiao:
+        modelo, montar = regiao
+        return render_regiao(request, modelo, montar(request))
+    return render_regiao(
+        request, "automacoes/pagina.html", contexto_pagina(request, aba_pedida(request))
+    )
 
 
 @login_required

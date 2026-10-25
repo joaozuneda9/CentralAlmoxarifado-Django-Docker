@@ -7,16 +7,25 @@ requisição não GET) e só o trecho do carrinho volta. O carrinho vive nos cam
 `_carrinho.html`.
 
 Os resultados abrem num painel preso à busca (`pedidos.js`): ao focar, digitar ou trocar o
-filtro; fecha com Esc ou ao sair da área. Sem JavaScript o painel fica aberto na página. O painel
+filtro; fecha com Esc ou ao sair da área. O painel
 fica fora de `#busca-materiais` para o `hx-include` da busca não levar as quantidades. O filtro de
 grupo fica acima da busca, recolhido; o painel abre logo abaixo da busca.
 Quando o passo tem largura para isso (container query em `pedidos.css`), a busca e o "Seu
 pedido" ficam lado a lado; senão, um embaixo do outro.
 {% endcomment %}
+{% if n_folha %}
+{# Folha (spec 006): a lista de peças preenchida como o papel, num diálogo que vem do servidor com as quantidades do pedido (pedidos.js abre e fecha). #}
+<div class="folha-chamada">
+  <button type="button" class="botao botao-primario" data-folha-abrir aria-haspopup="dialog" aria-controls="folha"
+          hx-post="{{ url_carrinho }}" hx-target="#folha-conteudo" hx-swap="innerHTML" hx-vals='{"folha_abrir": "1"}'>{% include "interface/_icone.html" with nome="caixa-check" %}Preencher a lista de peças</button>
+  <p class="texto-secundario texto-pequeno">{{ n_folha }} {% if n_folha == 1 %}peça{% else %}peças{% endif %}, como na folha de papel</p>
+</div>
+<dialog id="folha" class="folha" aria-labelledby="folha-titulo"><div id="folha-conteudo"></div></dialog>
+{% endif %}
 <div class="busca-area" data-busca-area>
 <div id="busca-materiais" class="busca-materiais{% if not filtros %} busca-materiais-sem-filtro{% endif %}">
   {% if filtros %}
-  {# Secundário à busca: recolhido num <details> (funciona sem JavaScript); o resumo mostra o grupo escolhido e o pedidos.js o fecha depois da escolha. #}
+  {# Secundário à busca: recolhido num <details>; o resumo mostra o grupo escolhido e o pedidos.js o fecha depois da escolha. #}
   {# O "Limpar" só aparece com um grupo escolhido e o filtro fechado (pedidos.css); aberto, a árvore já tem "Todos os grupos". #}
   <div class="busca-filtro-linha">
     <details class="busca-filtro" data-busca-filtro>
@@ -48,7 +57,7 @@ pedido" ficam lado a lado; senão, um embaixo do outro.
     <div class="campo-busca">
       {% include "interface/_icone.html" with nome="busca" %}
       <input id="busca-q" class="campo-entrada" type="search" name="q" autocomplete="off" data-busca
-             placeholder="{% if fluxo.nome == "limpeza" %}Ex.: detergente, café{% else %}Ex.: luva, fita veda rosca{% if not fluxo.publico %}, 016.005.010{% endif %}{% endif %}"
+             placeholder="{{ fluxo.exemplo_busca }}"
              aria-expanded="false" aria-controls="resultados"
              hx-get="{{ url_materiais }}" hx-trigger="input changed delay:300ms, search"
              hx-target="#resultados" hx-include="#busca-materiais">

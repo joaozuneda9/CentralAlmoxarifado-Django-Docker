@@ -117,7 +117,7 @@ def test_ab_acima_do_estoque_e_recusado_inteiro():
     assert r.estoque_atual == {"013.006.001": 2}
     assert not Pedido.objects.exists() and not ItemPedido.objects.exists()
     sem = registrar_pedido(AB, uuid.uuid4(), envio_ab(itens=itens(("013.005.007", "1"))))
-    assert [e.texto for e in sem.erros] == ["LUVA NITRÍLICA (013.005.007) está sem estoque."]
+    assert [e.texto for e in sem.erros] == ["LUVA NITRÍLICA (013.005.007): Sem estoque."]
 
 
 def test_ab_sem_saldo_importado_fica_indisponivel():
@@ -191,3 +191,49 @@ def test_erros_de_tamanho_dizem_o_campo(settings):
         ("Observação: no máximo 3 caracteres.", "obs"),
         ("O pedido pode ter no máximo 1 materiais. Divida em mais de um pedido.", None),
     ]
+
+
+# --- O catálogo sai da fila única de envios (spec 005, US9) ------------------------------------
+
+
+def _anotar_chamadas(monkeypatch, *nomes):
+    """Registra a ordem em que `servicos` chama cada função, sem mudar o que ela faz."""
+    ordem = []
+    for nome in nomes:
+        original = getattr(servicos, nome)
+
+        def com_registro(*args, _original=original, _nome=nome, **kwargs):
+            ordem.append(_nome)
+            return _original(*args, **kwargs)
+
+        monkeypatch.setattr(servicos, nome, com_registro)
+    return ordem
+
+
+@pytest.mark.parametrize("origem", [AB, LIMPEZA])
+def test_catalogo_e_centros_sao_lidos_antes_de_travar_a_numeracao(monkeypatch, avisos, origem):
+    montar_cenario()
+    ordem = _anotar_chamadas(monkeypatch, "catalogo_de", "centros_do_fluxo", "travar_sequencia")
+    envio = envio_ab() if origem == AB else envio_limpeza()
+    assert registrar_pedido(origem, uuid.uuid4(), envio).ok
+    # O catálogo do AB é a parte mais pesada: nenhum outro envio espera por ele.
+    assert ordem.count("catalogo_de") == 1
+    trava = ordem.index("travar_sequencia")
+    assert ordem.index("catalogo_de") < trava and ordem.index("centros_do_fluxo") < trava
+
+
+def test_a_ordem_das_respostas_nao_muda_com_o_catalogo_lido_antes(monkeypatch, avisos, settings):
+    montar_cenario()
+    envio_id = uuid.uuid4()
+    primeira = registrar_pedido(AB, envio_id, envio_ab(), ip="10.0.0.1")
+    assert primeira.ok
+    # 1) O reenvio igual confirma sem contar no limite, mesmo com o limite estourado.
+    settings.PEDIDOS_LIMITE_IP_10_MIN = 1
+    assert registrar_pedido(AB, envio_id, envio_ab(), ip="10.0.0.1").reenvio
+    # 2) O limite vem antes do catálogo indisponível.
+    monkeypatch.setattr(servicos, "catalogo_de", lambda origem: None)
+    limite = registrar_pedido(AB, uuid.uuid4(), envio_ab(), ip="10.0.0.1")
+    assert limite.mensagem == servicos.MENSAGEM_LIMITE_IP
+    # 3) Sem limite, o catálogo indisponível é a resposta.
+    outra = registrar_pedido(AB, uuid.uuid4(), envio_ab(), ip="10.0.0.2")
+    assert "catálogo deste formulário não está disponível" in outra.mensagem

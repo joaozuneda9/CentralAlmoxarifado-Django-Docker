@@ -15,11 +15,13 @@ from django.utils import timezone
 from catalogo.models import CentroCusto, ItemLimpeza, Material, Opcao, SaidaSCPI
 from pedidos.models import Atendimento, ItemPedido, LinhaSaida, Pedido
 from pedidos.regras import AVULSA, LIMPEZA, DadosSaida, EnvioPedido, ItemEnviado
+from tests.config_cenario import habilitar_como_antes
 
 MATERIAIS = [
     # código, nome, grupo, estoque, oculto
-    ("023.001.002", "DETERGENTE NEUTRO", "LIMPEZA", "0", False),
-    ("008.001.002", "CAFÉ 500 G", "GÊNEROS", "0", False),
+    # Os itens de limpeza têm saldo: o formulário público nega pedido acima do estoque.
+    ("023.001.002", "DETERGENTE NEUTRO", "LIMPEZA", "100", False),
+    ("008.001.002", "CAFÉ 500 G", "GÊNEROS", "100", False),
     ("023.004.001", "PAPEL HIGIÊNICO", "LIMPEZA", "50", False),
     ("016.005.010", "FITA VEDA ROSCA", "REDES DE ÁGUA", "10", False),
     ("013.006.001", "BOTINA", "EPI", "2.5", False),
@@ -27,6 +29,10 @@ MATERIAIS = [
     ("000.000.900", "ITEM ANTIGO", "GERAL", "0", False),
     ("030.004.001", "CAPACETE", "EPI", "9", True),
 ]
+UNIDADES_FRACIONAVEIS = ("M", "MT", "MTS", "KM", "KG", "L", "LT", "M²", "M³", "T")
+# Unidade do SCPI de cada material (o resto é "UN", contado). O café é vendido a peso: é a
+# unidade de medida dos pedidos de limpeza com fração (1,5).
+UNIDADES = {"008.001.002": "KG"}
 SAIDAS = {
     "016.005.010": 3,
     "013.006.001": 2,
@@ -42,6 +48,9 @@ def montar_cenario(*, com_estoque: bool = True) -> None:
     opcoes = {
         Opcao.Lista.FUNCIONARIO: ["Ana Exemplo", "João Fictício", "Motorista Teste"],
         Opcao.Lista.CATEGORIA_LIMPEZA: ["Limpeza", "Copa/cozinha"],
+        # A migration carrega estas unidades, mas o teste com `transaction=True` esvazia as
+        # tabelas ao terminar: quem monta o cenário garante a lista (idempotente).
+        Opcao.Lista.UNIDADE_FRACIONAVEL: list(UNIDADES_FRACIONAVEIS),
     }
     for lista, valores in opcoes.items():
         for ordem, valor in enumerate(valores):
@@ -55,7 +64,7 @@ def montar_cenario(*, com_estoque: bool = True) -> None:
             codigo=codigo,
             defaults={
                 "nome": nome,
-                "unidade": "UN",
+                "unidade": UNIDADES.get(codigo, "UN"),
                 "grupo": grupo,
                 "subgrupo": "SUB",
                 "oculto": oculto,
@@ -96,6 +105,14 @@ def montar_cenario(*, com_estoque: bool = True) -> None:
     for descricao, codigo, placa in centros:
         if not CentroCusto.objects.filter(descricao=descricao, codigo=codigo).exists():
             CentroCusto.objects.create(descricao=descricao, codigo=codigo, placa=placa)
+    # Os centros do cenário são destino onde as regras antigas os ofereciam (spec 009).
+    habilitar_como_antes()
+
+
+def dar_saldo(*codigos: str, saldo: int = 10) -> None:
+    """Dá saldo a materiais do cenário que vêm zerados: a saída avulsa só lista material com
+    estoque."""
+    Material.objects.filter(codigo__in=codigos).update(estoque=Decimal(saldo))
 
 
 def itens(*pares) -> tuple[ItemEnviado, ...]:

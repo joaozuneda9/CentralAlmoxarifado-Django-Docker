@@ -14,7 +14,7 @@ from django.db.models.functions import Coalesce
 from django.utils import timezone
 
 from catalogo.models import Material
-from pedidos.models import ItemPedido, LinhaSaida, Pedido
+from pedidos.models import AutorizacaoPedido, ItemPedido, LinhaSaida, Pedido
 from pedidos.regras import (
     AVULSA,
     EM_LANCAMENTO,
@@ -31,6 +31,18 @@ OPCOES_SITUACAO = [
     ("atendido", "Atendido"),
     ("parcial", "Atendido parcialmente"),
 ]
+# Filtro à parte da situação (spec 008): "Autorizado" é o estado da autorização, que um pedido
+# atendido também tem; misturá-lo na situação sobreporia "Atendido".
+OPCOES_AUTORIZACAO = [
+    ("aguardando", "Aguardando autorização"),
+    ("autorizado", "Autorizado"),
+    ("recusado", "Recusado"),
+]
+_SITUACAO_DA_AUTORIZACAO = {
+    "aguardando": AutorizacaoPedido.Situacao.AGUARDANDO,
+    "autorizado": AutorizacaoPedido.Situacao.AUTORIZADO,
+    "recusado": AutorizacaoPedido.Situacao.RECUSADO,
+}
 OPCOES_SCPI = [
     ("sem", "Aguarda o atendimento ou não será lançado"),
     ("aguardando", "Aguardando o robô"),
@@ -48,7 +60,7 @@ class FiltrosPainel(forms.Form):
             attrs={
                 "class": "campo-entrada",
                 "type": "search",
-                "placeholder": "Nº, solicitante ou recebedor",
+                "placeholder": "Nº, solicitante, recebedor ou ocorrência",
             }
         ),
     )
@@ -62,6 +74,12 @@ class FiltrosPainel(forms.Form):
         required=False,
         label="Situação do pedido",
         choices=[("", "Todas")] + OPCOES_SITUACAO,
+        widget=forms.Select(attrs={"class": "campo-entrada"}),
+    )
+    autorizacao = forms.ChoiceField(
+        required=False,
+        label="Autorização (EPIs)",
+        choices=[("", "Todas")] + OPCOES_AUTORIZACAO,
         widget=forms.Select(attrs={"class": "campo-entrada"}),
     )
     scpi = forms.ChoiceField(
@@ -101,7 +119,14 @@ def filtrar_situacao(qs: QuerySet, chave: str) -> QuerySet:
     )
     nao_avulsa = qs.exclude(origem=AVULSA)
     if chave == "aguardando":
-        return nao_avulsa.filter(atendimento__isnull=True)
+        # Aguardando atendimento: o pedido de EPI que espera a autorização ou foi recusado não
+        # entra (não pode ser atendido); sem autorização, o resultado é o de sempre.
+        return nao_avulsa.filter(atendimento__isnull=True).exclude(
+            autorizacao__situacao__in=[
+                AutorizacaoPedido.Situacao.AGUARDANDO,
+                AutorizacaoPedido.Situacao.RECUSADO,
+            ]
+        )
     if chave == "parcial":
         return nao_avulsa.filter(atendimento__isnull=False).filter(entregue_a_menos)
     if chave == "atendido":
@@ -140,7 +165,7 @@ def inicio_do_dia(dia: date) -> datetime:
 
 def pedidos_do_painel(filtros: dict) -> QuerySet:
     qs = (
-        Pedido.objects.select_related("atendimento")
+        Pedido.objects.select_related("atendimento", "autorizacao")
         .prefetch_related("itens", "atendimento__linhas")
         .order_by("-criado_em", "-numero")
     )
@@ -149,6 +174,7 @@ def pedidos_do_painel(filtros: dict) -> QuerySet:
             Q(numero__icontains=q)
             | Q(solicitante__icontains=q)
             | Q(atendimento__recebedor__icontains=q)
+            | Q(ocorrencia__icontains=q)
         )
     if origem := filtros.get("origem"):
         qs = qs.filter(origem=origem)
@@ -158,6 +184,8 @@ def pedidos_do_painel(filtros: dict) -> QuerySet:
         qs = qs.filter(criado_em__lt=inicio_do_dia(ate + timedelta(days=1)))
     if situacao := filtros.get("situacao"):
         qs = filtrar_situacao(qs, situacao)
+    if autorizacao := filtros.get("autorizacao"):
+        qs = qs.filter(autorizacao__situacao=_SITUACAO_DA_AUTORIZACAO[autorizacao])
     if scpi := filtros.get("scpi"):
         qs = filtrar_scpi(qs, scpi)
     if recibo := filtros.get("recibo"):
@@ -186,6 +214,27 @@ class Fila:
     def fora(self) -> int:
         """Quantas ficaram fora da lista mostrada."""
         return self.total - len(self.requisicoes)
+
+
+def fila_de_autorizacao() -> QuerySet:
+    """Os pedidos de EPI que aguardam a decisão da Segurança do Trabalho, do mais antigo para o
+    mais novo (spec 008, FR-011). Uma consulta, com o pedido e o número de itens (`n_itens`)."""
+    return (
+        AutorizacaoPedido.objects.filter(situacao=AutorizacaoPedido.Situacao.AGUARDANDO)
+        .select_related("pedido")
+        .annotate(n_itens=Count("pedido__itens"))
+        .order_by("pedido__criado_em", "pedido__numero")
+    )
+
+
+def decididas_da_autorizacao() -> QuerySet:
+    """Os já decididos (autorizados ou recusados), do mais recente para o mais antigo: leitura
+    para a Segurança do Trabalho."""
+    return (
+        AutorizacaoPedido.objects.exclude(situacao=AutorizacaoPedido.Situacao.AGUARDANDO)
+        .select_related("pedido", "decidido_por")
+        .order_by("-decidido_em", "-pedido__numero")
+    )
 
 
 def fila_do_robo(limite: int = 20) -> Fila:

@@ -5,7 +5,7 @@ navegação fica aberta. Sair é só POST com CSRF, num único formulário.
 {% endcomment %}
 <aside class="app-lateral">
   <div class="app-lateral-topo">
-    <a class="marca" href="{% url 'pedidos:painel' %}">{% include "interface/_icone.html" with nome="caixa" %}<span>Central Almoxarifado</span></a>
+    <a class="marca" href="{% if menu_inicio %}{{ menu_inicio }}{% else %}{% url 'pedidos:painel' %}{% endif %}">{% include "interface/_icone.html" with nome="caixa" %}<span>Central Almoxarifado</span></a>
     <button type="button" class="botao botao-texto botao-icone app-menu-botao" data-menu-toggle aria-expanded="false" aria-controls="menu-lateral" aria-label="Menu"><span class="app-menu-abrir">{% include "interface/_icone.html" with nome="menu" %}</span><span class="app-menu-fechar">{% include "interface/_icone.html" with nome="fechar" %}</span></button>
   </div>
   <div class="app-lateral-painel" id="menu-lateral">

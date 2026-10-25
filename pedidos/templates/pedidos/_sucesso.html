@@ -6,10 +6,16 @@
   <p class="sucesso-numero mono">{{ resposta.numero }}</p>
   <p>{% if n_itens == 1 %}1 material registrado{% else %}{{ n_itens }} materiais registrados{% endif %} para {{ resposta.pedido.solicitante }}.</p>
   <p class="texto-secundario">Destino: <strong>{{ resposta.pedido.destino }}</strong></p>
+  {% if resposta.pedido.ocorrencia %}<p class="texto-secundario">Nº da ocorrência: <strong class="mono">{{ resposta.pedido.ocorrencia }}</strong></p>{% endif %}
   <ul class="sucesso-itens">{% for i in itens %}<li><span>{{ i.material }}</span> <strong>{{ i.qtd_pedida|quantidade }}{% if i.unidade %} {{ i.unidade }}{% endif %}</strong></li>{% endfor %}</ul>
   {% if resposta.reenvio %}<p class="texto-secundario">Reenvio confirmado: nenhum aviso novo foi enviado.</p>
-  {% elif resposta.telegram == "falhou" %}<p class="texto-secundario">O aviso ao almoxarifado pelo Telegram falhou, mas o pedido está gravado.</p>{% endif %}
+  {% elif resposta.telegram == "falhou" %}<p class="texto-secundario">O aviso {% if fluxo.exige_autorizacao %}à Segurança do Trabalho{% else %}ao almoxarifado{% endif %} pelo Telegram falhou, mas o pedido está gravado.</p>{% endif %}
+  {% if fluxo.exige_autorizacao %}
+  {# Pedido de EPI: ainda não é um pedido ao almoxarifado, e a entrega só vem depois da autorização (spec 008, FR-009). #}
+  <div class="aviso aviso-info"><p><strong>Aguardando a autorização da Segurança do Trabalho.</strong> Só depois dela o almoxarifado atende o pedido, e a entrega só acontece nesse atendimento. Guarde o número do pedido: para saber o resultado, <a href="{% url 'pedidos:consulta_epi' %}">consulte o resultado</a> com ele.</p></div>
+  {% else %}
   <div class="aviso aviso-info"><p>Guarde o número. O almoxarifado vai conferir e separar os materiais; a saída só é registrada quando o atendimento for confirmado.</p></div>
+  {% endif %}
   <div class="acoes">
     <a class="botao botao-primario" href="{% url 'pedidos:formulario' fluxo.nome %}">Fazer outro pedido</a>
     <a class="botao botao-secundario" href="{% url 'pedidos:inicio' %}">Voltar ao início</a>

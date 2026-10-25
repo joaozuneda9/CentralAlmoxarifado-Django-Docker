@@ -8,6 +8,9 @@
  * um chip que o remove. Remover um chip troca o valor do campo e dispara `change`, que o HTMX
  * do formulário já escuta (e o dropdown.js também, para atualizar o gatilho).
  *
+ * O `form[data-filtros-auto]` (catálogo: Formulários e Curva ABC) é mais simples: sem painel, só
+ * envia o formulário quando um campo muda.
+ *
  * Os eventos são delegados no `document`: ao restaurar o histórico, o HTMX troca o <body> e os
  * elementos são outros.
  */
@@ -120,9 +123,41 @@
     if (focado >= 0) chips.querySelectorAll("button")[Math.min(focado, lista.length - 1)].focus();
   }
 
+  // `a[data-fechar-filtros]` (atalhos do painel): a página que o link abre chega com o painel de
+  // filtros recolhido, mostrando só os chips, sem mudar o estado que o navegador lembra.
+  var CHEGAR_FECHADO = "filtros-chegar-fechado";
+
+  function chegouPorAtalho() {
+    try {
+      var sim = sessionStorage.getItem(CHEGAR_FECHADO) === "1";
+      sessionStorage.removeItem(CHEGAR_FECHADO);
+      return sim;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  document.addEventListener("click", function (e) {
+    if (!(e.target.closest && e.target.closest("a[data-fechar-filtros]"))) return;
+    // Só a navegação desta aba conta: Ctrl/Cmd/Shift/Alt+clique e o botão do meio abrem outra aba, e o
+    // estado ficaria guardado aqui até a próxima página de filtros da aba original.
+    if (e.defaultPrevented || e.button !== 0 || e.metaKey || e.ctrlKey || e.shiftKey || e.altKey) return;
+    try {
+      sessionStorage.setItem(CHEGAR_FECHADO, "1");
+    } catch (erro) {
+      /* sem armazenamento, o painel abre como estava */
+    }
+  });
+
   function iniciar() {
+    var fechado = chegouPorAtalho();
     document.querySelectorAll("form[data-filtros]").forEach(function (form) {
-      form.querySelector("[data-filtros-painel]").hidden = !lerAberto();
+      // O estado do painel só se define na primeira vez de cada formulário: uma troca do HTMX
+      // depois (remover um chip, por exemplo) não o reabre.
+      if (!form.hasAttribute("data-filtros-pronto")) {
+        form.setAttribute("data-filtros-pronto", "");
+        form.querySelector("[data-filtros-painel]").hidden = fechado || !lerAberto();
+      }
       atualizar(form);
     });
   }
@@ -150,6 +185,15 @@
       remover.focus();
       item.campos[item.campos.length - 1].dispatchEvent(new Event("change", { bubbles: true }));
     }
+  });
+
+  // `form[data-filtros-auto]` (filtros em página inteira, sem HTMX): escolher uma opção ou sair do
+  // campo de busca com o texto alterado já envia o formulário, sem precisar do Enter. O botão
+  // "Filtrar" só aparece sem JavaScript. O `change` do dropdown.js (que troca os `select`) também
+  // chega aqui. Enquanto o texto é digitado nada é enviado: a página recarregaria e o foco se perderia.
+  document.addEventListener("change", function (e) {
+    var form = e.target.closest && e.target.closest("form[data-filtros-auto]");
+    if (form && form.requestSubmit) form.requestSubmit();
   });
 
   ["change", "input"].forEach(function (tipo) {

@@ -4,13 +4,14 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.contrib.staticfiles import finders
 from django.urls import reverse
+from django.utils.html import strip_tags
 
 from catalogo.catalogos import ItemCatalogo
 from pedidos.carrinho import LinhaCarrinho, adicionar, alterar, remover
 from pedidos.fluxos import FLUXOS, LIMITE_RESULTADOS, buscar, opcoes_filtro
 from pedidos.regras import estoque_inteiro
 from pedidos.servicos import catalogo_de
-from tests.cenario import montar_cenario
+from tests.cenario import dar_saldo, montar_cenario
 
 LIMPEZA_F = FLUXOS["limpeza"]
 AB_F = FLUXOS["ab"]
@@ -32,7 +33,8 @@ def item(codigo, nome="X", disponivel=0, **extra):
     return ItemCatalogo(**campos)
 
 
-DETERGENTE = item("023.001.002", "DETERGENTE", categoria="Limpeza")
+# Fracionável: nos testes de quantidade, o `fracionavel` do item é quem decide a fração.
+DETERGENTE = item("023.001.002", "DETERGENTE", 100, categoria="Limpeza", fracionavel=True)
 
 
 def item_ab(codigo, disponivel):
@@ -67,15 +69,18 @@ def test_ab_estoque_mensagens():
 
 
 def test_quantidades_invalidas():
+    # Material contado: fração é recusada com o texto único; o resto pede inteiro.
     assert adicionar([], AB_F, item_ab("1", 10), "1,5").erro == (
+        "Este material só é pedido em quantidade inteira (unidade: UN)."
+    )
+    assert adicionar([], AB_F, item_ab("1", 10), "abc").erro == (
         "Informe um número inteiro maior que zero."
     )
-    assert (
-        adicionar([], LIMPEZA_F, DETERGENTE, "1.5").erro == "Use vírgula para decimais (ex.: 1,5)."
-    )
-    assert (
-        adicionar([], LIMPEZA_F, DETERGENTE, "0").erro == "Informe uma quantidade maior que zero."
-    )
+    # Material fracionável: o texto pede a vírgula.
+    texto = "Informe uma quantidade maior que zero (use vírgula para decimais, ex.: 1,5)."
+    assert adicionar([], LIMPEZA_F, DETERGENTE, "1.5").erro == texto
+    assert adicionar([], LIMPEZA_F, DETERGENTE, "0").erro == texto
+    assert adicionar([], LIMPEZA_F, DETERGENTE, "1000000").erro == "A quantidade máxima é 999.999."
 
 
 def test_bloqueados_nao_entram():
@@ -93,11 +98,11 @@ def test_bloqueados_nao_entram():
 
 def test_maximo_de_itens(settings):
     settings.PEDIDOS_MAX_ITENS = 2
-    linhas = [LinhaCarrinho(str(n), Decimal(1), item(str(n))) for n in range(2)]
-    assert adicionar(linhas, LIMPEZA_F, item("9"), "1").erro == (
+    linhas = [LinhaCarrinho(str(n), Decimal(1), item(str(n), disponivel=10)) for n in range(2)]
+    assert adicionar(linhas, LIMPEZA_F, item("9", disponivel=10), "1").erro == (
         "O pedido pode ter no máximo 2 materiais."
     )
-    assert adicionar(linhas, LIMPEZA_F, item("0"), "1").erro == ""
+    assert adicionar(linhas, LIMPEZA_F, item("0", disponivel=10), "1").erro == ""
 
 
 def test_remover():
@@ -166,7 +171,7 @@ def test_endpoint_de_busca_ab(client):
     montar_cenario()
     r = client.get(reverse("pedidos:materiais", args=["ab"]), {"q": "fita"})
     assert r.status_code == 200
-    assert "FITA VEDA ROSCA" in r.text and "10 UN disponíveis" in r.text
+    assert "FITA VEDA ROSCA" in r.text and "Estoque 10 · UN" in r.text
     assert '"adicionar": "016.005.010"' in r.text
     assert "BOTINA" not in r.text
     assert client.get(reverse("pedidos:materiais", args=["avulsa"])).status_code == 404
@@ -249,7 +254,7 @@ def test_resultados_publicos_sem_codigo_nem_classe(client):
     r = client.get(reverse("pedidos:materiais", args=["ab"]), {"q": "fita"})
     dados = r.text[r.text.index('<div class="material-dados">') :]
     dados = dados[: dados.index("</div>")]
-    assert "FITA VEDA ROSCA" in dados and "10 UN disponíveis" in dados
+    assert "FITA VEDA ROSCA" in dados and "Estoque 10 · UN" in dados
     assert "016.005.010" not in dados and "REDES DE" not in dados
 
 
@@ -265,7 +270,7 @@ def test_alterar_recusa_e_mantem_a_anterior():
     linhas = [LinhaCarrinho(fita.codigo, 3, fita)]
     casos = {
         "11": "Quantidade acima do estoque. Estoque disponível: 10 UN.",
-        "1,5": "Informe um número inteiro maior que zero.",
+        "1,5": "Este material só é pedido em quantidade inteira (unidade: UN).",
         "0": "Informe um número inteiro maior que zero.",
         "abc": "Informe um número inteiro maior que zero.",
     }
@@ -274,7 +279,7 @@ def test_alterar_recusa_e_mantem_a_anterior():
         assert c.erro == erro and [linha.texto for linha in c.linhas] == ["3"]
     detergente = [LinhaCarrinho("023.001.002", Decimal(2), DETERGENTE)]
     assert alterar(detergente, LIMPEZA_F, DETERGENTE, "1.5").erro == (
-        "Use vírgula para decimais (ex.: 1,5)."
+        "Informe uma quantidade maior que zero (use vírgula para decimais, ex.: 1,5)."
     )
     assert alterar(detergente, LIMPEZA_F, None, "1").erro == "Material não encontrado no catálogo."
 
@@ -299,12 +304,14 @@ def test_endpoint_altera_a_quantidade_do_pedido(client):
 
 
 @pytest.mark.django_db
-def test_endpoint_alterar_com_anterior_invalido_avisa_em_vez_de_sumir_com_a_linha(client):
+def test_endpoint_alterar_corrige_anterior_invalido_sem_sumir_com_a_linha(client):
     montar_cenario()
     url = reverse("pedidos:carrinho", args=["ab"])
     pedido = {"item_codigo": "016.005.010", "alterar": "016.005.010", "item_qtd": "5"}
     r = client.post(url, {**pedido, "anterior": "lixo"})
-    assert "Material não está no pedido." in r.text and "data-carrinho-alerta" in r.text
+    assert 'name="item_codigo" value="016.005.010"' in r.text
+    assert 'name="item_qtd" value="5"' in r.text
+    assert "data-carrinho-alerta" not in r.text
 
 
 @pytest.mark.django_db
@@ -413,6 +420,7 @@ def test_barra_e_gaveta_do_formulario_publico(client):
 @pytest.mark.django_db
 def test_barra_e_gaveta_da_saida_avulsa_seguem_o_formulario_com_os_textos_da_saida(client):
     montar_cenario()
+    dar_saldo("000.000.900")
     client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
     r = client.post(
         reverse("pedidos:avulsa_carrinho"), {"adicionar": "000.000.900", "qtd-000.000.900": "1"}
@@ -442,9 +450,9 @@ def test_buscar_poe_os_que_podem_ser_pedidos_primeiro():
         item("4", "LUVA D", 2),
     ]
     assert [i.codigo for i in buscar(AB_F, catalogo, "luva", "")[0]] == ["2", "4", "1", "3"]
-    # Na limpeza não há estoque: só o cadastro duplicado bloqueia.
+    # Na limpeza também bloqueiam o cadastro duplicado e o saldo zerado.
     catalogo[1] = item("2", "LUVA B", 5, duplicado=True)
-    assert [i.codigo for i in buscar(LIMPEZA_F, catalogo, "luva", "")[0]] == ["1", "3", "4", "2"]
+    assert [i.codigo for i in buscar(LIMPEZA_F, catalogo, "luva", "")[0]] == ["4", "1", "2", "3"]
 
 
 def test_buscar_ordena_antes_de_cortar_em_50():
@@ -457,8 +465,43 @@ def test_buscar_ordena_antes_de_cortar_em_50():
 def test_texto_de_estoque_do_ab():
     from pedidos.fluxos import resultados
 
-    assert resultados(AB_F, [item("1", "LUVA", 356, unidade="UN")])[0].info == "356 UN disponíveis"
-    assert resultados(AB_F, [item("1", "LUVA", 3, unidade="")])[0].info == "3 disponíveis"
+    # A mesma linha nos dois formulários: "Estoque N · UN" (sem a unidade quando não há).
+    assert resultados(AB_F, [item("1", "LUVA", 356, unidade="UN")])[0].linha_publica == (
+        "Estoque 356 · UN"
+    )
+    assert resultados(AB_F, [item("1", "LUVA", 3, unidade="")])[0].linha_publica == "Estoque 3"
+
+
+def test_estoque_na_linha_da_avulsa_e_da_limpeza():
+    from pedidos.fluxos import resultados
+
+    avulsa = FLUXOS["avulsa"]
+    assert resultados(avulsa, [item("1", "LUVA", 12)])[0].estoque == "Estoque 12"
+    assert resultados(avulsa, [item("1", "LUVA", Decimal("2.5"))])[0].estoque == "Estoque 2,5"
+    # O saldo tem 4 casas: não se arredonda para as 3 da quantidade.
+    # O estoque mostrado é o máximo aceito: o saldo de 4 casas é cortado em 3, nunca arredondado.
+    assert resultados(avulsa, [item("1", "LUVA", Decimal("0.0004"))])[0].estoque == "Estoque 0"
+    assert resultados(avulsa, [item("1", "LUVA", Decimal("2.4996"))])[0].estoque == "Estoque 2,499"
+    assert resultados(AB_F, [item("1", "LUVA", 12)])[0].estoque == "Estoque 12"
+    # Formulário público: o estoque vem antes da unidade, sem o "—" de quem não tem unidade.
+    com_unidade = item("1", "SACO", 7, unidade="Pacote 500 g")
+    assert resultados(LIMPEZA_F, [com_unidade])[0].linha_publica == "Estoque 7 · Pacote 500 g"
+    sem_unidade = item("1", "SACO", 7, unidade="")
+    assert resultados(LIMPEZA_F, [sem_unidade])[0].linha_publica == "Estoque 7"
+    assert resultados(AB_F, [item("1", "LUVA", 3, unidade="")])[0].linha_publica == "Estoque 3"
+
+
+@pytest.mark.django_db
+def test_telas_mostram_o_estoque_entre_o_codigo_e_a_unidade(client):
+    montar_cenario()
+    client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+    avulsa = client.get(reverse("pedidos:avulsa_materiais"), {"q": "fita"}).text
+    assert '<span class="mono">016.005.010</span> · Estoque 10 · UN · REDES DE ÁGUA' in avulsa
+    botina = client.get(reverse("pedidos:avulsa_materiais"), {"q": "botina"}).text
+    assert "Estoque 2,5 · UN" in botina
+    limpeza = client.get(reverse("pedidos:materiais", args=["limpeza"]), {"q": "papel"}).text
+    visivel = strip_tags(limpeza)
+    assert "Estoque 50 · UN" in visivel and "023.004.001" not in visivel
 
 
 @pytest.mark.django_db
@@ -467,7 +510,7 @@ def test_unidade_so_embaixo_do_nome_e_anuncio_do_adicionado(client):
     r = client.get(reverse("pedidos:materiais", args=["ab"]), {"q": "fita"}).text
     acao = r[r.index('<div class="material-acao"') :]
     acao = acao[: acao.index("</li>")]
-    assert ">UN<" not in acao and "UN disponíveis" in r
+    assert ">UN<" not in acao and "Estoque 10 · UN" in r
     pagina = client.get(reverse("pedidos:formulario", args=["ab"])).text
     assert pagina.count("data-anuncio-adicionado") == 1
     anuncio = pagina[: pagina.index("data-anuncio-adicionado")]
@@ -480,6 +523,7 @@ def test_unidade_so_embaixo_do_nome_e_anuncio_do_adicionado(client):
 @pytest.mark.django_db
 def test_codigo_so_aparece_no_carrinho_da_avulsa(client):
     montar_cenario()
+    dar_saldo("000.000.900")
     r = client.post(
         reverse("pedidos:carrinho", args=["ab"]),
         {"adicionar": "016.005.010", "qtd-016.005.010": "1"},
@@ -528,6 +572,7 @@ def test_resultado_publico_adiciona_em_dois_passos(client):
 @pytest.mark.django_db
 def test_resultado_da_avulsa_tambem_adiciona_em_dois_passos(client):
     montar_cenario()
+    dar_saldo("000.000.900")
     client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
     r = client.get(reverse("pedidos:avulsa_materiais"), {"q": "item"}).text
     assert '<div class="material-acao" data-adicionar>' in r
@@ -590,6 +635,7 @@ def test_quantidade_do_pedido_altera_em_dois_passos_no_formulario_publico(client
 @pytest.mark.django_db
 def test_quantidade_do_pedido_na_avulsa_tambem_se_confirma(client):
     montar_cenario()
+    dar_saldo("000.000.900")
     client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
     r = client.post(
         reverse("pedidos:avulsa_carrinho"), {"adicionar": "000.000.900", "qtd-000.000.900": "1"}

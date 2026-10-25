@@ -1,0 +1,74 @@
+{% extends "interface/base_almoxarifado.html" %}
+{% load static interface_extras %}
+
+{% block title %}Alterar vários materiais — Central Almoxarifado{% endblock %}
+{% block extra_css %}<link rel="stylesheet" href="{% static 'catalogo/css/catalogo.css' %}">{% endblock %}
+{% block voltar %}<a class="link-voltar" href="{{ voltar }}">{% include "interface/_icone.html" with nome="seta-esquerda" %}Voltar aos materiais</a>{% endblock %}
+{% block heading %}Alterar vários materiais{% endblock %}
+{% block sub %}Confira o que a alteração alcança antes de confirmar.{% endblock %}
+
+{% block page %}
+{% comment %}
+Prévia do lote (spec 009, US3): o formulário, a ação, o número exato de materiais do filtro e uma
+amostra. A confirmação é outro POST, que leva o número visto aqui: se o filtro mudou nesse meio
+tempo, a operação é recusada. Sem filtro (catálogo inteiro), pede o "ciente". Sem JavaScript.
+{% endcomment %}
+<div class="pilha-larga">
+  <section class="cartao pilha" aria-labelledby="titulo-previa">
+    <h2 class="cartao-titulo" id="titulo-previa">{{ acao_texto }}: {{ formulario_nome }}</h2>
+    <dl class="dados">
+      <dt>Formulário</dt><dd>{{ formulario_nome }}</dd>
+      <dt>Ação</dt><dd>{{ acao_texto }}</dd>
+      <dt>Alcança</dt><dd><strong>{{ total|separador_milhar }} {% if total == 1 %}material{% else %}materiais{% endif %}</strong>{% if sem_filtro %} (o catálogo inteiro){% else %} do filtro{% endif %}</dd>
+      {% for rotulo, valor in filtros_em_texto %}
+      <dt>{{ rotulo }}</dt><dd>{{ valor }}</dd>
+      {% endfor %}
+    </dl>
+    <p class="texto-secundario">O material que já está como você pediu não muda. Nada é apagado do cadastro, do estoque nem dos pedidos já feitos, e os outros formulários continuam como estão.</p>
+
+    {% if sem_filtro %}
+    <p class="aviso aviso-atencao">Sem filtro, a alteração alcança o catálogo inteiro ({{ total|separador_milhar }} materiais).</p>
+    {% endif %}
+
+    {% if amostra %}
+    <div class="tabela-rolagem">
+      <table class="tabela">
+        <caption class="visually-hidden">Os primeiros materiais que a alteração alcança</caption>
+        <thead><tr><th scope="col">Material</th><th scope="col">Código</th></tr></thead>
+        <tbody>
+          {% for m in amostra %}
+          <tr><td>{{ m.nome }}</td><td><span class="mono">{{ m.codigo }}</span></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+    {% if total > amostra|length %}<p class="texto-suave texto-pequeno">Os primeiros {{ amostra|length }} de {{ total|separador_milhar }}.</p>{% endif %}
+    {% else %}
+    <p class="aviso aviso-info">Nenhum material no filtro: não há o que alterar.</p>
+    {% endif %}
+
+    {% if pode_alterar_materiais and total %}
+    <form method="post" action="{% url 'catalogo:formularios_lote' %}" class="pilha">
+      {% csrf_token %}
+      <input type="hidden" name="formulario" value="{{ formulario }}">
+      <input type="hidden" name="acao" value="{{ acao }}">
+      {% include "catalogo/_volta.html" with volta=filtros_ativos %}
+      <input type="hidden" name="total" value="{{ total }}">
+      {% if sem_filtro %}
+      <label class="campo-check">
+        <input class="campo-check-caixa" type="checkbox" name="ciente" value="1" required>
+        <span>Estou ciente de que a alteração alcança todos os {{ total|separador_milhar }} materiais do catálogo.</span>
+      </label>
+      {% endif %}
+      <div class="acoes">
+        <button type="submit" class="botao botao-primario">Confirmar: {{ acao_texto|lower }}</button>
+        <a class="botao botao-texto" href="{{ voltar }}">Cancelar</a>
+      </div>
+    </form>
+    {% else %}
+    {% if not pode_alterar_materiais %}<p class="aviso aviso-info">Somente consulta: você não tem permissão para aplicar esta alteração.</p>{% endif %}
+    <div class="acoes"><a class="botao botao-secundario" href="{{ voltar }}">Voltar aos materiais</a></div>
+    {% endif %}
+  </section>
+</div>
+{% endblock %}

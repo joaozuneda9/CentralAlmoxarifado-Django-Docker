@@ -22,6 +22,7 @@ Nunca mostra quem registrou nem quem atendeu.
       <div><dt>Enviado em</dt><dd>{{ pedido.criado_em|date:"d/m/Y H:i" }}</dd></div>
       <div{% if not pedido.solicitante %} class="so-tela"{% endif %}><dt>Solicitante</dt><dd>{{ pedido.solicitante|default:"—" }}</dd></div>
       <div{% if not pedido.destino %} class="so-tela"{% endif %}><dt>Destino</dt><dd>{{ pedido.destino|default:"—" }}</dd></div>
+      {% if pedido.ocorrencia %}<div><dt>Nº da ocorrência</dt><dd class="mono">{{ pedido.ocorrencia }}</dd></div>{% endif %}
       {% endif %}
       {# Requisição no SCPI: o número, ou o estado enquanto não há número (só na tela); o que pede ação também vira passo na situação. #}
       <div{% if not scpi.numeros %} class="so-tela"{% endif %}><dt>Requisição SCPI</dt><dd>{% if scpi.chave == "atencao" %}<span class="selo {{ scpi.chave|badge_scpi }}">{{ scpi.rotulo }}</span>{% endif %}{% if scpi.numeros %} <span class="mono">{{ scpi.numeros|join:", " }}</span>{% if scpi.chave == "parcial" %} <span class="texto-secundario so-tela">· o resto aguarda o robô</span>{% endif %}{% elif scpi.chave != "atencao" %}<span class="texto-secundario">{{ scpi.rotulo }}</span>{% endif %}</dd></div>

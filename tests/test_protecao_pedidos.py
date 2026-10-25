@@ -94,10 +94,11 @@ def test_token_ida_e_volta_e_adulterado():
     assert ler("") is None
 
 
-def test_recusar_isca_e_envio_rapido(settings):
+def test_recusar_devolve_o_motivo(settings):
     agora = time.time()
-    assert recusar(emitir(aberto_em=agora - 60), "x", agora)
-    assert recusar(emitir(aberto_em=agora - 2), "", agora)
-    assert not recusar(emitir(aberto_em=agora - 10), "", agora)
+    assert recusar(emitir(aberto_em=agora - 60), "x", agora) == "isca"
+    assert recusar(emitir(aberto_em=agora - 2), "", agora) == "rapido"
+    assert recusar(emitir(aberto_em=agora - 2), "x", agora) == "isca"  # a isca vale mais
+    assert recusar(emitir(aberto_em=agora - 10), "", agora) is None
     settings.PEDIDOS_TEMPO_MINIMO = 0
-    assert not recusar(emitir(aberto_em=agora), "", agora)
+    assert recusar(emitir(aberto_em=agora), "", agora) is None
