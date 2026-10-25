@@ -29,9 +29,16 @@ ROTAS_SEGURANCA_TRABALHO = frozenset(
 
 
 def da_seguranca_trabalho(usuario) -> bool:
-    """Se o usuário está autenticado e é do grupo da Segurança do Trabalho."""
-    return bool(
-        usuario is not None
-        and usuario.is_authenticated
-        and usuario.groups.filter(name=GRUPO_SEGURANCA_TRABALHO).exists()
-    )
+    """Se o usuário está autenticado e é do grupo da Segurança do Trabalho.
+
+    O resultado fica guardado no próprio objeto: o middleware, o menu e a view consultam o mesmo
+    `request.user` no pedido, e a consulta ao banco sai uma vez só. Quem muda os grupos e
+    pergunta de novo precisa de um objeto novo (`refresh_from_db` não apaga o guardado).
+    """
+    if usuario is None or not usuario.is_authenticated:
+        return False
+    if not hasattr(usuario, "_da_seguranca_trabalho"):
+        usuario._da_seguranca_trabalho = usuario.groups.filter(
+            name=GRUPO_SEGURANCA_TRABALHO
+        ).exists()
+    return usuario._da_seguranca_trabalho

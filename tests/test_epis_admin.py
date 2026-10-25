@@ -76,6 +76,6 @@ def test_o_administrador_da_o_acesso_marcando_o_grupo_no_usuario(admin_client):
     }
     r = admin_client.post(url, campos)
     assert r.status_code == 302
-    usuario.refresh_from_db()
+    usuario = get_user_model().objects.get(pk=usuario.pk)  # sem o resultado guardado
     assert da_seguranca_trabalho(usuario)
     assert not usuario.is_staff  # o acesso é o grupo, não o administrador
