@@ -614,6 +614,22 @@ def _lista_e(nomes: list[str]) -> str:
 
 
 @dataclass(frozen=True)
+class CartaoFormulario:
+    """Um cartão da visão geral de Automações: o que um formulário público oferece. `total` é
+    None quando o formulário está indisponível (o AB sem saldo importado)."""
+
+    titulo: str
+    total: int | None
+    singular: str
+    plural: str
+    dica: str = ""
+
+    @property
+    def unidade(self) -> str:
+        return self.singular if self.total == 1 else self.plural
+
+
+@dataclass(frozen=True)
 class Situacao:
     fontes: list[Fonte]
     avisos: list[ItemSaude]  # o que não é de uma importação e precisa de atenção
@@ -623,6 +639,56 @@ class Situacao:
     viaturas: int = 0  # peças visíveis na lista do formulário de viaturas (spec 006)
     oficina: int = 0  # materiais do formulário da oficina mecânica (spec 007)
     epis: int = 0  # materiais do formulário de EPIs (spec 008)
+
+    @property
+    def cartoes(self) -> list[CartaoFormulario]:
+        """Um cartão por formulário público, na ordem da visão geral. Formulário novo é uma linha
+        aqui (e o campo com o número)."""
+        if self.ab is None:
+            ab = CartaoFormulario(
+                "Formulário de ferramentas, peças e materiais",
+                None,
+                "item",
+                "itens",
+                "Falta importar o saldo de estoque.",
+            )
+        else:
+            ab = CartaoFormulario(
+                "Formulário de ferramentas, peças e materiais",
+                self.ab_oferecidos,
+                "item",
+                "itens",
+                f"Pela regra, de {numero(self.ab.codigos)} códigos com saída no SCPI: "
+                f"{numero(self.ab.na_limpeza)} já estão no formulário de limpeza e "
+                f"{numero(self.ab.ocultos)} estão ocultos ou em grupo oculto.",
+            )
+        return [
+            CartaoFormulario(
+                "Formulário de limpeza, copa e escritório", self.limpeza, "item", "itens"
+            ),
+            ab,
+            CartaoFormulario(
+                "Formulário de reposição de peças das viaturas",
+                self.viaturas,
+                "peça",
+                "peças",
+                "Da lista de peças; o resto do catálogo AB entra pela busca.",
+            ),
+            CartaoFormulario(
+                "Formulário da oficina mecânica",
+                self.oficina,
+                "material",
+                "materiais",
+                "Dos grupos da oficina e dos materiais acrescentados na página Formulários.",
+            ),
+            CartaoFormulario(
+                "Formulário de EPIs",
+                self.epis,
+                "material",
+                "materiais",
+                "Dos grupos de EPIs e dos materiais acrescentados na página Formulários.",
+            ),
+        ]
 
     @property
     def tem_avisos(self) -> bool:
