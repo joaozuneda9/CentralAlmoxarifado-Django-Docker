@@ -123,9 +123,38 @@
     if (focado >= 0) chips.querySelectorAll("button")[Math.min(focado, lista.length - 1)].focus();
   }
 
+  // `a[data-fechar-filtros]` (atalhos do painel): a página que o link abre chega com o painel de
+  // filtros recolhido, mostrando só os chips, sem mudar o estado que o navegador lembra.
+  var CHEGAR_FECHADO = "filtros-chegar-fechado";
+
+  function chegouPorAtalho() {
+    try {
+      var sim = sessionStorage.getItem(CHEGAR_FECHADO) === "1";
+      sessionStorage.removeItem(CHEGAR_FECHADO);
+      return sim;
+    } catch (e) {
+      return false;
+    }
+  }
+
+  document.addEventListener("click", function (e) {
+    if (!(e.target.closest && e.target.closest("a[data-fechar-filtros]"))) return;
+    try {
+      sessionStorage.setItem(CHEGAR_FECHADO, "1");
+    } catch (erro) {
+      /* sem armazenamento, o painel abre como estava */
+    }
+  });
+
   function iniciar() {
+    var fechado = chegouPorAtalho();
     document.querySelectorAll("form[data-filtros]").forEach(function (form) {
-      form.querySelector("[data-filtros-painel]").hidden = !lerAberto();
+      // O estado do painel só se define na primeira vez de cada formulário: uma troca do HTMX
+      // depois (remover um chip, por exemplo) não o reabre.
+      if (!form.hasAttribute("data-filtros-pronto")) {
+        form.setAttribute("data-filtros-pronto", "");
+        form.querySelector("[data-filtros-painel]").hidden = fechado || !lerAberto();
+      }
       atualizar(form);
     });
   }

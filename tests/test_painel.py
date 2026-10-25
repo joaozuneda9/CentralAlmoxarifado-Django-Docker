@@ -207,8 +207,12 @@ def test_atalhos_sao_cartoes_com_contador_e_o_cabecalho_fica_sem_botoes(client, 
     texto, atalhos = _atalhos(client)
     assert re.findall(r'<p class="atalho-numero">([0-9]+)</p>', atalhos) == ["1", "2", "1"]
     assert atalhos.count("atalho-pendente") == 3
-    assert f"{reverse('pedidos:painel')}?situacao=aguardando" in atalhos
-    assert f"{reverse('pedidos:painel')}?recibo=pendente" in atalhos
+    # Os atalhos que filtram a lista abrem a página rolada até ela (`#pedidos`).
+    assert f"{reverse('pedidos:painel')}?situacao=aguardando#pedidos" in atalhos
+    assert f"{reverse('pedidos:painel')}?recibo=pendente#pedidos" in atalhos
+    assert 'id="pedidos"' in client.get(reverse("pedidos:painel")).text
+    # Os dois chegam com a lista à vista (rolagem animada) e o painel de filtros recolhido.
+    assert atalhos.count('data-rolar-ate="pedidos" data-fechar-filtros') == 2
     for rota in ("automacoes:lancar", "pedidos:avulsa"):
         assert reverse(rota) in atalhos
     cabecalho = texto[texto.index("<header") : texto.index("</header>")]

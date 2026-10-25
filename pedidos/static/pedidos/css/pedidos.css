@@ -788,3 +788,8 @@ html:not(.js) [data-quantidade] { display: none; }
   .folha-acoes .botao { white-space: nowrap; }
   .folha-acoes .botao-primario { flex: 1; }
 }
+
+/* Âncora `#pedidos` do painel: ao chegar pelos atalhos, o cartão dos filtros fica com um respiro no
+   alto; até 1286px (layouts.css), abaixo da barra fixa do topo (49px). */
+#pedidos { scroll-margin-top: var(--esp-2); }
+@media (max-width: 1286px) { #pedidos { scroll-margin-top: 65px; } }
