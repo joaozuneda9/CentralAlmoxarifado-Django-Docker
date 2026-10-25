@@ -67,10 +67,10 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
       <tbody>
         {% if por_descricao %}
           {% for g in grupos %}
-          <tr id="centro-{{ g.ids.0 }}">
+          <tr id="centro-{{ g.acoes.ids.0 }}">
             <td>{{ g.descricao }} <span class="mono texto-suave">{{ g.codigos|join:", " }}</span></td>
             <td>{{ g.linhas|length }}</td>
-            <td>{% if g.todas_inativas %}<span class="selo selo-neutro">Inativo</span>{% elif g.n_inativas %}<span class="selo selo-aviso">{{ g.n_inativas }} inativa{{ g.n_inativas|pluralize }}</span>{% else %}<span class="selo selo-ok">Ativo</span>{% endif %}</td>
+            <td>{% if g.n_inativas == g.linhas|length %}<span class="selo selo-neutro">Inativo</span>{% elif g.n_inativas %}<span class="selo selo-aviso">{{ g.n_inativas }} inativa{{ g.n_inativas|pluralize }}</span>{% else %}<span class="selo selo-ok">Ativo</span>{% endif %}</td>
             <td>{% if g.n_habilitadas %}<span class="selo selo-ok">Destino{% if g.n_habilitadas != g.linhas|length %} ({{ g.n_habilitadas }} de {{ g.linhas|length }}){% endif %}</span>{% else %}<span class="selo selo-neutro">Não é destino</span>{% endif %}
               {% if g.outros %}<span class="material-info texto-suave">Também em: {{ g.outros|join:", " }}</span>{% endif %}</td>
             {% if pode_alterar_centros %}

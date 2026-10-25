@@ -1,11 +1,11 @@
 {% comment %}
 Visão geral de Automações: a linha do lançamento no SCPI e uma por fonte de dados do SCPI, com o botão
-"Atualizar agora", o que precisa de conferência e os números dos formulários. Enquanto houver importação em andamento (ou
+"Atualizar agora", o que precisa de conferência e os números dos formulários. Enquanto houver importação ou lançamento em andamento (ou
 logo depois do clique ou do fim de uma), o HTMX recarrega este trecho a cada 5 s (a view devolve só
 ele quando recebe `HX-Request`). Os botões ficam aqui dentro para voltar a ser habilitados quando a
 importação termina.
 {% endcomment %}
-<section id="situacao-catalogo" class="pilha-larga" data-em-andamento="{% if importacao_em_andamento %}1{% else %}0{% endif %}"{% if acompanhar_catalogo %} hx-get="{% url 'automacoes:pagina' %}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+<section id="situacao-catalogo" class="pilha-larga" data-em-andamento="{% if importacao_em_andamento %}1{% else %}0{% endif %}"{% if acompanhar_catalogo or acompanhar_lancamento %} hx-get="{% url 'automacoes:pagina' %}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
   <div class="cartao">
     <div class="situacao-topo">
       <div>
