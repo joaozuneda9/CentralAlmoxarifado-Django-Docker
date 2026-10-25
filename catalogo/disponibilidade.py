@@ -80,9 +80,9 @@ class SituacaoDoFormulario:
         return (set(self.na_regra) - retirados) | acrescentados
 
 
-def situacao_do_formulario(origem: str, ab=None) -> SituacaoDoFormulario:
+def situacao_do_formulario(origem: str, ab=None, viaturas=None) -> SituacaoDoFormulario:
     """Calculada na hora: a regra de origem do formulário e as exceções dele. `ab` reaproveita o
-    catálogo AB que o chamador já calculou (a conta pesada)."""
+    catálogo AB que o chamador já calculou (a conta pesada), e `viaturas` a lista das viaturas."""
     from catalogo.catalogos import regra_de_origem
     from catalogo.models import ExcecaoMaterial
 
@@ -92,7 +92,8 @@ def situacao_do_formulario(origem: str, ab=None) -> SituacaoDoFormulario:
         )
     )
     return SituacaoDoFormulario(
-        na_regra=frozenset(i.codigo for i in regra_de_origem(origem, ab)), excecoes=excecoes
+        na_regra=frozenset(i.codigo for i in regra_de_origem(origem, ab, viaturas)),
+        excecoes=excecoes,
     )
 
 
@@ -288,9 +289,13 @@ def materiais_da_tela(origem: str, filtros: dict, situacao: SituacaoDoFormulario
 
 def estados_do_material(material) -> list[tuple[str, Estado]]:
     """O estado do material em cada um dos cinco formulários, na ordem de `Formulario` (a
-    consulta "onde este material aparece e por quê"). Calcula a regra de origem de cada um."""
+    consulta "onde este material aparece e por quê"). Calcula a regra de origem de cada um, com o
+    catálogo AB (a conta pesada, base do AB e das viaturas) calculado uma vez só."""
+    from catalogo.catalogos import catalogo_ab
     from catalogo.models import Formulario
 
+    ab = catalogo_ab()
     return [
-        (origem, situacao_do_formulario(origem).estado(material)) for origem in Formulario.values
+        (origem, situacao_do_formulario(origem, ab).estado(material))
+        for origem in Formulario.values
     ]

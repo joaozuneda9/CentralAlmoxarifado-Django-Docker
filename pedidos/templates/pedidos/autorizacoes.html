@@ -1,5 +1,5 @@
 {% extends "interface/base_almoxarifado.html" %}
-{% load static pedidos_extras interface_extras %}
+{% load static pedidos_extras %}
 {% block title %}Autorizações — Central Almoxarifado{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'pedidos/css/pedidos.css' %}">{% endblock %}
 {# A Segurança do Trabalho só tem esta fila: não há painel para onde voltar. #}
@@ -31,7 +31,7 @@
             <td class="tabela-data col-data">{{ a.pedido.criado_em|date:"d/m/Y H:i" }}</td>
             <td class="col-pessoa" data-rotulo="Servidor">{{ a.pedido.solicitante }}</td>
             <td class="col-destino" data-rotulo="Destino">{{ a.pedido.destino }}</td>
-            <td class="col-extra" data-rotulo="Materiais">{% with itens=a.pedido.itens.all %}{{ itens|length }} {% if itens|length == 1 %}material{% else %}materiais{% endif %}{% endwith %}</td>
+            <td class="col-extra" data-rotulo="Materiais">{{ a.n_itens }} {{ a.n_itens|pluralize:"material,materiais" }}</td>
           </tr>
           {% endfor %}
         </tbody>
@@ -62,8 +62,8 @@
           <tr>
             <td class="col-numero"><a href="{% url 'pedidos:autorizacao' a.pedido.numero %}"><span class="mono numero-pedido">{{ a.pedido.numero }}</span></a></td>
             <td class="col-pessoa" data-rotulo="Servidor">{{ a.pedido.solicitante }}</td>
-            <td class="col-situacao" data-rotulo="Decisão"><span class="selo {% if a.situacao == 'AUTORIZADO' %}selo-ok{% else %}selo-erro{% endif %}">{{ a.get_situacao_display }}</span></td>
-            <td class="col-extra" data-rotulo="Decidido por">{{ a.decidido_por.get_full_name|default:a.decidido_por.username }}</td>
+            <td class="col-situacao" data-rotulo="Decisão"><span class="selo {{ a.situacao|badge_autorizacao }}">{{ a.get_situacao_display }}</span></td>
+            <td class="col-extra" data-rotulo="Decidido por">{{ a.decidido_por|nome_usuario }}</td>
             <td class="tabela-data col-data">{{ a.decidido_em|date:"d/m/Y H:i" }}</td>
             <td class="col-extra" data-rotulo="Motivo">{{ a.motivo|default:"—" }}</td>
           </tr>

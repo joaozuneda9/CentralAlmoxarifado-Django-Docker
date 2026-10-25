@@ -1,5 +1,5 @@
 {% extends "interface/base_publico.html" %}
-{% load static %}
+{% load static pedidos_extras %}
 {% block title %}Consultar pedido de EPIs — Central Almoxarifado{% endblock %}
 {% block extra_css %}<link rel="stylesheet" href="{% static 'pedidos/css/pedidos.css' %}">{% endblock %}
 {% block voltar %}<a class="link-voltar" href="{% url 'pedidos:inicio' %}">{% include "interface/_icone.html" with nome="seta-esquerda" %}Voltar ao início</a>{% endblock %}
@@ -18,7 +18,7 @@
   </form>
   {% if frase %}
   <section class="cartao" aria-live="polite">
-    <p><span class="selo {% if situacao == 'AUTORIZADO' %}selo-ok{% elif situacao == 'RECUSADO' %}selo-erro{% else %}selo-aviso{% endif %}">{% if situacao == "AUTORIZADO" %}Autorizado{% elif situacao == "RECUSADO" %}Recusado{% else %}Aguardando autorização{% endif %}</span></p>
+    <p><span class="selo {{ situacao|badge_autorizacao }}">{{ rotulo }}</span></p>
     <p>{{ frase }}</p>
     {% if motivo %}<p><strong>Motivo:</strong> {{ motivo }}</p>{% endif %}
   </section>

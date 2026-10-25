@@ -91,35 +91,17 @@ importação termina.
   {% endif %}
 
   <div class="grade-2 formularios">
+    {% for c in situacao.cartoes %}
     <div class="cartao cartao-sutil">
-      <p class="texto-secundario">Formulário de limpeza, copa e escritório</p>
-      <p class="metrica">{{ situacao.limpeza|floatformat:"0g" }} {% if situacao.limpeza == 1 %}item{% else %}itens{% endif %}</p>
-    </div>
-    <div class="cartao cartao-sutil">
-      <p class="texto-secundario">Formulário de ferramentas, peças e materiais</p>
-      {% if situacao.ab %}
-      <p class="metrica">{{ situacao.ab_oferecidos|floatformat:"0g" }} {% if situacao.ab_oferecidos == 1 %}item{% else %}itens{% endif %}</p>
-      <p class="campo-dica">Pela regra, de {{ situacao.ab.codigos|floatformat:"0g" }} códigos com saída no SCPI: {{ situacao.ab.na_limpeza|floatformat:"0g" }} já estão no formulário de limpeza e {{ situacao.ab.ocultos|floatformat:"0g" }} estão ocultos ou em grupo oculto.</p>
-      {% else %}
+      <p class="texto-secundario">{{ c.titulo }}</p>
+      {% if c.total is None %}
       <p class="metrica">Indisponível</p>
-      <p class="campo-dica">Falta importar o saldo de estoque.</p>
+      {% else %}
+      <p class="metrica">{{ c.total|floatformat:"0g" }} {{ c.unidade }}</p>
       {% endif %}
+      {% if c.dica %}<p class="campo-dica">{{ c.dica }}</p>{% endif %}
     </div>
-    <div class="cartao cartao-sutil">
-      <p class="texto-secundario">Formulário de reposição de peças das viaturas</p>
-      <p class="metrica">{{ situacao.viaturas|floatformat:"0g" }} {% if situacao.viaturas == 1 %}peça{% else %}peças{% endif %}</p>
-      <p class="campo-dica">Da lista de peças; o resto do catálogo AB entra pela busca.</p>
-    </div>
-    <div class="cartao cartao-sutil">
-      <p class="texto-secundario">Formulário da oficina mecânica</p>
-      <p class="metrica">{{ situacao.oficina|floatformat:"0g" }} {% if situacao.oficina == 1 %}material{% else %}materiais{% endif %}</p>
-      <p class="campo-dica">Dos grupos da oficina e dos materiais da oficina (Cadastros).</p>
-    </div>
-    <div class="cartao cartao-sutil">
-      <p class="texto-secundario">Formulário de EPIs</p>
-      <p class="metrica">{{ situacao.epis|floatformat:"0g" }} {% if situacao.epis == 1 %}material{% else %}materiais{% endif %}</p>
-      <p class="campo-dica">Dos grupos de EPIs e dos materiais de EPIs (Cadastros).</p>
-    </div>
+    {% endfor %}
   </div>
 
 </section>

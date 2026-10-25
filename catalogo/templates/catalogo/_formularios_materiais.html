@@ -87,20 +87,13 @@ no servidor; cada botão é um formulário POST com CSRF.
         <tr id="material-{{ l.material.pk }}">
           <td>
             <strong>{{ l.material.nome }}</strong>
-            <span class="material-info texto-suave">
-              <span class="mono">{{ l.material.codigo }}</span>
-              {% if l.material.unidade %}· {{ l.material.unidade }}{% endif %}
-              {% if l.material.grupo %}· {{ l.material.grupo }}{% if l.material.subgrupo %} › {{ l.material.subgrupo }}{% endif %}{% endif %}
-              · saldo {{ l.saldo }}
-            </span>
+            <span class="material-info texto-suave">{% include "catalogo/_material_info.html" with material=l.material saldo=l.saldo %}</span>
             <span class="material-info"><a class="botao botao-texto" href="{% url 'catalogo:formularios_material' l.material.codigo %}">Onde aparece</a></span>
             {% if l.canonico %}<span class="material-info texto-suave">Código antigo: o canônico é <span class="mono">{{ l.canonico }}</span>.</span>{% endif %}
             {% if l.material.duplicado %}<span class="material-info"><span class="selo selo-aviso">Cadastro duplicado</span> o formulário o mostra bloqueado.</span>{% endif %}
           </td>
           <td>
-            <span class="selo selo-{{ l.texto.nivel }}">{{ l.texto.selo }}</span>
-            <span class="material-info texto-suave">{{ l.texto.origem }}</span>
-            {% if l.estado.sem_efeito %}<span class="material-info"><span class="selo selo-neutro">Exceção sem efeito</span> a regra já dá este resultado.</span>{% endif %}
+            {% include "catalogo/_material_estado.html" %}
           </td>
           {% if pode_alterar_materiais %}
           <td class="celula-acoes">
@@ -108,11 +101,7 @@ no servidor; cada botão é um formulário POST com CSRF.
               {% csrf_token %}
               <input type="hidden" name="formulario" value="{{ formulario }}">
               <input type="hidden" name="codigo" value="{{ l.material.codigo }}">
-              <input type="hidden" name="q" value="{{ request.GET.q }}">
-              <input type="hidden" name="grupo" value="{{ request.GET.grupo }}">
-              <input type="hidden" name="subgrupo" value="{{ request.GET.subgrupo }}">
-              <input type="hidden" name="estado" value="{{ request.GET.estado }}">
-              <input type="hidden" name="pagina" value="{{ pagina.number }}">
+              {% include "catalogo/_volta.html" with volta=volta_materiais %}
               {% if l.estado.disponivel %}
               <button type="submit" name="acao" value="retirar" class="botao botao-secundario">Retirar</button>
               {% else %}

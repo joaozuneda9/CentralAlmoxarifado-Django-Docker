@@ -4,7 +4,13 @@ import re
 
 from django import template
 
-from pedidos.regras import LIMPEZA, frase_diferenca
+from pedidos.regras import (
+    AUTORIZACAO_AGUARDANDO,
+    AUTORIZACAO_AUTORIZADA,
+    AUTORIZACAO_RECUSADA,
+    LIMPEZA,
+    frase_diferenca,
+)
 
 register = template.Library()
 
@@ -21,6 +27,11 @@ _SCPI = {
     "parcial": "selo-aviso",
     "lancado": "selo-ok",
     "atencao": "selo-erro",
+}
+_AUTORIZACAO = {
+    AUTORIZACAO_AGUARDANDO: "selo-aviso",
+    AUTORIZACAO_AUTORIZADA: "selo-ok",
+    AUTORIZACAO_RECUSADA: "selo-erro",
 }
 
 
@@ -41,6 +52,17 @@ def badge_situacao(chave: str) -> str:
 @register.filter
 def badge_scpi(chave: str) -> str:
     return _SCPI.get(chave, "selo-neutro")
+
+
+@register.filter
+def badge_autorizacao(situacao: str) -> str:
+    return _AUTORIZACAO.get(situacao, "selo-neutro")
+
+
+@register.filter
+def nome_usuario(usuario) -> str:
+    """Nome completo do usuário, ou a matrícula quando não tem nome."""
+    return usuario.get_full_name() or usuario.username
 
 
 @register.filter(name="frase_diferenca")
