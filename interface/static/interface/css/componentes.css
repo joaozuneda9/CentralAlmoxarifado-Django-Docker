@@ -322,11 +322,12 @@ a.paginacao-link:hover { background: var(--superficie); color: var(--texto); tex
 .filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--esp-2); }
 /* A coluna da grade também precisa de minmax(0, 1fr): sem ela, o texto longo de um filtro preenchido alarga a coluna além do campo e o controle passa por cima do vizinho. */
 .filtros-campo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; flex: 1 1 160px; min-width: 0; }
-.filtros-campo:first-child { flex-basis: 240px; }
+/* O primeiro campo é a busca (os `<input hidden>` do formulário vêm antes, por isso não é `:first-child`). */
+.filtros-campo:first-of-type { flex-basis: 240px; }
 .filtros-acoes { display: flex; align-items: center; gap: var(--esp-2); }
 /* Com JavaScript os filtros se aplicam sozinhos (hx-trigger, ou `data-filtros-auto` em filtros.js);
    o botão fica só como reserva sem ele. */
-.js .filtros-acoes .botao { display: none; }
+.js .filtros-acoes button[type="submit"] { display: none; }
 
 /* Filtros recolhíveis (filtros.js): barra com a busca e o botão "Filtros"; o painel abre embaixo
    e, fechado, os filtros ativos aparecem como chips. Sem JavaScript, o painel fica aberto e o

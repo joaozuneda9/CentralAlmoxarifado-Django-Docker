@@ -1,0 +1,2 @@
+{% comment %}Os filtros da aba Centros de custo que uma gravação devolve ao redirecionar, para a lista voltar como estava.{% endcomment %}
+{% for nome, valor in volta_centros.items %}{% if valor %}<input type="hidden" name="{{ nome }}" value="{{ valor }}">{% endif %}{% endfor %}

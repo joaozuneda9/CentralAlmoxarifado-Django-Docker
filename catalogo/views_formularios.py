@@ -37,13 +37,26 @@ from catalogo.disponibilidade import (
     materiais_da_tela,
     situacao_do_formulario,
 )
-from catalogo.forms import ESTADOS_DO_MATERIAL, FiltrosMateriais
+from catalogo.forms import ESTADOS_DO_MATERIAL, FiltrosCentros, FiltrosMateriais
 from catalogo.models import CentroCusto, CentroFormulario, Formulario, Material, ParDePara
-from pedidos.regras import qtd_br, texto, truncar_qtd
+from pedidos.regras import norm_placa, qtd_br, truncar_qtd
 
 ABAS = [("centros", "Centros de custo"), ("materiais", "Materiais")]
 POR_PAGINA = 50
-PARAMETROS_DA_VOLTA = ("formulario", "aba", "qc", "q", "grupo", "subgrupo", "estado", "pagina")
+PARAMETROS_DA_VOLTA = (
+    "formulario",
+    "aba",
+    "qc",
+    "centro_destino",
+    "centro_estado",
+    "centro_placa",
+    "centro_uso",
+    "q",
+    "grupo",
+    "subgrupo",
+    "estado",
+    "pagina",
+)
 
 # Como o formulário apresenta o destino, em palavras (a ajuda da aba Centros de custo).
 EXPLICACAO_DO_MODO = {
@@ -92,18 +105,46 @@ def _ids(valores) -> list[int]:
 # --- A página ----------------------------------------------------------------------------------
 
 
-def _contexto_centros(origem: str, termo: str, usuario) -> dict:
+def _filtrar_centros(linhas, origem: str, filtros: dict, modo: str, habilitadas: set[int]):
+    """Aplica a busca e os filtros da aba Centros de custo. O texto vale palavra por palavra (todas
+    precisam aparecer) em descrição, código e placa; a placa também casa digitada com hífen ou
+    espaço (`CZA-1614`). Nas viaturas (sem placa) o filtro de placa não existe."""
+    for palavra in filtros.get("qc", "").split():
+        condicao = Q(descricao__icontains=palavra) | Q(codigo__icontains=palavra)
+        placa = norm_placa(palavra)
+        if placa:
+            condicao |= Q(placa__icontains=placa)
+        linhas = linhas.filter(condicao)
+    destino = filtros.get("centro_destino")
+    if destino == "sim":
+        linhas = linhas.filter(pk__in=habilitadas)
+    elif destino == "nao":
+        linhas = linhas.exclude(pk__in=habilitadas)
+    estado = filtros.get("centro_estado")
+    if estado:
+        linhas = linhas.filter(ativo=(estado == "ativo"))
+    placa = filtros.get("centro_placa")
+    if placa and modo != MODO_SEM_PLACA:
+        linhas = linhas.filter(placa__isnull=(placa == "sem"))
+    uso = filtros.get("centro_uso")
+    if uso == "sem_formulario":
+        linhas = linhas.filter(ativo=True).exclude(
+            pk__in=CentroFormulario.objects.values("centro_id")
+        )
+    elif uso == "outros":
+        linhas = linhas.filter(
+            pk__in=CentroFormulario.objects.exclude(formulario=origem).values("centro_id")
+        )
+    return linhas
+
+
+def _contexto_centros(origem: str, filtros_centros: FiltrosCentros, usuario) -> dict:
+    filtros = filtros_centros.filtros()
     habilitadas = set(
         CentroFormulario.objects.filter(formulario=origem).values_list("centro_id", flat=True)
     )
-    linhas = CentroCusto.objects.all()
-    for palavra in termo.split():
-        linhas = linhas.filter(
-            Q(descricao__icontains=palavra)
-            | Q(codigo__icontains=palavra)
-            | Q(placa__icontains=palavra)
-        )
     modo = MODO_DESTINO[origem]
+    linhas = _filtrar_centros(CentroCusto.objects.all(), origem, filtros, modo, habilitadas)
     # Em quais OUTROS formulários cada linha é destino (uma consulta só, na ordem dos formulários).
     outros: dict[int, list[str]] = {}
     ordem = {valor: i for i, valor in enumerate(Formulario.values)}
@@ -136,7 +177,9 @@ def _contexto_centros(origem: str, termo: str, usuario) -> dict:
         "por_descricao": modo == MODO_SEM_PLACA,
         "total_linhas": sum(len(g["linhas"]) for g in grupos),
         "total_habilitadas": sum(g["n_habilitadas"] for g in grupos),
-        "termo": termo,
+        "filtros_centros": filtros_centros,
+        "filtros_centros_ativos": filtros,
+        "volta_centros": {nome: filtros.get(nome, "") for nome in FiltrosCentros.base_fields},
         "pode_alterar_centros": pode_alterar_centros(usuario),
         "pode_criar_centro": usuario.is_staff and usuario.has_perm("catalogo.add_centrocusto"),
         "pode_editar_centro": usuario.is_staff and usuario.has_perm("catalogo.change_centrocusto"),
@@ -208,7 +251,7 @@ def formularios(request):
         "lista_de_formularios": [(f.value, f.label) for f in Formulario],
         "aba": aba,
         "abas": ABAS,
-        **_contexto_centros(origem, texto(request.GET.get("qc")), usuario),
+        **_contexto_centros(origem, FiltrosCentros(request.GET), usuario),
         **_contexto_materiais(request, origem, pode_alterar_materiais(usuario)),
         "pode_alterar_algo": pode_alterar_centros(usuario) or pode_alterar_materiais(usuario),
     }

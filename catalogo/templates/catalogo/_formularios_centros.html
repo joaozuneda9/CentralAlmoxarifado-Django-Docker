@@ -11,16 +11,37 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
     <input type="hidden" name="formulario" value="{{ formulario }}">
     <input type="hidden" name="aba" value="centros">
     <div class="campo filtros-campo">
-      <label class="campo-rotulo" for="campo-qc">Buscar centro</label>
+      <label class="campo-rotulo" for="{{ filtros_centros.qc.id_for_label }}">{{ filtros_centros.qc.label }}</label>
       <div class="campo-busca">
         {% include "interface/_icone.html" with nome="busca" %}
-        <input class="campo-entrada" type="search" id="campo-qc" name="qc" value="{{ termo }}" placeholder="Descrição, código ou placa">
+        {{ filtros_centros.qc }}
       </div>
     </div>
-    <div class="filtros-acoes"><button type="submit" class="botao botao-secundario">Buscar</button></div>
+    <div class="campo filtros-campo">
+      <label class="campo-rotulo" for="{{ filtros_centros.centro_destino.id_for_label }}">{{ filtros_centros.centro_destino.label }}</label>
+      {{ filtros_centros.centro_destino }}
+    </div>
+    <div class="campo filtros-campo">
+      <label class="campo-rotulo" for="{{ filtros_centros.centro_estado.id_for_label }}">{{ filtros_centros.centro_estado.label }}</label>
+      {{ filtros_centros.centro_estado }}
+    </div>
+    {% if not por_descricao %}
+    <div class="campo filtros-campo">
+      <label class="campo-rotulo" for="{{ filtros_centros.centro_placa.id_for_label }}">{{ filtros_centros.centro_placa.label }}</label>
+      {{ filtros_centros.centro_placa }}
+    </div>
+    {% endif %}
+    <div class="campo filtros-campo">
+      <label class="campo-rotulo" for="{{ filtros_centros.centro_uso.id_for_label }}">{{ filtros_centros.centro_uso.label }}</label>
+      {{ filtros_centros.centro_uso }}
+    </div>
+    <div class="filtros-acoes">
+      <button type="submit" class="botao botao-secundario">Filtrar</button>
+      {% if filtros_centros_ativos %}<a class="botao botao-texto" href="{% url 'catalogo:formularios' %}?formulario={{ formulario }}&aba=centros">Limpar filtros</a>{% endif %}
+    </div>
   </form>
 
-  <p class="texto-secundario" role="status">{{ total_habilitadas }} de {{ total_linhas }} {% if total_linhas == 1 %}linha é destino{% else %}linhas são destino{% endif %} deste formulário{% if termo %} (na busca){% endif %}.</p>
+  <p class="texto-secundario" role="status">{{ total_habilitadas }} de {{ total_linhas }} {% if total_linhas == 1 %}linha é destino{% else %}linhas são destino{% endif %} deste formulário{% if filtros_centros_ativos %} (no filtro){% endif %}.</p>
 
   {% if pode_criar_centro %}
   <div class="acoes"><a class="botao botao-secundario" href="{% url 'admin:catalogo_centrocusto_add' %}">{% include "interface/_icone.html" with nome="mais" %}Criar centro de custo</a></div>
@@ -56,7 +77,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
               <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
-                <input type="hidden" name="qc" value="{{ termo }}">
+                {% include "catalogo/_centros_volta.html" %}
                 {% for pk in g.ids %}<input type="hidden" name="centro" value="{{ pk }}">{% endfor %}
                 {% if g.n_habilitadas == g.linhas|length %}
                 <input type="hidden" name="habilitado" value="0">
@@ -69,7 +90,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
               <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
-                <input type="hidden" name="qc" value="{{ termo }}">
+                {% include "catalogo/_centros_volta.html" %}
                 {% for pk in g.ids %}<input type="hidden" name="centro" value="{{ pk }}">{% endfor %}
                 {% if g.n_inativas == g.linhas|length %}
                 <input type="hidden" name="ativo" value="1">
@@ -99,7 +120,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
               <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
-                <input type="hidden" name="qc" value="{{ termo }}">
+                {% include "catalogo/_centros_volta.html" %}
                 <input type="hidden" name="centro" value="{{ l.centro.pk }}">
                 <input type="hidden" name="habilitado" value="{% if l.habilitada %}0{% else %}1{% endif %}">
                 <button type="submit" class="botao botao-secundario">{% if l.habilitada %}Desabilitar{% else %}Habilitar{% endif %}</button>
@@ -107,7 +128,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
               <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
-                <input type="hidden" name="qc" value="{{ termo }}">
+                {% include "catalogo/_centros_volta.html" %}
                 <input type="hidden" name="centro" value="{{ l.centro.pk }}">
                 <input type="hidden" name="ativo" value="{% if l.centro.ativo %}0{% else %}1{% endif %}">
                 <button type="submit" class="botao botao-texto">{% if l.centro.ativo %}Inativar{% else %}Ativar{% endif %}</button>

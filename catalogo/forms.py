@@ -213,3 +213,69 @@ class FiltrosMateriais(forms.Form):
         """Só os filtros válidos e preenchidos."""
         self.is_valid()
         return {nome: valor for nome, valor in self.cleaned_data.items() if valor}
+
+
+DESTINOS_DO_CENTRO = [
+    ("", "Todos"),
+    ("sim", "São destino deste formulário"),
+    ("nao", "Não são destino deste formulário"),
+]
+ESTADOS_DO_CENTRO = [("", "Todos"), ("ativo", "Ativos"), ("inativo", "Inativos")]
+PLACAS_DO_CENTRO = [("", "Todos"), ("com", "Só com placa"), ("sem", "Só sem placa")]
+USOS_DO_CENTRO = [
+    ("", "Todos"),
+    ("sem_formulario", "Ativos sem destino em nenhum formulário"),
+    ("outros", "Destino também em outro formulário"),
+]
+
+
+class FiltrosCentros(forms.Form):
+    """Busca e filtros da aba Centros de custo da página Formulários: texto (descrição, código
+    e placa), se é destino do formulário aberto, ativo ou inativo, com ou sem placa e uso nos
+    outros formulários. Os nomes têm o prefixo `centro_` porque dividem o endereço com os filtros
+    de materiais (`estado`). Valor desconhecido some (`filtros`), a lista não quebra."""
+
+    qc = forms.CharField(
+        required=False,
+        label="Buscar centro",
+        widget=forms.TextInput(
+            attrs={
+                "class": "campo-entrada",
+                "type": "search",
+                "placeholder": "Descrição, código ou placa",
+            }
+        ),
+    )
+    centro_destino = forms.ChoiceField(
+        required=False,
+        label="No formulário",
+        choices=DESTINOS_DO_CENTRO,
+        widget=forms.Select(attrs={"class": "campo-entrada"}),
+    )
+    centro_estado = forms.ChoiceField(
+        required=False,
+        label="Estado",
+        choices=ESTADOS_DO_CENTRO,
+        widget=forms.Select(attrs={"class": "campo-entrada"}),
+    )
+    centro_placa = forms.ChoiceField(
+        required=False,
+        label="Placa",
+        choices=PLACAS_DO_CENTRO,
+        widget=forms.Select(attrs={"class": "campo-entrada"}),
+    )
+    centro_uso = forms.ChoiceField(
+        required=False,
+        label="Uso",
+        choices=USOS_DO_CENTRO,
+        widget=forms.Select(attrs={"class": "campo-entrada"}),
+    )
+
+    def filtros(self) -> dict:
+        """Só os filtros válidos e preenchidos (o texto já sem espaços nas pontas)."""
+        self.is_valid()
+        return {
+            nome: valor.strip() if isinstance(valor, str) else valor
+            for nome, valor in self.cleaned_data.items()
+            if valor and (not isinstance(valor, str) or valor.strip())
+        }

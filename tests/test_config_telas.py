@@ -678,3 +678,90 @@ def test_o_atalho_nas_viaturas_leva_a_lista_do_admin_filtrada_pela_descricao(adm
     r = admin.get(PAGINA, {"formulario": "VIATURAS", "aba": "centros", "qc": EQUIPE})
     lista = reverse("admin:catalogo_centrocusto_changelist")
     assert f'href="{lista}?q=EQUIPE%20NORTE"' in r.text
+
+
+# --- Filtros da aba Centros de custo -----------------------------------------------------------
+
+
+def _centros_listados(admin, **filtros) -> set[str]:
+    """As descrições `FILTRO …` que a aba Centros de custo mostra com estes filtros."""
+    parametros = {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO", **filtros}
+    painel = admin.get(PAGINA, parametros).text
+    tabela = painel.split('id="painel-centros"')[1].split('id="painel-materiais"')[0]
+    return set(re.findall(r"FILTRO [A-Z]+", tabela.split("<tbody>")[1]))
+
+
+@pytest.fixture
+def centros_de_filtro():
+    criar_centro("FILTRO ALFA", "801", "FIL1A11", formularios=[Formulario.LIMPEZA])
+    criar_centro("FILTRO BETA", "802", formularios=[Formulario.AB])
+    criar_centro("FILTRO GAMA", "803", "FIL2B22", ativo=False, formularios=[Formulario.LIMPEZA])
+    criar_centro("FILTRO DELTA", "804")
+
+
+def test_filtro_de_centros_por_ser_destino_do_formulario(admin, centros_de_filtro):
+    assert _centros_listados(admin, centro_destino="sim") == {"FILTRO ALFA", "FILTRO GAMA"}
+    assert _centros_listados(admin, centro_destino="nao") == {"FILTRO BETA", "FILTRO DELTA"}
+
+
+def test_filtro_de_centros_por_estado(admin, centros_de_filtro):
+    assert _centros_listados(admin, centro_estado="inativo") == {"FILTRO GAMA"}
+    ativos = _centros_listados(admin, centro_estado="ativo")
+    assert ativos == {"FILTRO ALFA", "FILTRO BETA", "FILTRO DELTA"}
+
+
+def test_filtro_de_centros_por_placa(admin, centros_de_filtro):
+    assert _centros_listados(admin, centro_placa="com") == {"FILTRO ALFA", "FILTRO GAMA"}
+    assert _centros_listados(admin, centro_placa="sem") == {"FILTRO BETA", "FILTRO DELTA"}
+
+
+def test_filtro_de_centros_por_uso_nos_formularios(admin, centros_de_filtro):
+    # Ativo e sem destino em formulário nenhum: o inativo e o que já tem destino ficam de fora.
+    assert _centros_listados(admin, centro_uso="sem_formulario") == {"FILTRO DELTA"}
+    assert _centros_listados(admin, centro_uso="outros") == {"FILTRO BETA"}
+
+
+def test_filtros_de_centros_se_combinam_e_valor_desconhecido_some(admin, centros_de_filtro):
+    assert _centros_listados(
+        admin, centro_destino="sim", centro_placa="com", centro_estado="ativo"
+    ) == {"FILTRO ALFA"}
+    todos = {"FILTRO ALFA", "FILTRO BETA", "FILTRO GAMA", "FILTRO DELTA"}
+    assert _centros_listados(admin, centro_destino="talvez", centro_uso="x") == todos
+
+
+def test_busca_de_centro_acha_a_placa_digitada_com_hifen(admin, centros_de_filtro):
+    assert _centros_listados(admin, qc="fil1-a11") == {"FILTRO ALFA"}
+    assert _centros_listados(admin, qc="filtro 802") == {"FILTRO BETA"}
+
+
+def test_viaturas_nao_tem_filtro_de_placa(admin, centros_de_filtro):
+    r = admin.get(PAGINA, {"formulario": "VIATURAS", "aba": "centros"})
+    painel = r.text.split('id="painel-centros"')[1].split('id="painel-materiais"')[0]
+    assert 'name="centro_placa"' not in painel and 'name="centro_uso"' in painel
+    r = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros"})
+    assert 'name="centro_placa"' in r.text
+
+
+def test_gravar_na_aba_centros_volta_com_os_filtros(admin, centros_de_filtro):
+    centro = CentroCusto.objects.get(descricao="FILTRO ALFA")
+    r = admin.post(
+        CENTROS,
+        {
+            "formulario": "LIMPEZA",
+            "centro": [centro.pk],
+            "habilitado": "0",
+            "qc": "FILTRO",
+            "centro_destino": "sim",
+            "centro_estado": "ativo",
+        },
+    )
+    assert volta(r) == {
+        "formulario": "LIMPEZA",
+        "aba": "centros",
+        "qc": "FILTRO",
+        "centro_destino": "sim",
+        "centro_estado": "ativo",
+    }
+    # E a página que mostra os filtros os devolve às gravações da lista.
+    painel = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros", "centro_uso": "outros"})
+    assert 'name="centro_uso" value="outros"' in painel.text
