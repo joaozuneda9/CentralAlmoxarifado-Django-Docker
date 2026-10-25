@@ -55,7 +55,7 @@ RUN SECRET_KEY=construcao DEBUG=0 LOG_DIR=/tmp/logs python manage.py collectstat
 
 # O SHA muda a cada commit; so entra depois dos RUN para preservar o cache das instalacoes.
 ARG REVISAO_APP=nao-identificada
-LABEL org.opencontainers.image.source="https://github.com/joaozuneda8/CentralAlmoxarifado-Django-Docker" \
+LABEL org.opencontainers.image.source="https://github.com/joaozuneda9/CentralAlmoxarifado-Django-Docker" \
       org.opencontainers.image.revision="${REVISAO_APP}"
 
 USER almox

@@ -57,7 +57,7 @@ escolhida. Exemplo, com versão já publicada:
 
 ```powershell
 git -C C:\docker\almoxarifado-prod fetch origin --tags
-git -C C:\docker\almoxarifado-prod switch --detach v1.0.0
+git -C C:\docker\almoxarifado-prod switch --detach v1.1.1
 ```
 
 Criar `.env` a partir de `.env.example`, `.env.banco` a partir de
@@ -93,7 +93,7 @@ com IP é inválido, inclusive na execução direta do Compose.
 No clone novo, usando o digest do resumo do workflow (substituir os placeholders):
 
 ```powershell
-.\deploy\atualizar.ps1 -Ambiente producao -Versao v1.0.0 -Imagem 'ghcr.io/joaozuneda8/centralalmoxarifado-django-docker@sha256:<digest>'
+.\deploy\atualizar.ps1 -Ambiente producao -Versao v1.1.1 -Imagem 'ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:<digest>'
 ```
 
 Sem `-Aplicar`, não cria pasta, imagem ou container. A verificação da label da

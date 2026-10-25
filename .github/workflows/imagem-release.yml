@@ -65,7 +65,7 @@ jobs:
           context: .
           push: true
           platforms: linux/amd64
-          tags: ghcr.io/joaozuneda8/centralalmoxarifado-django-docker:${{ inputs.versao }}
+          tags: ghcr.io/joaozuneda9/centralalmoxarifado-django-docker:${{ inputs.versao }}
           build-args: REVISAO_APP=${{ needs.validar.outputs.sha }}
       - name: Registrar imagem para o deploy manual
         env:
@@ -73,4 +73,4 @@ jobs:
           SHA: ${{ needs.validar.outputs.sha }}
         run: |
           echo "Commit: $SHA" >> "$GITHUB_STEP_SUMMARY"
-          echo "Imagem: ghcr.io/joaozuneda8/centralalmoxarifado-django-docker@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
+          echo "Imagem: ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@$DIGEST" >> "$GITHUB_STEP_SUMMARY"
