@@ -60,6 +60,19 @@ def test_a_pagina_abre_no_primeiro_formulario_e_mostra_as_duas_abas(admin):
     assert 'id="painel-centros"' in r.text and 'id="painel-materiais"' in r.text
 
 
+def test_filtros_das_duas_abas_se_aplicam_sozinhos_com_javascript(admin):
+    # O botão "Filtrar" só existe sem JavaScript; com ele, o filtros.js envia ao mudar um campo.
+    r = admin.get(PAGINA)
+    assert len(re.findall(r'<form class="filtros"[^>]*data-filtros-auto>', r.text)) == 2
+
+
+def test_acoes_por_linha_mantem_a_rolagem_ao_voltar(admin):
+    # O rolagem.js guarda a posição no envio e a devolve na página que o redirecionamento abre.
+    r = admin.get(PAGINA, {"aba": "materiais"})
+    assert "interface/js/rolagem.js" in r.text
+    assert re.search(r'<form method="post"[^>]*class="acoes" data-manter-rolagem>', r.text)
+
+
 def test_formulario_invalido_volta_ao_primeiro_sem_erro(admin):
     r = admin.get(PAGINA, {"formulario": "AVULSA"})
     assert r.status_code == 200 and "Destinos de Limpeza, copa e escritório" in r.text

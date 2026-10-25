@@ -8,6 +8,9 @@
  * um chip que o remove. Remover um chip troca o valor do campo e dispara `change`, que o HTMX
  * do formulário já escuta (e o dropdown.js também, para atualizar o gatilho).
  *
+ * O `form[data-filtros-auto]` (catálogo: Formulários e Curva ABC) é mais simples: sem painel, só
+ * envia o formulário quando um campo muda.
+ *
  * Os eventos são delegados no `document`: ao restaurar o histórico, o HTMX troca o <body> e os
  * elementos são outros.
  */
@@ -150,6 +153,15 @@
       remover.focus();
       item.campos[item.campos.length - 1].dispatchEvent(new Event("change", { bubbles: true }));
     }
+  });
+
+  // `form[data-filtros-auto]` (filtros em página inteira, sem HTMX): escolher uma opção ou sair do
+  // campo de busca com o texto alterado já envia o formulário, sem precisar do Enter. O botão
+  // "Filtrar" só aparece sem JavaScript. O `change` do dropdown.js (que troca os `select`) também
+  // chega aqui. Enquanto o texto é digitado nada é enviado: a página recarregaria e o foco se perderia.
+  document.addEventListener("change", function (e) {
+    var form = e.target.closest && e.target.closest("form[data-filtros-auto]");
+    if (form && form.requestSubmit) form.requestSubmit();
   });
 
   ["change", "input"].forEach(function (tipo) {

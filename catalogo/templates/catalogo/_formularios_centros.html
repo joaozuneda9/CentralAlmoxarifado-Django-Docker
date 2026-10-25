@@ -7,7 +7,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
   <h2 class="cartao-titulo">Destinos de {{ formulario_nome }}</h2>
   <p class="texto-secundario">{{ explicacao_do_modo }} Um centro inativo não é oferecido em nenhum formulário, mas a escolha de cada formulário fica guardada.</p>
 
-  <form class="filtros" method="get" action="{% url 'catalogo:formularios' %}">
+  <form class="filtros" method="get" action="{% url 'catalogo:formularios' %}" data-filtros-auto>
     <input type="hidden" name="formulario" value="{{ formulario }}">
     <input type="hidden" name="aba" value="centros">
     <div class="campo filtros-campo">
@@ -53,7 +53,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
               {% if g.outros %}<span class="material-info texto-suave">Também em: {{ g.outros|join:", " }}</span>{% endif %}</td>
             {% if pode_alterar_centros %}
             <td>
-              <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes">
+              <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
                 <input type="hidden" name="qc" value="{{ termo }}">
@@ -66,7 +66,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
                 <button type="submit" class="botao botao-secundario">Habilitar{% if g.n_habilitadas %} todas{% endif %}</button>
                 {% endif %}
               </form>
-              <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes">
+              <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
                 <input type="hidden" name="qc" value="{{ termo }}">
@@ -96,7 +96,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
               {% if l.outros %}<span class="material-info texto-suave">Também em: {{ l.outros|join:", " }}</span>{% endif %}</td>
             {% if pode_alterar_centros %}
             <td>
-              <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes">
+              <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
                 <input type="hidden" name="qc" value="{{ termo }}">
@@ -104,7 +104,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
                 <input type="hidden" name="habilitado" value="{% if l.habilitada %}0{% else %}1{% endif %}">
                 <button type="submit" class="botao botao-secundario">{% if l.habilitada %}Desabilitar{% else %}Habilitar{% endif %}</button>
               </form>
-              <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes">
+              <form method="post" action="{% url 'catalogo:formularios_ativo' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
                 <input type="hidden" name="qc" value="{{ termo }}">

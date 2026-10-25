@@ -10,7 +10,7 @@ no servidor; cada botão é um formulário POST com CSRF.
   <h2 class="cartao-titulo">Materiais de {{ formulario_nome }}</h2>
   <p class="texto-secundario">Sem alteração, vale a regra do formulário (a lista, os grupos ou as saídas do SCPI). Acrescentar ou retirar um material muda só este formulário e não mexe no cadastro, no estoque nem nos pedidos já feitos.</p>
 
-  <form class="filtros" method="get" action="{% url 'catalogo:formularios' %}">
+  <form class="filtros" method="get" action="{% url 'catalogo:formularios' %}" data-filtros-auto>
     <input type="hidden" name="formulario" value="{{ formulario }}">
     <input type="hidden" name="aba" value="materiais">
     <div class="campo filtros-campo">
@@ -78,7 +78,7 @@ no servidor; cada botão é um formulário POST com CSRF.
           </td>
           {% if pode_alterar_materiais %}
           <td>
-            <form method="post" action="{% url 'catalogo:formularios_excecao' %}" class="acoes">
+            <form method="post" action="{% url 'catalogo:formularios_excecao' %}" class="acoes" data-manter-rolagem>
               {% csrf_token %}
               <input type="hidden" name="formulario" value="{{ formulario }}">
               <input type="hidden" name="codigo" value="{{ l.material.codigo }}">
