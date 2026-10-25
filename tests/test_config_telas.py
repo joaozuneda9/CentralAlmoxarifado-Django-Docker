@@ -814,3 +814,11 @@ def test_linhas_das_tabelas_tem_id_para_piscar_depois_de_gravar(admin, centros_d
     assert f'<tr id="centro-{alfa.pk}">' in centros.text
     materiais = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "materiais"})
     assert re.search(r'<tr id="material-\d+">', materiais.text)
+
+
+def test_coluna_de_acoes_tem_largura_propria_nas_duas_abas(admin, centros_de_filtro):
+    # Largura fixa por CSS (`celula-acoes`): a coluna não muda com a linha ter um botão ou dois.
+    materiais = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "materiais"})
+    assert '<td class="celula-acoes">' in materiais.text
+    centros = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO"})
+    assert '<td class="celula-acoes">' in centros.text

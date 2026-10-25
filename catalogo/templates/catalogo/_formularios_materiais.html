@@ -49,6 +49,7 @@ no servidor; cada botão é um formulário POST com CSRF.
   <div class="tabela-rolagem">
     <table class="tabela tabela-config">
       <caption class="visually-hidden">Materiais do catálogo e se são oferecidos por {{ formulario_nome }}</caption>
+      <colgroup><col><col class="col-situacao">{% if pode_alterar_materiais %}<col class="col-acoes">{% endif %}</colgroup>
       <thead>
         <tr>
           <th scope="col">Material</th>
@@ -77,7 +78,7 @@ no servidor; cada botão é um formulário POST com CSRF.
             {% if l.estado.sem_efeito %}<span class="material-info"><span class="selo selo-neutro">Exceção sem efeito</span> a regra já dá este resultado.</span>{% endif %}
           </td>
           {% if pode_alterar_materiais %}
-          <td>
+          <td class="celula-acoes">
             <form method="post" action="{% url 'catalogo:formularios_excecao' %}" class="acoes" data-manter-rolagem>
               {% csrf_token %}
               <input type="hidden" name="formulario" value="{{ formulario }}">

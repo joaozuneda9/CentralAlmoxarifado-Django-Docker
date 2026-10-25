@@ -135,6 +135,20 @@
    códigos, placas, origem); estas tabelas e o rótulo do seletor usam o cinza secundário (5,6:1). */
 .tabela-config th, .tabela-config .texto-suave, .formularios-seletor .rotulo-secao { color: var(--texto-secundario); }
 .tabela td .acoes { flex-wrap: nowrap; gap: var(--esp-1); }
+/* Coluna de ações de largura fixa: ela não muda de tamanho conforme a linha tem um botão ou dois
+   ("Retirar" e "Voltar à regra" ficam um embaixo do outro, da mesma largura). */
+/* No computador as colunas têm largura fixa (a do nome sobra): com a largura automática, o conteúdo da
+   página (um "acrescentado pelo administrador" mais longo, por exemplo) mexia nas colunas de uma
+   página para outra e depois de cada gravação. */
+@media (min-width: 641px) {
+  .tabela-config { table-layout: fixed; }
+  .tabela-config .col-placa { width: 6.5rem; }
+  .tabela-config .col-estado { width: 5.5rem; }
+  .tabela-config .col-situacao { width: 12rem; }
+  .tabela-config .col-situacao-larga { width: 16rem; }
+  .tabela-config .col-acoes { width: 9.5rem; }
+}
+.tabela-config .celula-acoes .acoes { flex-direction: column; align-items: stretch; gap: var(--esp-meio); }
 
 /* No celular a tabela da página Formulários empilha: cada linha vira um bloco (material, estado e
    ações um embaixo do outro), em vez de empurrar os botões para fora da tela. O cabeçalho sai da

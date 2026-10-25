@@ -54,6 +54,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
   <div class="tabela-rolagem">
     <table class="tabela tabela-config">
       <caption class="visually-hidden">Centros de custo e se são destino de {{ formulario_nome }}</caption>
+      <colgroup><col><col class="col-placa"><col class="col-estado"><col class="col-situacao col-situacao-larga">{% if pode_alterar_centros %}<col class="col-acoes">{% endif %}</colgroup>
       <thead>
         <tr>
           <th scope="col">Centro de custo</th>
@@ -73,7 +74,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
             <td>{% if g.n_habilitadas %}<span class="selo selo-ok">Destino{% if g.n_habilitadas != g.linhas|length %} ({{ g.n_habilitadas }} de {{ g.linhas|length }}){% endif %}</span>{% else %}<span class="selo selo-neutro">Não é destino</span>{% endif %}
               {% if g.outros %}<span class="material-info texto-suave">Também em: {{ g.outros|join:", " }}</span>{% endif %}</td>
             {% if pode_alterar_centros %}
-            <td>
+            <td class="celula-acoes">
               <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
@@ -116,7 +117,7 @@ centro é no admin. Estado sempre em texto (selos), nunca só por cor.
             <td>{% if l.habilitada %}<span class="selo selo-ok">Destino</span>{% if not l.centro.ativo %} <span class="selo selo-aviso">sem efeito: inativo</span>{% endif %}{% else %}<span class="selo selo-neutro">Não é destino</span>{% endif %}
               {% if l.outros %}<span class="material-info texto-suave">Também em: {{ l.outros|join:", " }}</span>{% endif %}</td>
             {% if pode_alterar_centros %}
-            <td>
+            <td class="celula-acoes">
               <form method="post" action="{% url 'catalogo:formularios_centros' %}" class="acoes" data-manter-rolagem>
                 {% csrf_token %}
                 <input type="hidden" name="formulario" value="{{ formulario }}">
