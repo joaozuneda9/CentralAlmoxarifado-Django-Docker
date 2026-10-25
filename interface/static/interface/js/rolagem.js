@@ -15,11 +15,18 @@
 
   var CHAVE = "rolagem-ao-voltar";
 
-  function guardar() {
+  // Junto com a posição vai o `id` da linha da tabela que o formulário alterou: na volta ela pisca,
+  // porque a mensagem de confirmação fica no topo da página, fora da vista.
+  function guardar(form) {
+    var linha = form.closest && form.closest("tr[id]");
     try {
       sessionStorage.setItem(
         CHAVE,
-        JSON.stringify({ caminho: window.location.pathname, y: window.scrollY })
+        JSON.stringify({
+          caminho: window.location.pathname,
+          y: window.scrollY,
+          linha: linha ? linha.id : null,
+        })
       );
     } catch (e) {
       /* sem armazenamento, a página só abre no topo */
@@ -31,7 +38,7 @@
       var texto = sessionStorage.getItem(CHAVE);
       sessionStorage.removeItem(CHAVE);
       var dado = texto && JSON.parse(texto);
-      return dado && dado.caminho === window.location.pathname ? dado.y : null;
+      return dado && dado.caminho === window.location.pathname ? dado : null;
     } catch (e) {
       return null;
     }
@@ -39,7 +46,7 @@
 
   document.addEventListener("submit", function (e) {
     if (e.target.matches && e.target.matches("form[data-manter-rolagem], form[data-filtros-auto]")) {
-      guardar();
+      guardar(e.target);
     }
   });
 
@@ -121,14 +128,25 @@
   }
 
   var y = null;
+  var linha = null;
   function restaurar() {
     if (y !== null) window.scrollTo(0, y);
   }
   document.addEventListener("DOMContentLoaded", function () {
     if (deslizarAteOAlvo()) return;
-    y = lerEApagar();
+    var dado = lerEApagar();
+    if (dado) {
+      y = dado.y;
+      linha = dado.linha;
+    }
     restaurar();
   });
-  // Fontes e abas ainda mexem na altura da página: a posição é reaplicada quando tudo carregou.
-  window.addEventListener("load", restaurar);
+  // Fontes e abas ainda mexem na altura da página: a posição é reaplicada quando tudo carregou, e
+  // só então a linha alterada pisca (se ainda está na lista: um filtro pode tê-la tirado).
+  window.addEventListener("load", function () {
+    restaurar();
+    var alterada = linha && document.getElementById(linha);
+    linha = null;
+    if (alterada) piscar(alterada);
+  });
 })();

@@ -261,12 +261,12 @@ def test_paginacao_de_50_no_servidor(admin):
     for i in range(120):
         material(f"700.000.{i:03d}", f"ITEM {i:03d}", "MUITOS")
     r = admin.get(PAGINA, {"formulario": "AB", "aba": "materiais", "grupo": "MUITOS"})
-    assert linhas_da_aba(r).count("<tr>") == 50
+    assert linhas_da_aba(r).count("<tr ") == 50
     assert "Página 1 de 3" in texto(r) and "120 materiais no total" in texto(r)
     r = admin.get(
         PAGINA, {"formulario": "AB", "aba": "materiais", "grupo": "MUITOS", "pagina": "3"}
     )
-    assert linhas_da_aba(r).count("<tr>") == 20
+    assert linhas_da_aba(r).count("<tr ") == 20
     fora = admin.get(
         PAGINA, {"formulario": "AB", "aba": "materiais", "grupo": "MUITOS", "pagina": "99"}
     )
@@ -765,3 +765,52 @@ def test_gravar_na_aba_centros_volta_com_os_filtros(admin, centros_de_filtro):
     # E a página que mostra os filtros os devolve às gravações da lista.
     painel = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros", "centro_uso": "outros"})
     assert 'name="centro_uso" value="outros"' in painel.text
+
+
+# --- Paginação e linhas da aba Centros de custo ------------------------------------------------
+
+
+def _tabela_de_centros(resposta) -> str:
+    painel = resposta.text.split('id="painel-centros"')[1].split('id="painel-materiais"')[0]
+    return painel.split("<tbody>")[1].split("</tbody>")[0]
+
+
+def test_aba_centros_pagina_por_descricao_e_os_totais_valem_para_tudo(admin):
+    for i in range(60):
+        criar_centro(f"PAGINADO {i:02d}", f"9{i:02d}", formularios=[Formulario.LIMPEZA])
+    base = {"formulario": "LIMPEZA", "aba": "centros", "qc": "PAGINADO"}
+    primeira = admin.get(PAGINA, base)
+    assert len(re.findall(r'<tr id="centro-', _tabela_de_centros(primeira))) == 50
+    assert "60 de 60 linhas são destino" in texto(primeira)
+    assert "Página 1 de 2" in texto(primeira)
+    segunda = admin.get(PAGINA, {**base, "pagina_centros": 2})
+    assert len(re.findall(r'<tr id="centro-', _tabela_de_centros(segunda))) == 10
+    assert "PAGINADO 59" in segunda.text and "PAGINADO 00" not in _tabela_de_centros(segunda)
+    # Página fora do intervalo cai na última, e a aba Materiais tem a sua própria paginação.
+    assert "Página 2 de 2" in texto(admin.get(PAGINA, {**base, "pagina_centros": 99}))
+    assert 'name="pagina_centros" value="2"' in segunda.text
+
+
+def test_gravar_na_aba_centros_volta_para_a_mesma_pagina(admin):
+    for i in range(60):
+        criar_centro(f"PAGINADO {i:02d}", f"9{i:02d}", formularios=[Formulario.LIMPEZA])
+    centro = CentroCusto.objects.get(descricao="PAGINADO 59")
+    r = admin.post(
+        CENTROS,
+        {
+            "formulario": "LIMPEZA",
+            "centro": [centro.pk],
+            "habilitado": "0",
+            "qc": "PAGINADO",
+            "pagina_centros": "2",
+        },
+    )
+    assert volta(r)["pagina_centros"] == "2"
+
+
+def test_linhas_das_tabelas_tem_id_para_piscar_depois_de_gravar(admin, centros_de_filtro):
+    alfa = CentroCusto.objects.get(descricao="FILTRO ALFA")
+    centros = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "centros", "qc": "FILTRO"})
+    assert f'<tr id="centro-{alfa.pk}">' in centros.text
+    materiais = admin.get(PAGINA, {"formulario": "LIMPEZA", "aba": "materiais"})
+    assert re.search(r'<tr id="material-\d+">', materiais.text)

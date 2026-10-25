@@ -58,7 +58,7 @@ no servidor; cada botão é um formulário POST com CSRF.
       </thead>
       <tbody>
         {% for l in linhas %}
-        <tr>
+        <tr id="material-{{ l.material.pk }}">
           <td>
             <strong>{{ l.material.nome }}</strong>
             <span class="material-info texto-suave">

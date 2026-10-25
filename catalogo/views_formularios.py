@@ -43,10 +43,12 @@ from pedidos.regras import norm_placa, qtd_br, truncar_qtd
 
 ABAS = [("centros", "Centros de custo"), ("materiais", "Materiais")]
 POR_PAGINA = 50
+POR_PAGINA_CENTROS = 50
 PARAMETROS_DA_VOLTA = (
     "formulario",
     "aba",
     "qc",
+    "pagina_centros",
     "centro_destino",
     "centro_estado",
     "centro_placa",
@@ -138,7 +140,9 @@ def _filtrar_centros(linhas, origem: str, filtros: dict, modo: str, habilitadas:
     return linhas
 
 
-def _contexto_centros(origem: str, filtros_centros: FiltrosCentros, usuario) -> dict:
+def _contexto_centros(
+    origem: str, filtros_centros: FiltrosCentros, usuario, numero_da_pagina=None
+) -> dict:
     filtros = filtros_centros.filtros()
     habilitadas = set(
         CentroFormulario.objects.filter(formulario=origem).values_list("centro_id", flat=True)
@@ -170,8 +174,12 @@ def _contexto_centros(origem: str, filtros_centros: FiltrosCentros, usuario) -> 
                 "codigos": list(dict.fromkeys(i["centro"].codigo for i in itens)),
             }
         )
+    # A página mostra POR_PAGINA_CENTROS descrições por vez (as linhas de uma descrição ficam
+    # juntas); os totais abaixo valem para tudo o que o filtro acha, não só para a página.
+    pagina = Paginator(grupos, POR_PAGINA_CENTROS).get_page(numero_da_pagina)
     return {
-        "grupos": grupos,
+        "grupos": list(pagina.object_list),
+        "pagina_centros": pagina,
         "modo": modo,
         "explicacao_do_modo": EXPLICACAO_DO_MODO[modo],
         "por_descricao": modo == MODO_SEM_PLACA,
@@ -179,7 +187,10 @@ def _contexto_centros(origem: str, filtros_centros: FiltrosCentros, usuario) -> 
         "total_habilitadas": sum(g["n_habilitadas"] for g in grupos),
         "filtros_centros": filtros_centros,
         "filtros_centros_ativos": filtros,
-        "volta_centros": {nome: filtros.get(nome, "") for nome in FiltrosCentros.base_fields},
+        "volta_centros": {
+            **{nome: filtros.get(nome, "") for nome in FiltrosCentros.base_fields},
+            "pagina_centros": pagina.number if pagina.number > 1 else "",
+        },
         "pode_alterar_centros": pode_alterar_centros(usuario),
         "pode_criar_centro": usuario.is_staff and usuario.has_perm("catalogo.add_centrocusto"),
         "pode_editar_centro": usuario.is_staff and usuario.has_perm("catalogo.change_centrocusto"),
@@ -251,7 +262,9 @@ def formularios(request):
         "lista_de_formularios": [(f.value, f.label) for f in Formulario],
         "aba": aba,
         "abas": ABAS,
-        **_contexto_centros(origem, FiltrosCentros(request.GET), usuario),
+        **_contexto_centros(
+            origem, FiltrosCentros(request.GET), usuario, request.GET.get("pagina_centros")
+        ),
         **_contexto_materiais(request, origem, pode_alterar_materiais(usuario)),
         "pode_alterar_algo": pode_alterar_centros(usuario) or pode_alterar_materiais(usuario),
     }

@@ -329,13 +329,25 @@ a.paginacao-link:hover { background: var(--superficie); color: var(--texto); tex
 @media (prefers-reduced-motion: reduce) {
   .destaque-piscada { animation: none; box-shadow: 0 0 0 3px var(--destaque); background-color: var(--destaque-superficie); }
 }
+/* Linha de tabela (a que uma gravação acabou de mudar): só o fundo das células pisca; o anel do cartão
+   não desenha numa `<tr>`. */
+@keyframes piscar-linha {
+  0%, 100% { background-color: transparent; }
+  25%, 45% { background-color: var(--destaque-superficie); }
+}
+tr.destaque-piscada { animation: none; box-shadow: none; background-color: transparent; }
+tr.destaque-piscada > td { animation: piscar-linha 1.3s ease-in-out; }
+@media (prefers-reduced-motion: reduce) {
+  tr.destaque-piscada > td { animation: none; background-color: var(--destaque-superficie); }
+}
 
 /* Filtros */
-.filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--esp-2); }
+/* Grade de colunas iguais: a última linha não estica um campo sozinho pela largura toda. A busca
+   (primeiro campo) ocupa duas colunas quando há espaço. */
+.filtros { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); align-items: end; gap: var(--esp-2); }
+@media (min-width: 640px) { .filtros-campo:first-of-type { grid-column: span 2; } }
 /* A coluna da grade também precisa de minmax(0, 1fr): sem ela, o texto longo de um filtro preenchido alarga a coluna além do campo e o controle passa por cima do vizinho. */
 .filtros-campo { display: grid; grid-template-columns: minmax(0, 1fr); gap: 6px; flex: 1 1 160px; min-width: 0; }
-/* O primeiro campo é a busca (os `<input hidden>` do formulário vêm antes, por isso não é `:first-child`). */
-.filtros-campo:first-of-type { flex-basis: 240px; }
 .filtros-acoes { display: flex; align-items: center; gap: var(--esp-2); }
 /* Com JavaScript os filtros se aplicam sozinhos (hx-trigger, ou `data-filtros-auto` em filtros.js);
    o botão fica só como reserva sem ele. */
