@@ -307,11 +307,11 @@ def _contexto_materiais(request, origem: str, pode_alterar: bool) -> dict:
 
 
 # Regiões que o HTMX carrega, pelo cabeçalho HX-Target (`tag#id` no HTMX 4): o painel da aba que
-# estava vazio na página e se abre pela primeira vez. A resposta é só o parcial da aba, que o
-# `?aba=` do `hx-get` escolhe.
+# estava vazio na página e se abre pela primeira vez. A resposta é só o parcial da aba, e a aba é
+# a do alvo, qualquer que seja o `?aba=` (o parcial nunca sai com o contexto da outra).
 REGIOES = {
-    "section#painel-centros": "catalogo/_formularios_centros.html",
-    "section#painel-materiais": "catalogo/_formularios_materiais.html",
+    "section#painel-centros": ("centros", "catalogo/_formularios_centros.html"),
+    "section#painel-materiais": ("materiais", "catalogo/_formularios_materiais.html"),
 }
 
 
@@ -322,6 +322,9 @@ def formularios(request):
     origem = _formulario(request.GET.get("formulario")) or Formulario.LIMPEZA
     aba = request.GET.get("aba")
     aba = aba if aba in {chave for chave, _ in ABAS} else "materiais"
+    modelo = "catalogo/formularios.html"
+    if regiao := regiao_pedida(request, REGIOES):
+        aba, modelo = regiao
     usuario = request.user
     contexto = {
         "formulario": origem,
@@ -345,7 +348,6 @@ def formularios(request):
         )
     else:
         contexto.update(_contexto_materiais(request, origem, pode_alterar_materiais(usuario)))
-    modelo = regiao_pedida(request, REGIOES) or "catalogo/formularios.html"
     return render_regiao(request, modelo, contexto)
 
 
