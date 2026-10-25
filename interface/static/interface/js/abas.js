@@ -39,7 +39,7 @@
       if (ativo) ativado = painel;
     });
     // Avisa o painel que abriu (`abas:ativada`, sobe pelo DOM): um painel que veio vazio se carrega
-    // por aí (`hx-trigger="abas:ativada once"`).
+    // por aí (`hx-trigger="abas:ativada[...]"`, com o filtro de quem usa).
     if (ativado) ativado.dispatchEvent(new CustomEvent("abas:ativada", { bubbles: true }));
     // A aba fica na URL: recarregar a página (ou voltar de um envio com erro) mantém a aba.
     try {

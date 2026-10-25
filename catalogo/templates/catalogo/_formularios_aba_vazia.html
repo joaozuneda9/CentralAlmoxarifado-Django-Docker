@@ -1,7 +1,8 @@
 {% comment %}
-Painel da aba que não foi montada no servidor: o HTMX o preenche quando a aba abre pela primeira vez
-(o `hx-get` está na própria `<section>`, em formularios.html). Sem JavaScript, o link leva à aba.
+Painel da aba que não foi montada no servidor: o HTMX o preenche quando a aba abre (o `hx-get`
+está na própria `<section>`, em formularios.html, e só dispara enquanto este painel, `.aba-vazia`,
+está nela: se o pedido falhar, a próxima abertura tenta de novo). Sem JavaScript, o link leva à aba.
 {% endcomment %}
-<div class="cartao pilha" role="status">
+<div class="cartao pilha aba-vazia" role="status">
   <p class="texto-secundario">Esta aba é carregada quando você a abre. <a href="{{ url }}">Abrir a aba {{ rotulo }}</a></p>
 </div>

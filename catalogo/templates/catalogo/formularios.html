@@ -11,7 +11,8 @@
 Configuração das opções por formulário (spec 009). Um formulário por vez (links, `?formulario=`) e
 duas abas, Centros de custo e Materiais (o componente comum `[data-abas]`, com `?aba=`). O servidor
 só monta a aba ativa; a outra vem como painel vazio, que o HTMX carrega (`hx-get`, evento
-`abas:ativada` do abas.js) na primeira vez que ela abre. Sem JavaScript, os dois painéis ficam à
+`abas:ativada` do abas.js) quando ela abre, enquanto o painel vazio estiver lá: carregado, o
+evento deixa de pedir; se o pedido falhou, a próxima abertura tenta de novo. Sem JavaScript, os dois painéis ficam à
 vista, o vazio com um link para a aba, e cada ação é um formulário comum com CSRF. Quem não pode
 alterar vê tudo, sem os controles; o servidor recusa a gravação de qualquer forma.
 {% endcomment %}
@@ -35,10 +36,10 @@ alterar vê tudo, sem os controles; o servidor recusa a gravação de qualquer f
       {% endfor %}
     </div>
 
-    <section role="tabpanel" id="painel-centros" class="aba-painel{% if aba == 'centros' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-centros"{% if aba != 'centros' %} hx-get="{{ urls_das_abas.centros }}" hx-trigger="abas:ativada once" hx-swap="innerHTML"{% endif %}>
+    <section role="tabpanel" id="painel-centros" class="aba-painel{% if aba == 'centros' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-centros"{% if aba != 'centros' %} hx-get="{{ urls_das_abas.centros }}" hx-trigger="abas:ativada[this.querySelector('.aba-vazia')]" hx-swap="innerHTML"{% endif %}>
       {% if aba == 'centros' %}{% include "catalogo/_formularios_centros.html" %}{% else %}{% include "catalogo/_formularios_aba_vazia.html" with rotulo="Centros de custo" url=urls_das_abas.centros %}{% endif %}
     </section>
-    <section role="tabpanel" id="painel-materiais" class="aba-painel{% if aba == 'materiais' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-materiais"{% if aba != 'materiais' %} hx-get="{{ urls_das_abas.materiais }}" hx-trigger="abas:ativada once" hx-swap="innerHTML"{% endif %}>
+    <section role="tabpanel" id="painel-materiais" class="aba-painel{% if aba == 'materiais' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-materiais"{% if aba != 'materiais' %} hx-get="{{ urls_das_abas.materiais }}" hx-trigger="abas:ativada[this.querySelector('.aba-vazia')]" hx-swap="innerHTML"{% endif %}>
       {% if aba == 'materiais' %}{% include "catalogo/_formularios_materiais.html" %}{% else %}{% include "catalogo/_formularios_aba_vazia.html" with rotulo="Materiais" url=urls_das_abas.materiais %}{% endif %}
     </section>
   </div>

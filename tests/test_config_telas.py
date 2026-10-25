@@ -120,7 +120,10 @@ def test_a_aba_materiais_nao_calcula_a_de_centros(admin, monkeypatch):
 def test_o_painel_vazio_carrega_pelo_htmx_com_os_parametros_da_url(admin):
     r = admin.get(PAGINA, {"aba": "materiais", "formulario": "AB", "qc": "novo", "q": "fita"})
     painel = re.search(r'<section[^>]*id="painel-centros"[^>]*>', r.text).group(0)
-    assert 'hx-trigger="abas:ativada once"' in painel
+    # Sem `once`: o pedido só dispara enquanto o painel vazio está à vista, então uma falha na
+    # primeira abertura não impede a nova tentativa, e depois de carregado ele não pede mais.
+    assert "hx-trigger=\"abas:ativada[this.querySelector('.aba-vazia')]\"" in painel
+    assert 'class="cartao pilha aba-vazia"' in r.text
     url = re.search(r'hx-get="([^"]+)"', painel).group(1).replace("&amp;", "&")
     consulta = parse_qs(urlparse(url).query)
     assert urlparse(url).path == PAGINA
