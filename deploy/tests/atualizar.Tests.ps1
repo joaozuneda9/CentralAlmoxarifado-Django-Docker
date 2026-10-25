@@ -9,7 +9,7 @@ $global:AlmoxTesteServicos = @()
 $global:AlmoxTesteFalhar = ''
 $global:AlmoxTesteToken = ''
 $global:AlmoxTesteChatSeguranca = ''
-$global:AlmoxTesteDigest = 'ghcr.io/joaozuneda8/centralalmoxarifado-django-docker@sha256:' + ('a' * 64)
+$global:AlmoxTesteDigest = 'ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:' + ('a' * 64)
 
 function docker {
     $linha = $args -join ' '
