@@ -22,7 +22,7 @@
         <p class="atalho-numero">{{ pedidos_aguardando }}</p>
         <div class="atalho-corpo">
           <p class="atalho-rotulo">{% if pedidos_aguardando %}{{ pedidos_aguardando|pluralize:"pedido aguardando atendimento,pedidos aguardando atendimento" }}{% else %}Nenhum pedido aguardando.{% endif %}</p>
-          {% if pedidos_aguardando %}<a class="botao botao-primario" href="{% url 'pedidos:painel' %}?situacao=aguardando#pedidos" data-rolar-ate="pedidos" data-fechar-filtros>{% include "interface/_icone.html" with nome="caixa-check" %}Atender</a>
+          {% if pedidos_aguardando %}<a class="botao botao-primario" href="{% url 'pedidos:painel' %}?situacao=aguardando#pedidos" data-rolar-ate="pedidos" data-destacar="lista-pedidos" data-fechar-filtros>{% include "interface/_icone.html" with nome="caixa-check" %}Atender</a>
           {% else %}<span class="botao botao-secundario" aria-disabled="true">{% include "interface/_icone.html" with nome="caixa-check" %}Atender</span>{% endif %}
         </div>
       </div>
@@ -31,7 +31,7 @@
         <p class="atalho-numero">{{ recibos_pendentes }}</p>
         <div class="atalho-corpo">
           <p class="atalho-rotulo">{% if recibos_pendentes %}{{ recibos_pendentes|pluralize:"recibo para imprimir,recibos para imprimir" }}{% else %}Nenhum recibo pendente.{% endif %}</p>
-          {% if recibos_pendentes %}<a class="botao botao-primario" href="{% url 'pedidos:painel' %}?recibo=pendente#pedidos" data-rolar-ate="pedidos" data-fechar-filtros>{% include "interface/_icone.html" with nome="impressora" %}Imprimir</a>
+          {% if recibos_pendentes %}<a class="botao botao-primario" href="{% url 'pedidos:painel' %}?recibo=pendente#pedidos" data-rolar-ate="pedidos" data-destacar="lista-pedidos" data-fechar-filtros>{% include "interface/_icone.html" with nome="impressora" %}Imprimir</a>
           {% else %}<span class="botao botao-secundario" aria-disabled="true">{% include "interface/_icone.html" with nome="impressora" %}Imprimir</span>{% endif %}
         </div>
       </div>

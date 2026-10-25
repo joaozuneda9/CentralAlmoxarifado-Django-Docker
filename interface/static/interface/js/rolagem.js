@@ -56,7 +56,11 @@
     try {
       sessionStorage.setItem(
         ALVO,
-        JSON.stringify({ caminho: destino.pathname, id: link.getAttribute("data-rolar-ate") })
+        JSON.stringify({
+          caminho: destino.pathname,
+          id: link.getAttribute("data-rolar-ate"),
+          destacar: link.getAttribute("data-destacar"),
+        })
       );
     } catch (erro) {
       return; // sem armazenamento, o link segue com a âncora
@@ -66,12 +70,41 @@
     window.location.assign(destino.href);
   });
 
+  // Uma piscada no elemento que o link quer mostrar (`data-destacar="id"`), quando a rolagem
+  // termina: anel e fundo que se dissolvem (componentes.css, `.destaque-piscada`). Com movimento
+  // reduzido o destaque fica parado e some.
+  function piscar(el) {
+    el.classList.remove("destaque-piscada");
+    void el.offsetWidth; // reinicia a animação se já estava rodando
+    el.classList.add("destaque-piscada");
+    setTimeout(function () {
+      el.classList.remove("destaque-piscada");
+    }, 1600);
+  }
+
+  function aoTerminarARolagem(fazer, menos) {
+    var feito = false;
+    function uma() {
+      if (feito) return;
+      feito = true;
+      fazer();
+    }
+    // `scrollend` avisa o fim da rolagem suave; se a página já estava no lugar ele não vem, e o
+    // tempo cobre os dois casos.
+    window.addEventListener("scrollend", uma, { once: true });
+    setTimeout(uma, menos ? 150 : 1000);
+  }
+
   function deslizarAteOAlvo() {
     var id = null;
+    var destacar = null;
     try {
       var dado = JSON.parse(sessionStorage.getItem(ALVO) || "null");
       sessionStorage.removeItem(ALVO);
-      if (dado && dado.caminho === window.location.pathname) id = dado.id;
+      if (dado && dado.caminho === window.location.pathname) {
+        id = dado.id;
+        destacar = dado.destacar;
+      }
     } catch (erro) {
       return false;
     }
@@ -81,6 +114,8 @@
     // Um instante depois da primeira pintura, para o movimento ser visto.
     setTimeout(function () {
       alvo.scrollIntoView({ behavior: menos ? "auto" : "smooth", block: "start" });
+      var piscante = destacar && document.getElementById(destacar);
+      if (piscante) aoTerminarARolagem(function () { piscar(piscante); }, menos);
     }, 120);
     return true;
   }

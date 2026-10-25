@@ -318,6 +318,18 @@ a.paginacao-link:hover { background: var(--superficie); color: var(--texto); tex
 .paginacao-compacta { display: none; }
 @media (max-width: 640px) { .paginacao-larga { display: none; } .paginacao-compacta { display: list-item; } }
 
+/* Piscada que destaca o que um atalho acabou de mostrar (rolagem.js, `data-destacar`): anel azul e
+   fundo claro que se dissolvem. Com movimento reduzido não anima: o destaque fica parado até o JS
+   tirar a classe. */
+@keyframes piscar-destaque {
+  0%, 100% { box-shadow: var(--sombra-cartao); background-color: var(--fundo); }
+  25%, 45% { box-shadow: 0 0 0 3px var(--destaque), var(--sombra-hover); background-color: var(--destaque-superficie); }
+}
+.destaque-piscada { animation: piscar-destaque 1.3s ease-in-out; }
+@media (prefers-reduced-motion: reduce) {
+  .destaque-piscada { animation: none; box-shadow: 0 0 0 3px var(--destaque); background-color: var(--destaque-superficie); }
+}
+
 /* Filtros */
 .filtros { display: flex; flex-wrap: wrap; align-items: flex-end; gap: var(--esp-2); }
 /* A coluna da grade também precisa de minmax(0, 1fr): sem ela, o texto longo de um filtro preenchido alarga a coluna além do campo e o controle passa por cima do vizinho. */
