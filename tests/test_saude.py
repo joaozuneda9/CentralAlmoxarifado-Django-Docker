@@ -14,7 +14,7 @@ from catalogo.saude import (
     situacao_do_catalogo,
 )
 from pedidos.regras import VIATURAS as ORIGEM_VIATURAS
-from tests.config_cenario import criar_centro
+from tests.config_cenario import criar_centro, excecao
 
 pytestmark = pytest.mark.django_db
 
@@ -369,8 +369,13 @@ def test_situacao_calcula_cada_catalogo_uma_vez(monkeypatch, com_saldo):
     import catalogo.saude as saude
     from catalogo.models import Formulario
 
-    if com_saldo:
-        Material.objects.create(codigo="A", nome="A", estoque_em=AGORA)
+    material = Material.objects.create(
+        codigo="A", nome="A", estoque_em=AGORA if com_saldo else None
+    )
+    # Com centro de custo e uma exceção nas viaturas, a análise das exceções também lê a regra
+    # das viaturas: precisa reaproveitar a mesma lista.
+    criar_centro("ALMOX", "1")
+    excecao(Formulario.VIATURAS, material, True)
     efetivos, viaturas = [], []
     original_efetivo, original_viaturas = saude.catalogo_efetivo, saude.catalogo_viaturas
 

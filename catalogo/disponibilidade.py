@@ -80,9 +80,9 @@ class SituacaoDoFormulario:
         return (set(self.na_regra) - retirados) | acrescentados
 
 
-def situacao_do_formulario(origem: str, ab=None) -> SituacaoDoFormulario:
+def situacao_do_formulario(origem: str, ab=None, viaturas=None) -> SituacaoDoFormulario:
     """Calculada na hora: a regra de origem do formulário e as exceções dele. `ab` reaproveita o
-    catálogo AB que o chamador já calculou (a conta pesada)."""
+    catálogo AB que o chamador já calculou (a conta pesada), e `viaturas` a lista das viaturas."""
     from catalogo.catalogos import regra_de_origem
     from catalogo.models import ExcecaoMaterial
 
@@ -92,7 +92,8 @@ def situacao_do_formulario(origem: str, ab=None) -> SituacaoDoFormulario:
         )
     )
     return SituacaoDoFormulario(
-        na_regra=frozenset(i.codigo for i in regra_de_origem(origem, ab)), excecoes=excecoes
+        na_regra=frozenset(i.codigo for i in regra_de_origem(origem, ab, viaturas)),
+        excecoes=excecoes,
     )
 
 

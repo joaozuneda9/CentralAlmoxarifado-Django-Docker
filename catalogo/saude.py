@@ -370,10 +370,11 @@ FORMULARIOS_SEM_AVISO_PROPRIO = {
 }
 
 
-def _destinos_e_excecoes(ab: CatalogoAB | None = None) -> list[ItemSaude]:
+def _destinos_e_excecoes(ab: CatalogoAB | None, catalogos: _Catalogos) -> list[ItemSaude]:
     """A configuração por formulário (spec 009, FR-039): formulário sem destino (as viaturas e a
     oficina já dizem o seu), centro ativo que não é destino de nenhum e exceção sem efeito. Só
-    roda o cálculo das regras de origem para o formulário que tem exceção."""
+    roda o cálculo das regras de origem para o formulário que tem exceção (o das viaturas
+    reaproveita a lista já calculada em `catalogos`)."""
     from catalogo.disponibilidade import situacao_do_formulario
 
     saude = []
@@ -404,7 +405,8 @@ def _destinos_e_excecoes(ab: CatalogoAB | None = None) -> list[ItemSaude]:
     for formulario in Formulario.values:
         if formulario not in com_excecao:
             continue
-        situacao = situacao_do_formulario(formulario, ab)
+        viaturas = catalogos.lista_viaturas if formulario == Formulario.VIATURAS else None
+        situacao = situacao_do_formulario(formulario, ab, viaturas)
         sem_efeito = sorted(
             codigo
             for codigo, habilitado in situacao.excecoes.items()
@@ -551,7 +553,7 @@ def _demais(
             )
         )
     else:
-        saude += _destinos_e_excecoes(ab)
+        saude += _destinos_e_excecoes(ab, catalogos)
     return saude
 
 
