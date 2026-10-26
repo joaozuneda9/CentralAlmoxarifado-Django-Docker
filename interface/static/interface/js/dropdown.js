@@ -108,7 +108,57 @@
     return true;
   }
 
-  window.Dropdown = { abrirPainel: abrirPainel, fecharPainel: fecharPainel, painelAberto: painelAberto };
+  // ---- toque fora ---------------------------------------------------------------------------------
+  // Quem fecha um painel por um toque fora dele se registra em `aoTocarFora(fn)`; `fn` recebe o
+  // elemento tocado. Com o mouse, avisa ao apertar o botão, como sempre. Com o dedo (ou a caneta),
+  // só quando ele sai da tela sem ter andado mais que FOLGA_TOQUE: encostar para arrastar a página
+  // não fecha nada (e, quando o navegador assume a rolagem, o toque vem cancelado). Um segundo dedo
+  // (pinça) também desfaz o toque.
+  var FOLGA_TOQUE = 10;
+  var aoTocar = [];
+  var toque = null;
+
+  function avisarToque(alvo) {
+    aoTocar.forEach(function (fn) {
+      fn(alvo);
+    });
+  }
+  function aoTocarFora(fn) {
+    aoTocar.push(fn);
+  }
+
+  document.addEventListener("pointerdown", function (e) {
+    if (e.pointerType === "mouse") {
+      toque = null;
+      avisarToque(e.target);
+      return;
+    }
+    toque = e.isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, alvo: e.target } : null;
+  });
+  document.addEventListener(
+    "pointermove",
+    function (e) {
+      if (!toque || e.pointerId !== toque.id) return;
+      if (Math.hypot(e.clientX - toque.x, e.clientY - toque.y) > FOLGA_TOQUE) toque = null;
+    },
+    { passive: true }
+  );
+  document.addEventListener("pointercancel", function () {
+    toque = null;
+  });
+  document.addEventListener("pointerup", function (e) {
+    if (!toque || e.pointerId !== toque.id) return;
+    var alvo = toque.alvo;
+    toque = null;
+    avisarToque(alvo);
+  });
+
+  window.Dropdown = {
+    abrirPainel: abrirPainel,
+    fecharPainel: fecharPainel,
+    painelAberto: painelAberto,
+    aoTocarFora: aoTocarFora,
+  };
 
   // ---- fontes das opções ------------------------------------------------------------------------
 
@@ -671,8 +721,8 @@
     return !!(detalhes && resumo && resumo.parentNode === detalhes);
   }
 
-  document.addEventListener("pointerdown", function (e) {
-    if (aberto && !aberto.raiz.contains(e.target) && !noResumoDoPainel(aberto, e.target)) fechar(aberto, false);
+  aoTocarFora(function (alvo) {
+    if (aberto && !aberto.raiz.contains(alvo) && !noResumoDoPainel(aberto, alvo)) fechar(aberto, false);
   });
   document.addEventListener("focusin", function (e) {
     if (aberto && !aberto.raiz.contains(e.target) && !noResumoDoPainel(aberto, e.target)) fechar(aberto, false);

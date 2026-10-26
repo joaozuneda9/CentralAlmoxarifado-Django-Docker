@@ -1396,8 +1396,9 @@
     if (e.target.id === "busca-q") return abrirPainel();
     if (!dentroDaBusca(e.target)) fecharPainel(false);
   });
-  document.addEventListener("pointerdown", function (e) {
-    if (!dentroDaBusca(e.target)) fecharPainel(false);
+  // Toque fora fecha; arrastar a página por trás do painel, não (`Dropdown.aoTocarFora`).
+  window.Dropdown.aoTocarFora(function (alvo) {
+    if (!dentroDaBusca(alvo)) fecharPainel(false);
   });
   document.addEventListener("input", function (e) {
     if (e.target.id !== "busca-q") return;
