@@ -165,11 +165,11 @@ def _com_catalogo(formulario, catalogo):
 def test_a_pagina_inicial_lista_os_formularios_publicos_a_partir_de_fluxos(client, novo):
     html = client.get(reverse("pedidos:inicio")).text
     # Os cinco formulários públicos de `FLUXOS` (limpeza, AB, viaturas, oficina, EPIs) e o de teste.
-    assert html.count('class="cartao cartao-opcao"') == 6
+    assert html.count('class="cartao cartao-opcao') == 6
     assert TITULO in html and "Ex.: parafuso, cabo, fusível" in html
     assert reverse("pedidos:formulario", args=["reposicao"]) in html
     # Os formulários de sempre continuam lá, e a saída avulsa nunca é pública.
-    assert "Limpeza, copa e escritório" in html and "Ferramentas, peças e materiais" in html
+    assert "Limpeza, copa e escritório" in html and "Ferramentas, peças e outros materiais" in html
     assert reverse("pedidos:formulario", args=["viaturas"]) in html
     assert re.search(r"Sa[ií]da avulsa", html) is None
 

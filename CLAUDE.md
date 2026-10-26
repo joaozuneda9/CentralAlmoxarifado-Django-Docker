@@ -211,8 +211,10 @@ transações precisam se comportar como no servidor.
   abre com o aviso `sem_estoque_agora` no topo. Recusa por item devolve o pedido inteiro, com a linha
   ilegível mantida e marcada "Corrigir" (`carrinho.ler(manter_ilegiveis=True)`). Cada formulário é
   uma entrada de `FLUXOS` (`Fluxo`: `catalogo`, `exemplo_busca`, `exemplo_inicio`,
-  `exemplo_destino`, `icone`, `publico`, `regra_quantidade` e, opcionais, `folha`, `centros` e
-  `pede_ocorrencia`; contratos em
+  `exemplo_destino`, `icone`, `publico`, `regra_quantidade` e, opcionais, `folha`, `centros`,
+  `pede_ocorrencia`, `geral` e `titulo_inicio`; o AB é o formulário `geral`, para o que não se
+  encaixa nos outros: na página inicial vem à parte, depois da pergunta "Seu material não se
+  encaixa…", com o `titulo_inicio` "Ferramentas, peças e outros materiais", que só vale ali; contratos em
   `specs/005-consistencia-formularios-publicos/contracts/configuracao-fluxo.md` e
   `specs/006-reposicao-pecas-viaturas/contracts/configuracao-fluxo.md`): um formulário novo é uma
   entrada, uma função `formulario_*` em `catalogos.py` e um valor em `Pedido.Origem` (migration de

@@ -70,6 +70,10 @@ class Fluxo:
     # O pedido passa por autorização da Segurança do Trabalho antes do atendimento (spec 008): o
     # registro cria a `AutorizacaoPedido` e o aviso ao almoxarifado só sai depois de autorizado.
     exige_autorizacao: bool = False
+    # O formulário para o que não se encaixa nos outros: na página inicial, um cartão à parte,
+    # depois dos outros, com `titulo_inicio` (quando preenchido) no lugar do título.
+    geral: bool = False
+    titulo_inicio: str = ""
 
     @property
     def max_itens(self) -> int | None:
@@ -123,9 +127,11 @@ FLUXOS: dict[str, Fluxo] = {
         titulo="Ferramentas, peças e materiais",
         catalogo=formulario_ab,
         exemplo_busca="Ex.: luva, fita veda rosca",
-        exemplo_inicio="Ex.: luva, botina, fita veda-rosca, cimento",
+        exemplo_inicio="Ex.: ferramenta, cimento, fita veda-rosca",
         icone="catalogo",
         centros=partial(centros_do_formulario, AB),
+        geral=True,
+        titulo_inicio="Ferramentas, peças e outros materiais",
     ),
     "oficina": Fluxo(
         nome="oficina",

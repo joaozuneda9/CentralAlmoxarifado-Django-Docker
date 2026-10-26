@@ -4,6 +4,25 @@
    topo continua branco. */
 body.pagina-inicio { background: var(--superficie); }
 .opcoes-formulario { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--esp-3); }
+/* O formulário geral: a pergunta entre dois fios e um cartão largo, branco e tracejado, com
+   ícone, texto e seta numa linha. */
+.opcoes-geral { display: grid; gap: var(--esp-2); }
+.opcoes-separador { display: flex; align-items: center; gap: var(--esp-2); margin: 0; color: var(--texto-secundario); font-size: 0.9em; text-align: center; }
+.opcoes-separador::before, .opcoes-separador::after { content: ""; flex: 1 1 var(--esp-3); border-top: 1px solid var(--borda); }
+.cartao-opcao-geral {
+  grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; column-gap: var(--esp-2);
+  border: 1px dashed var(--texto-suave); box-shadow: none; padding: var(--esp-3);
+}
+.cartao-opcao-geral > .icone { color: var(--texto-secundario); }
+.cartao-opcao-texto { display: grid; gap: var(--esp-meio); }
+.cartao-opcao-geral .cartao-opcao-seta { margin-top: 0; }
+/* No celular, empilhado como os outros cartões, e a pergunta sem os fios. */
+@media (max-width: 640px) {
+  .cartao-opcao-geral { grid-template-columns: minmax(0, 1fr); row-gap: var(--esp-1); }
+  .cartao-opcao-geral .cartao-opcao-seta { margin-top: var(--esp-1); }
+  .opcoes-separador::before, .opcoes-separador::after { content: none; }
+  .opcoes-separador { justify-content: center; }
+}
 .busca-materiais { display: grid; grid-template-columns: minmax(0, 1fr); gap: 12px; }
 
 /* "Seu pedido" numa seção própria: coluna ao lado dos passos, fixa ao rolar, com o botão de envio
