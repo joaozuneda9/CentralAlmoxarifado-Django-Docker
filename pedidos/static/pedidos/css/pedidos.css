@@ -1,8 +1,5 @@
 /* Pedidos: o que é próprio desta app. Componentes comuns ficam em interface/css. */
 
-/* Página inicial: fundo em superfície para os cartões brancos dos formulários se destacarem; o
-   topo continua branco. */
-body.pagina-inicio { background: var(--superficie); }
 .opcoes-formulario { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: var(--esp-3); }
 /* O formulário geral: a pergunta entre dois fios e um cartão largo, branco e tracejado, com
    ícone, texto e seta numa linha. */
