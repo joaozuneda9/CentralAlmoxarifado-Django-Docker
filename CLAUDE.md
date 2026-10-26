@@ -211,7 +211,8 @@ transações precisam se comportar como no servidor.
   abre com o aviso `sem_estoque_agora` no topo. Recusa por item devolve o pedido inteiro, com a linha
   ilegível mantida e marcada "Corrigir" (`carrinho.ler(manter_ilegiveis=True)`). Cada formulário é
   uma entrada de `FLUXOS` (`Fluxo`: `catalogo`, `exemplo_busca`, `exemplo_inicio`,
-  `exemplo_destino`, `icone`, `publico`, `regra_quantidade` e, opcionais, `folha`, `centros`,
+  `exemplo_destino`, `rotulo_destino` ("Número da viatura" nas viaturas), `icone`, `publico`,
+  `regra_quantidade` e, opcionais, `folha`, `centros`,
   `pede_ocorrencia`, `geral` e `titulo_inicio`; o AB é o formulário `geral`, para o que não se
   encaixa nos outros: na página inicial vem à parte, depois da pergunta "Seu material não se
   encaixa…", com o `titulo_inicio` "Ferramentas, peças e outros materiais", que só vale ali; contratos em

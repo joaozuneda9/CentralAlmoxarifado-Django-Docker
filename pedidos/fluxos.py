@@ -56,6 +56,7 @@ class Fluxo:
     exemplo_inicio: str = ""  # o exemplo no cartão da página inicial
     icone: str = "caixa"  # o ícone do cartão da página inicial
     exemplo_destino: str = "Posto de trabalho, placa do veículo ou setor"  # no campo de destino
+    rotulo_destino: str = "Destino dos materiais"  # o rótulo do campo de destino
     publico: bool = True
     # Quem pede segue a unidade do material (`por_unidade`); a equipe aceita fração em qualquer
     # unidade (`livre`).
@@ -117,6 +118,7 @@ FLUXOS: dict[str, Fluxo] = {
         exemplo_inicio="Ex.: cotovelo, luva, tee, registro, tubo",
         icone="atualizar",
         exemplo_destino="Centro de custo da equipe",
+        rotulo_destino="Número da viatura",
         folha=folha_viaturas,
         centros=partial(centros_do_formulario, VIATURAS),
         pede_ocorrencia=True,
