@@ -256,6 +256,8 @@ def aguardar_modo_inclusao(frame: Frame) -> None:
     depois de achado o ID, e o laço não chegaria a consultar o novo; `timeout=0` desligaria o
     limite). O prazo de 6 s é nominal: o tempo restante é recalculado a cada volta, a pausa é
     limitada a ele e a última consulta, depois do prazo, pode somar até esse teto por campo."""
+    from playwright.sync_api import Error as ErroPlaywright
+
     prazo = time.monotonic() + ESPERA_MODO_INCLUSAO_MS / 1000
 
     def restante_ms() -> float:
@@ -270,6 +272,10 @@ def aguardar_modo_inclusao(frame: Frame) -> None:
                 habilitados = habilitado("Data e Hora da Saída") and habilitado("Recebimento")
         except ErroAberturaFormulario:
             habilitados = False  # campo ausente ou trocado: consulta de novo na próxima volta
+        except ErroPlaywright as e:
+            if "not attached to the DOM" not in str(e):
+                raise
+            habilitados = False  # o SCPI trocou o input durante a consulta
         if habilitados:
             return
         restante = restante_ms()

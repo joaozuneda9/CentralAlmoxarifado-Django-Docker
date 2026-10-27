@@ -695,3 +695,38 @@ def test_linha_confere_com_quantidade_fracionaria():
 
     milhar = Item(cadpro="016.002.098", qtd="1.5", placa="")
     assert linha_confere({"Código": "016.002.098", "QTD": "1,5"}, milhar)
+
+
+def test_aguardar_modo_inclusao_trata_input_desconectado_como_ainda_nao_habilitado(monkeypatch):
+    from playwright.sync_api import Error as ErroPlaywright
+
+    from scpi import lancador
+
+    class CampoTrocado:
+        chamadas = 0
+
+        def is_enabled(self, timeout=None):
+            CampoTrocado.chamadas += 1
+            if CampoTrocado.chamadas == 1:
+                raise ErroPlaywright("Element is not attached to the DOM")
+            return True
+
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: CampoTrocado())
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # não levanta: consulta o input novo
+
+
+def test_aguardar_modo_inclusao_nao_engole_outros_erros_do_playwright(monkeypatch):
+    import pytest
+    from playwright.sync_api import Error as ErroPlaywright
+
+    from scpi import lancador
+
+    class CampoComErro:
+        def is_enabled(self, timeout=None):
+            raise ErroPlaywright("Target page, context or browser has been closed")
+
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: CampoComErro())
+
+    with pytest.raises(ErroPlaywright, match="has been closed"):
+        lancador.aguardar_modo_inclusao(_Quadro())
