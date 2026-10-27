@@ -305,3 +305,21 @@ def test_preencher_nao_repete_erro_que_nao_e_de_abertura(monkeypatch):
     with pytest.raises(ErroSCPI):
         nav.preencher(_Requisicao())
     assert limpezas == []
+
+
+def test_falha_de_abertura_converte_so_o_timeout_do_playwright():
+    import pytest
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    from scpi.lancador import ErroAberturaFormulario, falha_de_abertura
+    from scpi.requisicoes import ErroSCPI
+
+    with pytest.raises(ErroAberturaFormulario, match="botão Inserir não respondeu"):
+        with falha_de_abertura("botão Inserir não respondeu"):
+            raise TimeoutPlaywright("Locator.click: Timeout 30000ms exceeded")
+
+    # mensagem do SCPI (ErroSCPI comum) não é repetida: passa como está
+    with pytest.raises(ErroSCPI) as excecao:
+        with falha_de_abertura("x"):
+            raise ErroSCPI("SCPI respondeu 'Ajax Error'")
+    assert not isinstance(excecao.value, ErroAberturaFormulario)

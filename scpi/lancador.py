@@ -220,14 +220,28 @@ class ErroAberturaFormulario(ErroSCPI):
 TENTATIVAS_ABERTURA = 3
 
 
+@contextmanager
+def falha_de_abertura(descricao: str) -> Iterator[None]:
+    """Converte o timeout de um passo da abertura em `ErroAberturaFormulario` (repetível).
+    Só envolve cliques e esperas da abertura; as caixas de mensagem do SCPI ficam de fora."""
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    try:
+        yield
+    except TimeoutPlaywright as e:
+        raise ErroAberturaFormulario(f"{descricao}: {resumo_erro(e)}") from e
+
+
 def abrir_formulario(frame: Frame) -> None:
     """Inserir → 'Nova Requisição de Saída' → Produto ▾ → Lançamento Manual."""
-    frame.get_by_role("tab", name="Dados da Saída").click()
+    with falha_de_abertura("aba 'Dados da Saída' não respondeu"):
+        frame.get_by_role("tab", name="Dados da Saída").click()
     dialogo = janela(frame, "Nova Requisição de Saída")
     produto = dialogo.get_by_role("button", name="Produto", exact=True).first
     # logo após (re)abrir a tela o SCPI às vezes ignora o primeiro clique em Inserir
     for tentativa in range(3):
-        frame.get_by_role("button", name="Inserir", exact=True).click()
+        with falha_de_abertura("botão Inserir não respondeu"):
+            frame.get_by_role("button", name="Inserir", exact=True).click()
         try:
             produto.wait_for(state="visible", timeout=10000)
             break
@@ -258,9 +272,11 @@ def abrir_formulario(frame: Frame) -> None:
     # o SCPI às vezes responde com "Ajax Error" e deixa o formulário inconsistente
     checar_mensagem(frame, "abrir formulário")
 
-    data = campo(frame, "Data e Hora da Saída")
-    data.wait_for(state="visible", timeout=TIMEOUT)
-    if not data.is_enabled() or not campo(frame, "Recebimento").is_enabled():
+    with falha_de_abertura("campos do formulário não apareceram"):
+        data = campo(frame, "Data e Hora da Saída")
+        data.wait_for(state="visible", timeout=TIMEOUT)
+        habilitados = data.is_enabled() and campo(frame, "Recebimento").is_enabled()
+    if not habilitados:
         raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
 
 
