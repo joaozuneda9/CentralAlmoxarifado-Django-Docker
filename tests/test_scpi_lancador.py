@@ -393,3 +393,41 @@ def test_preencher_celula_segue_tentando_se_a_mascara_nao_some(monkeypatch):
 
     assert lancador.preencher_celula(_Quadro(), 1, "QTD", "10") is entrada
     assert abertas == ["QTD", "QTD"]
+
+
+class _CampoQueHabilitaDepois:
+    """Campo ExtJS que só fica habilitado na n-ésima consulta (o SCPI habilita depois)."""
+
+    def __init__(self, consultas_ate_habilitar):
+        self.restantes = consultas_ate_habilitar
+
+    def is_enabled(self):
+        if self.restantes > 0:
+            self.restantes -= 1
+            return False
+        return True
+
+
+def test_aguardar_modo_inclusao_espera_o_scpi_habilitar_os_campos(monkeypatch):
+    from scpi import lancador
+
+    campos = {
+        "Data e Hora da Saída": _CampoQueHabilitaDepois(3),
+        "Recebimento": _CampoQueHabilitaDepois(0),
+    }
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campos[rotulo])
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # não levanta: habilitou na 4ª consulta
+    assert campos["Data e Hora da Saída"].restantes == 0
+
+
+def test_aguardar_modo_inclusao_desiste_se_os_campos_nunca_habilitam(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+
+    campo_travado = _CampoQueHabilitaDepois(10**6)
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campo_travado)
+
+    with pytest.raises(lancador.ErroAberturaFormulario, match="modo de inclusão"):
+        lancador.aguardar_modo_inclusao(_Quadro())

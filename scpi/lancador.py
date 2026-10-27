@@ -241,6 +241,27 @@ def campo_da_abertura(frame: Frame, rotulo: str):
         raise ErroAberturaFormulario(str(e)) from e
 
 
+ESPERA_MODO_INCLUSAO_MS = 6000
+INTERVALO_MODO_INCLUSAO_MS = 250
+
+
+def aguardar_modo_inclusao(frame: Frame) -> None:
+    """O SCPI habilita os campos do formulário um instante depois de a máscara sumir: uma
+    única conferência logo em seguida dava falso negativo (o print tirado 0,1 s depois do erro
+    já mostrava o formulário em inclusão). Consulta por até `ESPERA_MODO_INCLUSAO_MS` antes de
+    declarar que o formulário não entrou em modo de inclusão."""
+    for _ in range(ESPERA_MODO_INCLUSAO_MS // INTERVALO_MODO_INCLUSAO_MS):
+        with falha_de_abertura("campos do formulário não apareceram"):
+            habilitados = (
+                campo_da_abertura(frame, "Data e Hora da Saída").is_enabled()
+                and campo_da_abertura(frame, "Recebimento").is_enabled()
+            )
+        if habilitados:
+            return
+        frame.page.wait_for_timeout(INTERVALO_MODO_INCLUSAO_MS)
+    raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
+
+
 def abrir_formulario(frame: Frame) -> None:
     """Inserir → 'Nova Requisição de Saída' → Produto ▾ → Lançamento Manual."""
     with falha_de_abertura("aba 'Dados da Saída' não respondeu"):
@@ -284,9 +305,7 @@ def abrir_formulario(frame: Frame) -> None:
     with falha_de_abertura("campos do formulário não apareceram"):
         data = campo_da_abertura(frame, "Data e Hora da Saída")
         data.wait_for(state="visible", timeout=TIMEOUT)
-        habilitados = data.is_enabled() and campo_da_abertura(frame, "Recebimento").is_enabled()
-    if not habilitados:
-        raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
+    aguardar_modo_inclusao(frame)
 
 
 def preencher_cabecalho(frame: Frame, req: Requisicao) -> None:
