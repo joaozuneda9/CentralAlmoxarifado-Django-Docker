@@ -393,3 +393,340 @@ def test_preencher_celula_segue_tentando_se_a_mascara_nao_some(monkeypatch):
 
     assert lancador.preencher_celula(_Quadro(), 1, "QTD", "10") is entrada
     assert abertas == ["QTD", "QTD"]
+
+
+class _CampoQueHabilitaDepois:
+    """Campo ExtJS que só fica habilitado na n-ésima consulta (o SCPI habilita depois)."""
+
+    def __init__(self, consultas_ate_habilitar):
+        self.restantes = consultas_ate_habilitar
+
+    def is_enabled(self, timeout=None):
+        self.timeouts = getattr(self, "timeouts", []) + [timeout]
+        if self.restantes > 0:
+            self.restantes -= 1
+            return False
+        return True
+
+
+def test_aguardar_modo_inclusao_espera_o_scpi_habilitar_os_campos(monkeypatch):
+    from scpi import lancador
+
+    campos = {
+        "Data e Hora da Saída": _CampoQueHabilitaDepois(3),
+        "Recebimento": _CampoQueHabilitaDepois(0),
+    }
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campos[rotulo])
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # não levanta: habilitou na 4ª consulta
+    assert campos["Data e Hora da Saída"].restantes == 0
+
+
+def test_aguardar_modo_inclusao_desiste_se_os_campos_nunca_habilitam(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+
+    campo_travado = _CampoQueHabilitaDepois(10**6)
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campo_travado)
+
+    with pytest.raises(lancador.ErroAberturaFormulario, match="modo de inclusão"):
+        lancador.aguardar_modo_inclusao(_Quadro())
+
+
+def _item_n(cadpro, qtd):
+    from scpi.requisicoes import Item
+
+    return Item(cadpro=cadpro, qtd=qtd, placa="")
+
+
+def _linha_n(cadpro, qtd):
+    return {
+        "Código": cadpro,
+        "Descrição do Produto/Serviço": "X",
+        "QTD": qtd,
+        "Est. Atual": "100",
+        "C.Custo": "7",
+    }
+
+
+class _PedidoDe:
+    cod_ccusto = "7"
+
+    def __init__(self, itens):
+        self.itens = itens
+
+
+def test_linha_confere_compara_codigo_qtd_e_placa():
+    from scpi.lancador import linha_confere
+    from scpi.requisicoes import Item
+
+    item = Item(cadpro="016.002.098", qtd="5", placa="")
+    assert linha_confere({"Código": "016.002.098", "QTD": "5"}, item)
+    assert not linha_confere({"Código": "016.002.098", "QTD": "1"}, item)
+    assert not linha_confere({"Código": "016.002.099", "QTD": "5"}, item)
+
+    com_placa = Item(cadpro="006.010.011", qtd="1", placa="R77")
+    assert linha_confere({"Código": "006.010.011", "QTD": "1", "Placa (F9)": "R-77"}, com_placa)
+    assert not linha_confere({"Código": "006.010.011", "QTD": "1", "Placa (F9)": ""}, com_placa)
+
+
+def test_aguardar_grid_estavel_exige_leituras_iguais_seguidas(monkeypatch):
+    from scpi import lancador
+
+    leituras = iter([[1], [2], [2], [2], [2], [2]])
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: next(leituras))
+
+    assert lancador.aguardar_grid_estavel(_Quadro()) is True
+    assert next(leituras, None) is None  # parou assim que ficou igual por 2 s
+
+
+def test_reconciliar_itens_corrige_a_qtd_devolvida_ao_padrao(monkeypatch):
+    from scpi import lancador
+
+    # AV-000094: itens 3, 5 e 8 voltaram a QTD 1 depois de conferidos
+    itens = [_item_n("001.000.001", "3"), _item_n("001.000.002", "5"), _item_n("001.000.003", "4")]
+    grids = iter(
+        [
+            [
+                _linha_n("001.000.001", "3"),
+                _linha_n("001.000.002", "1"),
+                _linha_n("001.000.003", "1"),
+            ],
+            [
+                _linha_n("001.000.001", "3"),
+                _linha_n("001.000.002", "5"),
+                _linha_n("001.000.003", "4"),
+            ],
+        ]
+    )
+    refeitos = []
+    monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: next(grids))
+    monkeypatch.setattr(lancador, "definir_qtd", lambda frame, i, item, etapa: refeitos.append(i))
+
+    lancador.reconciliar_itens(_Quadro(), _PedidoDe(itens))
+    assert refeitos == [1, 2]
+
+
+def test_reconciliar_itens_recusa_o_lote_se_a_divergencia_persiste(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    itens = [_item_n("001.000.001", "3"), _item_n("001.000.002", "5")]
+    monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
+    monkeypatch.setattr(
+        lancador,
+        "ler_itens",
+        lambda frame: [_linha_n("001.000.001", "3"), _linha_n("001.000.002", "1")],
+    )
+    refeitos = []
+    monkeypatch.setattr(lancador, "definir_qtd", lambda frame, i, item, etapa: refeitos.append(i))
+
+    with pytest.raises(ErroSCPI, match="grid mostra QTD 1, esperado 5"):
+        lancador.reconciliar_itens(_Quadro(), _PedidoDe(itens))
+    assert refeitos == [1] * (lancador.RODADAS_RECONCILIACAO - 1)
+
+
+def test_aguardar_modo_inclusao_consulta_de_novo_depois_da_ultima_pausa(monkeypatch):
+    from scpi import lancador
+
+    # habilita só na consulta posterior à última pausa (prazo todo consumido)
+    consultas = lancador.ESPERA_MODO_INCLUSAO_MS // lancador.INTERVALO_MODO_INCLUSAO_MS
+    campos = {
+        "Data e Hora da Saída": _CampoQueHabilitaDepois(consultas),
+        "Recebimento": _CampoQueHabilitaDepois(0),
+    }
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campos[rotulo])
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # não levanta
+
+
+def test_reconciliar_itens_recusa_o_lote_se_o_grid_nao_estabiliza(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: False)
+    # mesmo com a leitura igual ao pedido, o grid instável não autoriza o salvamento
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha_n("001.000.001", "3")])
+
+    with pytest.raises(ErroSCPI, match="grid não estabilizou"):
+        lancador.reconciliar_itens(_Quadro(), _PedidoDe([_item_n("001.000.001", "3")]))
+
+
+def test_aguardar_modo_inclusao_espera_o_campo_recebimento_aparecer(monkeypatch):
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    chamadas = {"Recebimento": 0}
+    data = _CampoQueHabilitaDepois(0)
+
+    def campo(frame, rotulo):
+        if rotulo == "Recebimento":
+            chamadas["Recebimento"] += 1
+            if chamadas["Recebimento"] <= 2:  # ainda não existe no DOM
+                raise ErroSCPI("campo 'Recebimento' não encontrado no formulário")
+        return data
+
+    monkeypatch.setattr(lancador, "campo", campo)
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # não levanta: segue esperando
+    assert chamadas["Recebimento"] == 3
+
+
+def test_reconciliar_itens_recusa_o_grid_com_linha_a_mais(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    itens = [_item_n("001.000.001", "3")]
+    monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
+    # o item esperado é um prefixo válido, mas há uma linha codificada a mais
+    monkeypatch.setattr(
+        lancador,
+        "ler_itens",
+        lambda frame: [_linha_n("001.000.001", "3"), _linha_n("001.000.009", "1")],
+    )
+
+    with pytest.raises(ErroSCPI, match="grid tem 2 item"):
+        lancador.reconciliar_itens(_Quadro(), _PedidoDe(itens))
+
+
+def test_aguardar_modo_inclusao_limita_cada_consulta_ao_prazo(monkeypatch):
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    from scpi import lancador
+
+    class CampoQueExpiraUmaVez(_CampoQueHabilitaDepois):
+        def is_enabled(self, timeout=None):
+            if not hasattr(self, "expirou"):
+                self.expirou = True
+                self.timeouts = [timeout]
+                raise TimeoutPlaywright("Locator.is_enabled: Timeout exceeded")  # input trocado
+            return super().is_enabled(timeout)
+
+    campo = CampoQueExpiraUmaVez(0)
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campo)
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # a expiração vira "ainda não": consulta de novo
+    assert all(t == lancador.CONSULTA_MODO_INCLUSAO_MS for t in campo.timeouts)
+
+
+def test_aguardar_modo_inclusao_recalcula_o_prazo_antes_de_cada_consulta(monkeypatch):
+    import pytest
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    from scpi import lancador
+
+    agora = [0.0]
+    monkeypatch.setattr(lancador.time, "monotonic", lambda: agora[0])
+    consultas = []
+
+    class Data:
+        def is_enabled(self, timeout=None):
+            consultas.append(("data", timeout))
+            if len(consultas) == 1:
+                agora[0] += 5.9  # a primeira consulta consome quase todo o prazo de 6 s
+            return True
+
+    class Recebimento:
+        def is_enabled(self, timeout=None):
+            consultas.append(("recebimento", timeout))
+            raise TimeoutPlaywright("input substituído")
+
+    campos = {"Data e Hora da Saída": Data(), "Recebimento": Recebimento()}
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campos[rotulo])
+
+    quadro = _Quadro()
+    quadro.page.wait_for_timeout = lambda ms: agora.__setitem__(0, agora[0] + ms / 1000)
+
+    with pytest.raises(lancador.ErroAberturaFormulario):
+        lancador.aguardar_modo_inclusao(quadro)
+
+    # nenhuma consulta espera o prazo inteiro: cada uma tem o teto curto e o laço consulta de novo
+    assert consultas[0][1] == lancador.CONSULTA_MODO_INCLUSAO_MS
+    assert consultas[1][1] == lancador.CONSULTA_MODO_INCLUSAO_MS
+    # o que restava do prazo (100 ms) vira pausa; a volta seguinte também só recebe o mínimo
+    assert all(t == lancador.CONSULTA_MODO_INCLUSAO_MS for _, t in consultas[1:])
+
+
+def test_aguardar_modo_inclusao_limita_a_pausa_ao_prazo(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+
+    agora = [0.0]
+    pausas = []
+    monkeypatch.setattr(lancador.time, "monotonic", lambda: agora[0])
+
+    class Quadro(_Quadro):
+        def __init__(self):
+            super().__init__()
+            self.page.wait_for_timeout = lambda ms: (
+                pausas.append(ms),
+                agora.__setitem__(0, agora[0] + ms / 1000),
+            )
+
+    class Campo:
+        def is_enabled(self, timeout=None):
+            return False
+
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: Campo())
+
+    with pytest.raises(lancador.ErroAberturaFormulario):
+        lancador.aguardar_modo_inclusao(Quadro())
+    assert pausas and all(0 < p <= lancador.INTERVALO_MODO_INCLUSAO_MS for p in pausas)
+    assert sum(pausas) <= lancador.ESPERA_MODO_INCLUSAO_MS
+
+
+def test_linha_confere_com_quantidade_fracionaria():
+    from scpi.lancador import linha_confere
+    from scpi.requisicoes import Item
+
+    item = Item(cadpro="016.002.098", qtd="0,33", placa="")
+    assert linha_confere({"Código": "016.002.098", "QTD": "0,33"}, item)
+    assert not linha_confere({"Código": "016.002.098", "QTD": "1"}, item)
+    assert not linha_confere({"Código": "016.002.098", "QTD": "0,3"}, item)
+
+    milhar = Item(cadpro="016.002.098", qtd="1.5", placa="")
+    assert linha_confere({"Código": "016.002.098", "QTD": "1,5"}, milhar)
+
+
+def test_aguardar_modo_inclusao_trata_input_desconectado_como_ainda_nao_habilitado(monkeypatch):
+    from playwright.sync_api import Error as ErroPlaywright
+
+    from scpi import lancador
+
+    class CampoTrocado:
+        chamadas = 0
+
+        def is_enabled(self, timeout=None):
+            CampoTrocado.chamadas += 1
+            if CampoTrocado.chamadas == 1:
+                raise ErroPlaywright("Element is not attached to the DOM")
+            return True
+
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: CampoTrocado())
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # não levanta: consulta o input novo
+
+
+def test_aguardar_modo_inclusao_nao_engole_outros_erros_do_playwright(monkeypatch):
+    import pytest
+    from playwright.sync_api import Error as ErroPlaywright
+
+    from scpi import lancador
+
+    class CampoComErro:
+        def is_enabled(self, timeout=None):
+            raise ErroPlaywright("Target page, context or browser has been closed")
+
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: CampoComErro())
+
+    with pytest.raises(ErroPlaywright, match="has been closed"):
+        lancador.aguardar_modo_inclusao(_Quadro())
