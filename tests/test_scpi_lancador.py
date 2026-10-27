@@ -682,3 +682,16 @@ def test_aguardar_modo_inclusao_limita_a_pausa_ao_prazo(monkeypatch):
         lancador.aguardar_modo_inclusao(Quadro())
     assert pausas and all(0 < p <= lancador.INTERVALO_MODO_INCLUSAO_MS for p in pausas)
     assert sum(pausas) <= lancador.ESPERA_MODO_INCLUSAO_MS
+
+
+def test_linha_confere_com_quantidade_fracionaria():
+    from scpi.lancador import linha_confere
+    from scpi.requisicoes import Item
+
+    item = Item(cadpro="016.002.098", qtd="0,33", placa="")
+    assert linha_confere({"Código": "016.002.098", "QTD": "0,33"}, item)
+    assert not linha_confere({"Código": "016.002.098", "QTD": "1"}, item)
+    assert not linha_confere({"Código": "016.002.098", "QTD": "0,3"}, item)
+
+    milhar = Item(cadpro="016.002.098", qtd="1.5", placa="")
+    assert linha_confere({"Código": "016.002.098", "QTD": "1,5"}, milhar)
