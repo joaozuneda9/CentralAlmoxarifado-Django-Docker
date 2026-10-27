@@ -15,8 +15,10 @@
 > **Situação em 27/10/2026.** A produção em uso fica em `C:\docker\producao`, e não em
 > uma pasta `almoxarifado-prod`. Ela ainda roda pelo `compose.yaml` legado, alterado
 > localmente (`git status` mostra ` M compose.yaml`): projeto `almoxarifado_prod` (com
-> underscore), imagem construída no próprio servidor (`build: .`) e web publicado em
-> `0.0.0.0:8012`. O `deploy/atualizar.ps1` opera o projeto `almoxarifado-prod` (com
+> underscore), imagem do GHCR fixada por digest no próprio `compose.yaml` (sem `build`),
+> web escutando e publicado na porta 8012 (`0.0.0.0:8012`) e sem os parâmetros
+> `--trusted-proxy` do waitress (acesso por HTTP direto). Atualizar a imagem é trocar o
+> digest nesse arquivo e recriar os serviços do projeto `almoxarifado_prod`. O `deploy/atualizar.ps1` opera o projeto `almoxarifado-prod` (com
 > hífen), com volumes próprios, e exige clone sem alterações; por isso **não se aplica
 > a essa pasta enquanto ela não for migrada**, e o marcador `.deploy-ambiente` não deve
 > ser criado nela só para o script aceitar: o `-Aplicar` subiria uma instalação nova, com
