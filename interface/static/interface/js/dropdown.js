@@ -579,12 +579,17 @@
   // digitável (o mesmo comportamento; muda só o que o campo guarda).
   function ligarCampoDeTexto(d) {
     var input = d.controle;
-    input.addEventListener("focus", function () {
+    function abrirPeloCampo() {
       if (aberto !== d) abrir(d, "");
       if (d.digitavel) input.select(); // digitar já troca o escolhido
+    }
+    // No meio de um gesto (a caneta move o foco já ao encostar), o foco não abre a lista nem fecha
+    // a outra: quem abre é o `click`, que só vem se o gesto foi um toque.
+    input.addEventListener("focus", function () {
+      if (!gestoEmAndamento()) abrirPeloCampo();
     });
     input.addEventListener("click", function () {
-      if (aberto !== d) abrir(d, "");
+      if (aberto !== d) abrirPeloCampo();
     });
     input.addEventListener("input", function () {
       if (aberto === d) {
