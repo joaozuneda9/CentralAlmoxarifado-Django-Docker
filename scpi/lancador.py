@@ -232,6 +232,15 @@ def falha_de_abertura(descricao: str) -> Iterator[None]:
         raise ErroAberturaFormulario(f"{descricao}: {resumo_erro(e)}") from e
 
 
+def campo_da_abertura(frame: Frame, rotulo: str):
+    """`campo` para a abertura do formulário: campo ainda ausente é falha de abertura
+    (repetível), não erro do lote."""
+    try:
+        return campo(frame, rotulo)
+    except ErroSCPI as e:
+        raise ErroAberturaFormulario(str(e)) from e
+
+
 def abrir_formulario(frame: Frame) -> None:
     """Inserir → 'Nova Requisição de Saída' → Produto ▾ → Lançamento Manual."""
     with falha_de_abertura("aba 'Dados da Saída' não respondeu"):
@@ -273,9 +282,9 @@ def abrir_formulario(frame: Frame) -> None:
     checar_mensagem(frame, "abrir formulário")
 
     with falha_de_abertura("campos do formulário não apareceram"):
-        data = campo(frame, "Data e Hora da Saída")
+        data = campo_da_abertura(frame, "Data e Hora da Saída")
         data.wait_for(state="visible", timeout=TIMEOUT)
-        habilitados = data.is_enabled() and campo(frame, "Recebimento").is_enabled()
+        habilitados = data.is_enabled() and campo_da_abertura(frame, "Recebimento").is_enabled()
     if not habilitados:
         raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
 

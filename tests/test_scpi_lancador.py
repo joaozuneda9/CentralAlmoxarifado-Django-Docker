@@ -323,3 +323,18 @@ def test_falha_de_abertura_converte_so_o_timeout_do_playwright():
         with falha_de_abertura("x"):
             raise ErroSCPI("SCPI respondeu 'Ajax Error'")
     assert not isinstance(excecao.value, ErroAberturaFormulario)
+
+
+def test_campo_da_abertura_ausente_vira_erro_de_abertura(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    def sem_campo(frame, rotulo):
+        raise ErroSCPI(f"campo '{rotulo}' não encontrado no formulário")
+
+    monkeypatch.setattr(lancador, "campo", sem_campo)
+
+    with pytest.raises(lancador.ErroAberturaFormulario, match="Recebimento"):
+        lancador.campo_da_abertura(_Quadro(), "Recebimento")
