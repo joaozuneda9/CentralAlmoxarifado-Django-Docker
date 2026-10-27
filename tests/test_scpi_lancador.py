@@ -107,6 +107,27 @@ def test_preencher_celula_desiste_depois_das_tentativas(monkeypatch):
     assert entrada.falhas == 99 - lancador.TENTATIVAS_CELULA
 
 
+def test_preencher_celula_tenta_de_novo_quando_o_editor_nao_abre(monkeypatch):
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    entrada = _Entrada(falhas=0)
+    chamadas = []
+
+    def editar(frame, linha, coluna):
+        chamadas.append(coluna)
+        if len(chamadas) == 1:
+            raise ErroSCPI("não consegui abrir a célula 'QTD' da linha 2 do grid")
+        return entrada
+
+    monkeypatch.setattr(lancador, "editar_celula", editar)
+    monkeypatch.setattr(lancador, "aguardar_mascara", lambda frame: None)
+
+    assert lancador.preencher_celula(_Quadro(), 1, "QTD", "10") is entrada
+    assert chamadas == ["QTD", "QTD"]
+    assert entrada.preenchidos == ["10"]
+
+
 def _limpeza_simulada(monkeypatch, dialogos):
     """Prepara `cancelar_formulario` com Salvar e Cancelar desabilitados e Inserir habilitado
     (o `_Quadro` faz o papel do Inserir); `dialogos` é a sequência de respostas de 'há diálogo

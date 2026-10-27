@@ -357,15 +357,15 @@ def preencher_celula(frame: Frame, linha: int, coluna: str, valor: str):
     from playwright.sync_api import TimeoutError as TimeoutPlaywright
 
     for tentativa in range(1, TENTATIVAS_CELULA + 1):
-        entrada = editar_celula(frame, linha, coluna)
         try:
+            entrada = editar_celula(frame, linha, coluna)
             entrada.fill(valor, timeout=ESPERA_FOCO_MS)
             return entrada
-        except TimeoutPlaywright:
+        except (TimeoutPlaywright, ErroSCPI):
             if tentativa == TENTATIVAS_CELULA:
                 raise
             log(
-                f"  editor da célula '{coluna}' (linha {linha + 1}) perdeu o foco; "
+                f"  editor da célula '{coluna}' (linha {linha + 1}) não abriu ou perdeu o foco; "
                 f"reabrindo ({tentativa}/{TENTATIVAS_CELULA})"
             )
             aguardar_mascara(frame)
