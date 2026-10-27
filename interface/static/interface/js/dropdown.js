@@ -148,6 +148,15 @@
   document.addEventListener("pointercancel", function () {
     toque = null;
   });
+  // O teclado nunca está no meio de um gesto (e desfaz um que ficou pendurado).
+  document.addEventListener("keydown", function () {
+    toque = null;
+  });
+  // Com a caneta, o foco pode mudar já ao encostar: quem fecha um painel no `focusin` espera o
+  // fim do gesto, e o toque, se for um toque, fecha ao soltar (`aoTocarFora`).
+  function gestoEmAndamento() {
+    return toque !== null;
+  }
   // A distância é conferida de novo ao soltar: o navegador pode juntar ou atrasar os `pointermove`.
   document.addEventListener("pointerup", function (e) {
     if (!toque || e.pointerId !== toque.id) return;
@@ -162,6 +171,7 @@
     fecharPainel: fecharPainel,
     painelAberto: painelAberto,
     aoTocarFora: aoTocarFora,
+    gestoEmAndamento: gestoEmAndamento,
   };
 
   // ---- fontes das opções ------------------------------------------------------------------------
@@ -729,6 +739,7 @@
     if (aberto && !aberto.raiz.contains(alvo) && !noResumoDoPainel(aberto, alvo)) fechar(aberto, false);
   });
   document.addEventListener("focusin", function (e) {
+    if (gestoEmAndamento()) return;
     if (aberto && !aberto.raiz.contains(e.target) && !noResumoDoPainel(aberto, e.target)) fechar(aberto, false);
   });
   // `toggle` não sobe pela árvore: escuta na captura. Fechar o <details> do painel fecha o painel.
