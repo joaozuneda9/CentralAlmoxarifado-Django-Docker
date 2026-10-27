@@ -135,22 +135,26 @@
     }
     toque = e.isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, alvo: e.target } : null;
   });
+  function andou(e) {
+    return Math.hypot(e.clientX - toque.x, e.clientY - toque.y) > FOLGA_TOQUE;
+  }
   document.addEventListener(
     "pointermove",
     function (e) {
-      if (!toque || e.pointerId !== toque.id) return;
-      if (Math.hypot(e.clientX - toque.x, e.clientY - toque.y) > FOLGA_TOQUE) toque = null;
+      if (toque && e.pointerId === toque.id && andou(e)) toque = null;
     },
     { passive: true }
   );
   document.addEventListener("pointercancel", function () {
     toque = null;
   });
+  // A distância é conferida de novo ao soltar: o navegador pode juntar ou atrasar os `pointermove`.
   document.addEventListener("pointerup", function (e) {
     if (!toque || e.pointerId !== toque.id) return;
     var alvo = toque.alvo;
+    var arrastou = andou(e);
     toque = null;
-    avisarToque(alvo);
+    if (!arrastou) avisarToque(alvo);
   });
 
   window.Dropdown = {
