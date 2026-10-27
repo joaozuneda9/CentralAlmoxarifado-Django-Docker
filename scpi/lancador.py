@@ -401,7 +401,10 @@ def preencher_celula(frame: Frame, linha: int, coluna: str, valor: str):
                 f"  editor da célula '{coluna}' (linha {linha + 1}) não abriu ou perdeu o foco; "
                 f"reabrindo ({tentativa}/{TENTATIVAS_CELULA})"
             )
-            aguardar_mascara(frame)
+            try:
+                aguardar_mascara(frame)
+            except TimeoutPlaywright:
+                pass  # máscara ainda visível: a próxima tentativa decide
 
 
 ESTABILIDADE_LINHA_MS = 400

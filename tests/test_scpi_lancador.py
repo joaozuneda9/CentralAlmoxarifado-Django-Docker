@@ -373,3 +373,23 @@ def test_preencher_registra_a_mensagem_do_scpi_antes_de_limpar(monkeypatch, capl
         nav.preencher(_Requisicao())
     assert "SCPI exibiu 'Ajax Error 500' antes da limpeza" in caplog.text
     assert len(limpezas) == 1
+
+
+def test_preencher_celula_segue_tentando_se_a_mascara_nao_some(monkeypatch):
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    from scpi import lancador
+
+    entrada = _Entrada(falhas=1)
+    abertas = []
+
+    def mascara_presa(frame):
+        raise TimeoutPlaywright("Page.wait_for_function: Timeout 60000ms exceeded")
+
+    monkeypatch.setattr(
+        lancador, "editar_celula", lambda frame, linha, coluna: abertas.append(coluna) or entrada
+    )
+    monkeypatch.setattr(lancador, "aguardar_mascara", mascara_presa)
+
+    assert lancador.preencher_celula(_Quadro(), 1, "QTD", "10") is entrada
+    assert abertas == ["QTD", "QTD"]
