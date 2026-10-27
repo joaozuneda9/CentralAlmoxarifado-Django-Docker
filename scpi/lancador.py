@@ -345,6 +345,32 @@ def editar_celula(frame: Frame, linha: int, coluna: str):
     return frame.locator("input:focus")
 
 
+ESPERA_FOCO_MS = 5000  # por tentativa: o editor que perde o foco não volta sozinho
+TENTATIVAS_CELULA = 3
+
+
+def preencher_celula(frame: Frame, linha: int, coluna: str, valor: str):
+    """Abre o editor da célula e preenche. O SCPI às vezes redesenha a linha (o lookup do
+    produto termina) entre a conferência do editor e o `fill`, e o editor fecha: sem foco, o
+    `fill` esperaria 30 s e o lote inteiro cairia. Aqui cada tentativa espera pouco e, se o
+    foco sumiu, reabre o editor e preenche de novo (o `fill` é idempotente). Devolve o input."""
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    for tentativa in range(1, TENTATIVAS_CELULA + 1):
+        entrada = editar_celula(frame, linha, coluna)
+        try:
+            entrada.fill(valor, timeout=ESPERA_FOCO_MS)
+            return entrada
+        except TimeoutPlaywright:
+            if tentativa == TENTATIVAS_CELULA:
+                raise
+            log(
+                f"  editor da célula '{coluna}' (linha {linha + 1}) perdeu o foco; "
+                f"reabrindo ({tentativa}/{TENTATIVAS_CELULA})"
+            )
+            aguardar_mascara(frame)
+
+
 def adicionar_itens(frame: Frame, req: Requisicao) -> None:
     frame.get_by_role("tab", name="Itens da Saída").click()
     aguardar_mascara(frame)
@@ -366,8 +392,7 @@ def adicionar_itens(frame: Frame, req: Requisicao) -> None:
             aguardar_mascara(frame)
             checar_mensagem(frame, etapa)
 
-            qtd = editar_celula(frame, i, "QTD")
-            qtd.fill(item.qtd)
+            qtd = preencher_celula(frame, i, "QTD", item.qtd)
             qtd.press("Tab")
             aguardar_mascara(frame)
             checar_mensagem(frame, etapa)
@@ -375,8 +400,7 @@ def adicionar_itens(frame: Frame, req: Requisicao) -> None:
 
             # centro de custo de veículo já preenche a placa no item
             if item.placa and norm_placa(ler_itens(frame)[i].get("Placa (F9)", "")) != item.placa:
-                placa = editar_celula(frame, i, "Placa (F9)")
-                placa.fill(item.placa)
+                placa = preencher_celula(frame, i, "Placa (F9)", item.placa)
                 sair_do_campo(frame, placa, f"{etapa} placa")
                 frame.page.keyboard.press("Escape")  # sai do hodômetro "Atual" sem alterar
         except ErroSCPI:
@@ -520,10 +544,17 @@ def fechar_janelas_pos_salvar(frame: Frame) -> None:
         frame.page.wait_for_timeout(1000)
 
 
+def dialogo_nova_requisicao_aberto(frame: Frame) -> bool:
+    """O diálogo 'Nova Requisição de Saída' é modal: aberto, cobre a tela inteira, mas o
+    Playwright ainda vê Inserir habilitado atrás dele."""
+    return janela(frame, "Nova Requisição de Saída").is_visible()
+
+
 def cancelar_formulario(frame: Frame) -> None:
     """Descarta o formulário aberto para voltar a um estado limpo. Fechar o diálogo 'Nova
     Requisição de Saída' com Escape deixa a tela em modo de inclusão só um instante depois,
-    por isso repete até Salvar desabilitado e Inserir habilitado."""
+    por isso repete até Salvar desabilitado, Inserir habilitado e nenhum diálogo aberto (um
+    diálogo esquecido bloqueia todo o lote seguinte)."""
     inserir = frame.get_by_role("button", name="Inserir", exact=True).filter(visible=True).first
     for _ in range(3):
         for _ in range(3):
@@ -542,7 +573,11 @@ def cancelar_formulario(frame: Frame) -> None:
             aguardar_mascara(frame)
             frame.page.wait_for_timeout(1000)
         # fora do modo de inclusão o Salvar fica desabilitado e o Inserir habilitado
-        if not botao_habilitado(botao_formulario(frame, "Salvar")) and botao_habilitado(inserir):
+        if (
+            not botao_habilitado(botao_formulario(frame, "Salvar"))
+            and botao_habilitado(inserir)
+            and not dialogo_nova_requisicao_aberto(frame)
+        ):
             return
     raise ErroSCPI("formulário continua em modo de inclusão após Cancelar")
 
