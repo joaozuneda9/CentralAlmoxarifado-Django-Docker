@@ -212,20 +212,51 @@ def abrir_tela_saida(frame: Frame) -> None:
     aguardar_mascara(frame)
 
 
+class ErroAberturaFormulario(ErroSCPI):
+    """O formulário de inclusão não abriu. Nada foi preenchido nem salvo, então o lote pode
+    recomeçar do zero depois de limpar a tela."""
+
+
+TENTATIVAS_ABERTURA = 3
+
+
+@contextmanager
+def falha_de_abertura(descricao: str) -> Iterator[None]:
+    """Converte o timeout de um passo da abertura em `ErroAberturaFormulario` (repetível).
+    Só envolve cliques e esperas da abertura; as caixas de mensagem do SCPI ficam de fora."""
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    try:
+        yield
+    except TimeoutPlaywright as e:
+        raise ErroAberturaFormulario(f"{descricao}: {resumo_erro(e)}") from e
+
+
+def campo_da_abertura(frame: Frame, rotulo: str):
+    """`campo` para a abertura do formulário: campo ainda ausente é falha de abertura
+    (repetível), não erro do lote."""
+    try:
+        return campo(frame, rotulo)
+    except ErroSCPI as e:
+        raise ErroAberturaFormulario(str(e)) from e
+
+
 def abrir_formulario(frame: Frame) -> None:
     """Inserir → 'Nova Requisição de Saída' → Produto ▾ → Lançamento Manual."""
-    frame.get_by_role("tab", name="Dados da Saída").click()
+    with falha_de_abertura("aba 'Dados da Saída' não respondeu"):
+        frame.get_by_role("tab", name="Dados da Saída").click()
     dialogo = janela(frame, "Nova Requisição de Saída")
     produto = dialogo.get_by_role("button", name="Produto", exact=True).first
     # logo após (re)abrir a tela o SCPI às vezes ignora o primeiro clique em Inserir
     for tentativa in range(3):
-        frame.get_by_role("button", name="Inserir", exact=True).click()
+        with falha_de_abertura("botão Inserir não respondeu"):
+            frame.get_by_role("button", name="Inserir", exact=True).click()
         try:
             produto.wait_for(state="visible", timeout=10000)
             break
         except Exception:
             if tentativa == 2:
-                raise ErroSCPI(
+                raise ErroAberturaFormulario(
                     "diálogo 'Nova Requisição de Saída' não abriu após 3 cliques em Inserir"
                 ) from None
             checar_mensagem(frame, "abrir formulário")
@@ -243,17 +274,19 @@ def abrir_formulario(frame: Frame) -> None:
             break
         except Exception:
             if tentativa == 2:
-                raise ErroSCPI(
+                raise ErroAberturaFormulario(
                     "submenu 'Lançamento Manual' não abriu após 3 cliques em Produto ▾"
                 ) from None
     aguardar_mascara(frame)
     # o SCPI às vezes responde com "Ajax Error" e deixa o formulário inconsistente
     checar_mensagem(frame, "abrir formulário")
 
-    data = campo(frame, "Data e Hora da Saída")
-    data.wait_for(state="visible", timeout=TIMEOUT)
-    if not data.is_enabled() or not campo(frame, "Recebimento").is_enabled():
-        raise ErroSCPI("formulário não entrou em modo de inclusão")
+    with falha_de_abertura("campos do formulário não apareceram"):
+        data = campo_da_abertura(frame, "Data e Hora da Saída")
+        data.wait_for(state="visible", timeout=TIMEOUT)
+        habilitados = data.is_enabled() and campo_da_abertura(frame, "Recebimento").is_enabled()
+    if not habilitados:
+        raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
 
 
 def preencher_cabecalho(frame: Frame, req: Requisicao) -> None:
@@ -345,6 +378,92 @@ def editar_celula(frame: Frame, linha: int, coluna: str):
     return frame.locator("input:focus")
 
 
+ESPERA_FOCO_MS = 5000  # por tentativa: o editor que perde o foco não volta sozinho
+TENTATIVAS_CELULA = 3
+
+
+def preencher_celula(frame: Frame, linha: int, coluna: str, valor: str):
+    """Abre o editor da célula e preenche. O SCPI às vezes redesenha a linha (o lookup do
+    produto termina) entre a conferência do editor e o `fill`, e o editor fecha: sem foco, o
+    `fill` esperaria 30 s e o lote inteiro cairia. Aqui cada tentativa espera pouco e, se o
+    foco sumiu, reabre o editor e preenche de novo (o `fill` é idempotente). Devolve o input."""
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    for tentativa in range(1, TENTATIVAS_CELULA + 1):
+        try:
+            entrada = editar_celula(frame, linha, coluna)
+            entrada.fill(valor, timeout=ESPERA_FOCO_MS)
+            return entrada
+        except (TimeoutPlaywright, ErroSCPI):
+            if tentativa == TENTATIVAS_CELULA:
+                raise
+            log(
+                f"  editor da célula '{coluna}' (linha {linha + 1}) não abriu ou perdeu o foco; "
+                f"reabrindo ({tentativa}/{TENTATIVAS_CELULA})"
+            )
+            try:
+                aguardar_mascara(frame)
+            except TimeoutPlaywright:
+                pass  # máscara ainda visível: a próxima tentativa decide
+
+
+ESTABILIDADE_LINHA_MS = 400
+LEITURAS_ESTAVEIS = 2
+ESPERA_LINHA_ESTAVEL_MS = 10000
+TENTATIVAS_QTD = 3
+
+
+def aguardar_linha_estavel(frame: Frame, i: int, item: Item) -> bool:
+    """Depois do Tab no código, o SCPI termina o lookup do produto de forma assíncrona e
+    redesenha a linha (volta a QTD para 1 e fecha o editor). Espera a linha mostrar o produto
+    e ficar igual em leituras seguidas antes de mexer na QTD. Devolve False se não estabilizou:
+    quem chama segue, e a conferência da QTD decide."""
+    anterior = None
+    iguais = 0
+    for _ in range(ESPERA_LINHA_ESTAVEL_MS // ESTABILIDADE_LINHA_MS):
+        linhas = ler_itens(frame)
+        atual = linhas[i] if i < len(linhas) else None
+        pronta = bool(atual) and atual.get("Código") == item.cadpro
+        pronta = pronta and bool(atual.get("Descrição do Produto/Serviço", "").strip())
+        iguais = iguais + 1 if pronta and atual == anterior else 0
+        if iguais >= LEITURAS_ESTAVEIS - 1 and pronta:
+            return True
+        anterior = atual
+        frame.page.wait_for_timeout(ESTABILIDADE_LINHA_MS)
+    return False
+
+
+def qtd_confere(linha: dict[str, str], item: Item) -> bool:
+    try:
+        return parse_decimal_br(linha.get("QTD", "")) == Decimal(item.qtd.replace(",", "."))
+    except InvalidOperation:
+        return False
+
+
+def definir_qtd(frame: Frame, i: int, item: Item, etapa: str) -> None:
+    """Preenche a QTD e confere no grid; se o SCPI a devolveu ao padrão (redesenho tardio da
+    linha), espera a linha estabilizar e preenche de novo. Depois das tentativas, deixa a
+    divergência para `conferir_item`, que recusa o lote."""
+    for tentativa in range(1, TENTATIVAS_QTD + 1):
+        if not aguardar_linha_estavel(frame, i, item):
+            # linha ausente ou com outro produto: preencher agora poderia gravar a QTD errada
+            raise ErroSCPI(f"{etapa}: a linha do item não estabilizou no grid")
+        qtd = preencher_celula(frame, i, "QTD", item.qtd)
+        qtd.press("Tab")
+        aguardar_mascara(frame)
+        checar_mensagem(frame, etapa)
+        frame.page.keyboard.press("Escape")
+        linhas = ler_itens(frame)
+        if i < len(linhas) and qtd_confere(linhas[i], item):
+            return
+        if tentativa < TENTATIVAS_QTD:
+            valor = linhas[i].get("QTD") if i < len(linhas) else None
+            log(
+                f"  QTD voltou para {valor!r} no grid; "
+                f"preenchendo de novo ({tentativa}/{TENTATIVAS_QTD})"
+            )
+
+
 def adicionar_itens(frame: Frame, req: Requisicao) -> None:
     frame.get_by_role("tab", name="Itens da Saída").click()
     aguardar_mascara(frame)
@@ -366,17 +485,11 @@ def adicionar_itens(frame: Frame, req: Requisicao) -> None:
             aguardar_mascara(frame)
             checar_mensagem(frame, etapa)
 
-            qtd = editar_celula(frame, i, "QTD")
-            qtd.fill(item.qtd)
-            qtd.press("Tab")
-            aguardar_mascara(frame)
-            checar_mensagem(frame, etapa)
-            frame.page.keyboard.press("Escape")
+            definir_qtd(frame, i, item, etapa)
 
             # centro de custo de veículo já preenche a placa no item
             if item.placa and norm_placa(ler_itens(frame)[i].get("Placa (F9)", "")) != item.placa:
-                placa = editar_celula(frame, i, "Placa (F9)")
-                placa.fill(item.placa)
+                placa = preencher_celula(frame, i, "Placa (F9)", item.placa)
                 sair_do_campo(frame, placa, f"{etapa} placa")
                 frame.page.keyboard.press("Escape")  # sai do hodômetro "Atual" sem alterar
         except ErroSCPI:
@@ -520,10 +633,17 @@ def fechar_janelas_pos_salvar(frame: Frame) -> None:
         frame.page.wait_for_timeout(1000)
 
 
+def dialogo_nova_requisicao_aberto(frame: Frame) -> bool:
+    """O diálogo 'Nova Requisição de Saída' é modal: aberto, cobre a tela inteira, mas o
+    Playwright ainda vê Inserir habilitado atrás dele."""
+    return janela(frame, "Nova Requisição de Saída").is_visible()
+
+
 def cancelar_formulario(frame: Frame) -> None:
     """Descarta o formulário aberto para voltar a um estado limpo. Fechar o diálogo 'Nova
     Requisição de Saída' com Escape deixa a tela em modo de inclusão só um instante depois,
-    por isso repete até Salvar desabilitado e Inserir habilitado."""
+    por isso repete até Salvar desabilitado, Inserir habilitado e nenhum diálogo aberto (um
+    diálogo esquecido bloqueia todo o lote seguinte)."""
     inserir = frame.get_by_role("button", name="Inserir", exact=True).filter(visible=True).first
     for _ in range(3):
         for _ in range(3):
@@ -542,7 +662,11 @@ def cancelar_formulario(frame: Frame) -> None:
             aguardar_mascara(frame)
             frame.page.wait_for_timeout(1000)
         # fora do modo de inclusão o Salvar fica desabilitado e o Inserir habilitado
-        if not botao_habilitado(botao_formulario(frame, "Salvar")) and botao_habilitado(inserir):
+        if (
+            not botao_habilitado(botao_formulario(frame, "Salvar"))
+            and botao_habilitado(inserir)
+            and not dialogo_nova_requisicao_aberto(frame)
+        ):
             return
     raise ErroSCPI("formulário continua em modo de inclusão após Cancelar")
 
@@ -608,11 +732,35 @@ class NavegadorSCPI(Sessao):
         super().__init__(playwright)
         self._salvar = None
 
+    @staticmethod
+    def _registrar_mensagem_scpi(frame: Frame) -> None:
+        """Loga a caixa de mensagem aberta antes de a limpeza a fechar com OK. Não usa
+        `checar_mensagem`, que levantaria erro e cortaria a repetição."""
+        try:
+            msg = mensagem_scpi(frame)
+        except Exception:
+            return
+        if msg:
+            log(f"  SCPI exibiu '{' '.join(msg['texto'].split())}' antes da limpeza")
+
     def preencher(self, req: Requisicao) -> None:
         frame = self.frame
         try:
             log("  etapa: abrir formulário")
-            abrir_formulario(frame)
+            for tentativa in range(1, TENTATIVAS_ABERTURA + 1):
+                try:
+                    abrir_formulario(frame)
+                    break
+                except ErroAberturaFormulario as e:
+                    if tentativa == TENTATIVAS_ABERTURA:
+                        raise
+                    log(
+                        f"  {e}; limpando a tela e tentando de novo "
+                        f"({tentativa}/{TENTATIVAS_ABERTURA})"
+                    )
+                    self._registrar_mensagem_scpi(frame)
+                    self.limpar()
+                    frame = self.frame  # a limpeza pode ter reaberto o módulo
             log(
                 f"  etapa: cabeçalho (data {req.data}, tipo {req.tipo_saida}, "
                 f"c.custo {req.cod_ccusto})"
