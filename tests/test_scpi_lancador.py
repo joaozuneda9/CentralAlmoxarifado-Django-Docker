@@ -517,3 +517,31 @@ def test_reconciliar_itens_recusa_o_lote_se_a_divergencia_persiste(monkeypatch):
     with pytest.raises(ErroSCPI, match="grid mostra QTD 1, esperado 5"):
         lancador.reconciliar_itens(_Quadro(), _PedidoDe(itens))
     assert refeitos == [1] * (lancador.RODADAS_RECONCILIACAO - 1)
+
+
+def test_aguardar_modo_inclusao_consulta_de_novo_depois_da_ultima_pausa(monkeypatch):
+    from scpi import lancador
+
+    # habilita só na consulta posterior à última pausa (prazo todo consumido)
+    consultas = lancador.ESPERA_MODO_INCLUSAO_MS // lancador.INTERVALO_MODO_INCLUSAO_MS
+    campos = {
+        "Data e Hora da Saída": _CampoQueHabilitaDepois(consultas),
+        "Recebimento": _CampoQueHabilitaDepois(0),
+    }
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campos[rotulo])
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # não levanta
+
+
+def test_reconciliar_itens_recusa_o_lote_se_o_grid_nao_estabiliza(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: False)
+    # mesmo com a leitura igual ao pedido, o grid instável não autoriza o salvamento
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha_n("A", "3")])
+
+    with pytest.raises(ErroSCPI, match="grid não estabilizou"):
+        lancador.reconciliar_itens(_Quadro(), _PedidoDe([_item_n("A", "3")]))

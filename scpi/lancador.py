@@ -250,7 +250,8 @@ def aguardar_modo_inclusao(frame: Frame) -> None:
     única conferência logo em seguida dava falso negativo (o print tirado 0,1 s depois do erro
     já mostrava o formulário em inclusão). Consulta por até `ESPERA_MODO_INCLUSAO_MS` antes de
     declarar que o formulário não entrou em modo de inclusão."""
-    for _ in range(ESPERA_MODO_INCLUSAO_MS // INTERVALO_MODO_INCLUSAO_MS):
+    pausas = ESPERA_MODO_INCLUSAO_MS // INTERVALO_MODO_INCLUSAO_MS
+    for tentativa in range(pausas + 1):  # uma consulta a mais: depois da última pausa
         with falha_de_abertura("campos do formulário não apareceram"):
             habilitados = (
                 campo_da_abertura(frame, "Data e Hora da Saída").is_enabled()
@@ -258,7 +259,8 @@ def aguardar_modo_inclusao(frame: Frame) -> None:
             )
         if habilitados:
             return
-        frame.page.wait_for_timeout(INTERVALO_MODO_INCLUSAO_MS)
+        if tentativa < pausas:
+            frame.page.wait_for_timeout(INTERVALO_MODO_INCLUSAO_MS)
     raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
 
 
@@ -521,7 +523,11 @@ def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
     nada é salvo: o `conferir_item` de cada linha acontece cedo demais para pegar isso."""
     total = len(req.itens)
     for rodada in range(1, RODADAS_RECONCILIACAO + 1):
-        aguardar_grid_estavel(frame)
+        if not aguardar_grid_estavel(frame):
+            # uma leitura que coincide com o pedido não vale com o SCPI ainda mexendo no grid
+            raise ErroSCPI(
+                f"conferência final: grid não estabilizou ({rodada}/{RODADAS_RECONCILIACAO})"
+            )
         linhas = ler_itens(frame)
         divergentes = [
             i
