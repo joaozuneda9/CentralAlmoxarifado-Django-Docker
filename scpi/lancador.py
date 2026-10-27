@@ -442,7 +442,9 @@ def definir_qtd(frame: Frame, i: int, item: Item, etapa: str) -> None:
     linha), espera a linha estabilizar e preenche de novo. Depois das tentativas, deixa a
     divergência para `conferir_item`, que recusa o lote."""
     for tentativa in range(1, TENTATIVAS_QTD + 1):
-        aguardar_linha_estavel(frame, i, item)
+        if not aguardar_linha_estavel(frame, i, item):
+            # linha ausente ou com outro produto: preencher agora poderia gravar a QTD errada
+            raise ErroSCPI(f"{etapa}: a linha do item não estabilizou no grid")
         qtd = preencher_celula(frame, i, "QTD", item.qtd)
         qtd.press("Tab")
         aguardar_mascara(frame)
@@ -727,6 +729,17 @@ class NavegadorSCPI(Sessao):
         super().__init__(playwright)
         self._salvar = None
 
+    @staticmethod
+    def _registrar_mensagem_scpi(frame: Frame) -> None:
+        """Loga a caixa de mensagem aberta antes de a limpeza a fechar com OK. Não usa
+        `checar_mensagem`, que levantaria erro e cortaria a repetição."""
+        try:
+            msg = mensagem_scpi(frame)
+        except Exception:
+            return
+        if msg:
+            log(f"  SCPI exibiu '{' '.join(msg['texto'].split())}' antes da limpeza")
+
     def preencher(self, req: Requisicao) -> None:
         frame = self.frame
         try:
@@ -742,6 +755,7 @@ class NavegadorSCPI(Sessao):
                         f"  {e}; limpando a tela e tentando de novo "
                         f"({tentativa}/{TENTATIVAS_ABERTURA})"
                     )
+                    self._registrar_mensagem_scpi(frame)
                     self.limpar()
                     frame = self.frame  # a limpeza pode ter reaberto o módulo
             log(

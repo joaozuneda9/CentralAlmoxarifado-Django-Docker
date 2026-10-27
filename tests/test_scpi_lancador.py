@@ -338,3 +338,38 @@ def test_campo_da_abertura_ausente_vira_erro_de_abertura(monkeypatch):
 
     with pytest.raises(lancador.ErroAberturaFormulario, match="Recebimento"):
         lancador.campo_da_abertura(_Quadro(), "Recebimento")
+
+
+def test_definir_qtd_nao_preenche_com_a_linha_instavel(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    monkeypatch.setattr(lancador, "aguardar_linha_estavel", lambda frame, i, item: False)
+    monkeypatch.setattr(
+        lancador,
+        "preencher_celula",
+        lambda *a: pytest.fail("não deveria preencher a QTD com a linha instável"),
+    )
+
+    with pytest.raises(ErroSCPI, match="não estabilizou"):
+        lancador.definir_qtd(_Quadro(), 0, _item("5"), "item 1/1")
+
+
+def test_preencher_registra_a_mensagem_do_scpi_antes_de_limpar(monkeypatch, caplog):
+    import logging
+
+    from scpi import lancador
+    from scpi.lancador import ErroAberturaFormulario
+
+    erro = ErroAberturaFormulario("formulário não entrou em modo de inclusão")
+    nav, limpezas = _navegador_com_abertura(monkeypatch, [erro, None])
+    monkeypatch.setattr(
+        lancador, "mensagem_scpi", lambda frame: {"texto": "Ajax   Error\n500", "botoes": ["OK"]}
+    )
+
+    with caplog.at_level(logging.INFO, logger="scpi.lancamento"):
+        nav.preencher(_Requisicao())
+    assert "SCPI exibiu 'Ajax Error 500' antes da limpeza" in caplog.text
+    assert len(limpezas) == 1
