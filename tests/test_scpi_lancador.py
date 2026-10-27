@@ -401,7 +401,8 @@ class _CampoQueHabilitaDepois:
     def __init__(self, consultas_ate_habilitar):
         self.restantes = consultas_ate_habilitar
 
-    def is_enabled(self):
+    def is_enabled(self, timeout=None):
+        self.timeouts = getattr(self, "timeouts", []) + [timeout]
         if self.restantes > 0:
             self.restantes -= 1
             return False
@@ -594,3 +595,44 @@ def test_reconciliar_itens_recusa_o_grid_com_linha_a_mais(monkeypatch):
 
     with pytest.raises(ErroSCPI, match="grid tem 2 item"):
         lancador.reconciliar_itens(_Quadro(), _PedidoDe(itens))
+
+
+def test_aguardar_modo_inclusao_limita_cada_consulta_ao_prazo(monkeypatch):
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    from scpi import lancador
+
+    class CampoQueExpiraUmaVez(_CampoQueHabilitaDepois):
+        def is_enabled(self, timeout=None):
+            if not hasattr(self, "expirou"):
+                self.expirou = True
+                self.timeouts = [timeout]
+                raise TimeoutPlaywright("Locator.is_enabled: Timeout exceeded")  # input trocado
+            return super().is_enabled(timeout)
+
+    campo = CampoQueExpiraUmaVez(0)
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campo)
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # a expiração vira "ainda não": consulta de novo
+    assert all(t <= lancador.ESPERA_MODO_INCLUSAO_MS for t in campo.timeouts)
+
+
+def test_aguardar_modo_inclusao_respeita_o_prazo_monotonico(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+
+    relogio = iter(range(0, 1000))  # cada leitura do relógio avança 1 s
+    monkeypatch.setattr(lancador.time, "monotonic", lambda: float(next(relogio)))
+    consultas = []
+
+    class Campo:
+        def is_enabled(self, timeout=None):
+            consultas.append(timeout)
+            return False
+
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: Campo())
+
+    with pytest.raises(lancador.ErroAberturaFormulario):
+        lancador.aguardar_modo_inclusao(_Quadro())
+    assert len(consultas) < 2 * (lancador.ESPERA_MODO_INCLUSAO_MS // 1000) + 3  # parou no prazo

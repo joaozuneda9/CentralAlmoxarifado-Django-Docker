@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
@@ -243,25 +244,30 @@ def campo_da_abertura(frame: Frame, rotulo: str):
 
 ESPERA_MODO_INCLUSAO_MS = 6000
 INTERVALO_MODO_INCLUSAO_MS = 250
+MIN_CONSULTA_MODO_INCLUSAO_MS = 250
 
 
 def aguardar_modo_inclusao(frame: Frame) -> None:
     """O SCPI habilita os campos do formulário um instante depois de a máscara sumir: uma
     única conferência logo em seguida dava falso negativo (o print tirado 0,1 s depois do erro
     já mostrava o formulário em inclusão). Consulta por até `ESPERA_MODO_INCLUSAO_MS` antes de
-    declarar que o formulário não entrou em modo de inclusão."""
+    declarar que o formulário não entrou em modo de inclusão. Cada consulta é limitada ao
+    tempo que resta do prazo (o `is_enabled` espera 30 s por padrão se o SCPI trocar o input)."""
+    prazo = time.monotonic() + ESPERA_MODO_INCLUSAO_MS / 1000
     pausas = ESPERA_MODO_INCLUSAO_MS // INTERVALO_MODO_INCLUSAO_MS
     for tentativa in range(pausas + 1):  # uma consulta a mais: depois da última pausa
+        restante_ms = max((prazo - time.monotonic()) * 1000, MIN_CONSULTA_MODO_INCLUSAO_MS)
         try:
             with falha_de_abertura("campos do formulário não apareceram"):
-                habilitados = (
-                    campo_da_abertura(frame, "Data e Hora da Saída").is_enabled()
-                    and campo_da_abertura(frame, "Recebimento").is_enabled()
-                )
+                habilitados = campo_da_abertura(frame, "Data e Hora da Saída").is_enabled(
+                    timeout=restante_ms
+                ) and campo_da_abertura(frame, "Recebimento").is_enabled(timeout=restante_ms)
         except ErroAberturaFormulario:
-            habilitados = False  # campo ainda ausente: segue esperando, dentro do prazo
+            habilitados = False  # campo ausente ou trocado: consulta de novo na próxima volta
         if habilitados:
             return
+        if time.monotonic() >= prazo:
+            break
         if tentativa < pausas:
             frame.page.wait_for_timeout(INTERVALO_MODO_INCLUSAO_MS)
     raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
