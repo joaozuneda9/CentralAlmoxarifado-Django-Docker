@@ -108,7 +108,71 @@
     return true;
   }
 
-  window.Dropdown = { abrirPainel: abrirPainel, fecharPainel: fecharPainel, painelAberto: painelAberto };
+  // ---- toque fora ---------------------------------------------------------------------------------
+  // Quem fecha um painel por um toque fora dele se registra em `aoTocarFora(fn)`; `fn` recebe o
+  // elemento tocado. Com o mouse, avisa ao apertar o botão, como sempre. Com o dedo (ou a caneta),
+  // só quando ele sai da tela sem ter andado mais que FOLGA_TOQUE: encostar para arrastar a página
+  // não fecha nada (e, quando o navegador assume a rolagem, o toque vem cancelado). Um segundo dedo
+  // (pinça) também desfaz o toque.
+  var FOLGA_TOQUE = 10;
+  var aoTocar = [];
+  var toque = null;
+
+  function avisarToque(alvo) {
+    aoTocar.forEach(function (fn) {
+      fn(alvo);
+    });
+  }
+  function aoTocarFora(fn) {
+    aoTocar.push(fn);
+  }
+
+  document.addEventListener("pointerdown", function (e) {
+    if (e.pointerType === "mouse") {
+      toque = null;
+      avisarToque(e.target);
+      return;
+    }
+    toque = e.isPrimary ? { id: e.pointerId, x: e.clientX, y: e.clientY, alvo: e.target } : null;
+  });
+  function andou(e) {
+    return Math.hypot(e.clientX - toque.x, e.clientY - toque.y) > FOLGA_TOQUE;
+  }
+  document.addEventListener(
+    "pointermove",
+    function (e) {
+      if (toque && e.pointerId === toque.id && andou(e)) toque = null;
+    },
+    { passive: true }
+  );
+  document.addEventListener("pointercancel", function () {
+    toque = null;
+  });
+  // O teclado nunca está no meio de um gesto (e desfaz um que ficou pendurado).
+  document.addEventListener("keydown", function () {
+    toque = null;
+  });
+  // Com a caneta, o foco pode mudar já ao encostar: quem fecha um painel no `focusin` espera o
+  // fim do gesto, e o toque, se for um toque, fecha ao soltar (`aoTocarFora`).
+  function gestoEmAndamento() {
+    return toque !== null;
+  }
+  // A distância é conferida de novo ao soltar: o navegador pode juntar ou atrasar os `pointermove`.
+  document.addEventListener("pointerup", function (e) {
+    if (!toque || e.pointerId !== toque.id) return;
+    var alvo = toque.alvo;
+    var arrastou = andou(e);
+    toque = null;
+    if (!arrastou) avisarToque(alvo);
+  });
+
+  window.Dropdown = {
+    abrirPainel: abrirPainel,
+    fecharPainel: fecharPainel,
+    painelAberto: painelAberto,
+    aoTocarFora: aoTocarFora,
+    gestoEmAndamento: gestoEmAndamento,
+  };
 
   // ---- fontes das opções ------------------------------------------------------------------------
 
@@ -515,12 +579,17 @@
   // digitável (o mesmo comportamento; muda só o que o campo guarda).
   function ligarCampoDeTexto(d) {
     var input = d.controle;
-    input.addEventListener("focus", function () {
+    function abrirPeloCampo() {
       if (aberto !== d) abrir(d, "");
       if (d.digitavel) input.select(); // digitar já troca o escolhido
+    }
+    // No meio de um gesto (a caneta move o foco já ao encostar), o foco não abre a lista nem fecha
+    // a outra: quem abre é o `click`, que só vem se o gesto foi um toque.
+    input.addEventListener("focus", function () {
+      if (!gestoEmAndamento()) abrirPeloCampo();
     });
     input.addEventListener("click", function () {
-      if (aberto !== d) abrir(d, "");
+      if (aberto !== d) abrirPeloCampo();
     });
     input.addEventListener("input", function () {
       if (aberto === d) {
@@ -671,10 +740,11 @@
     return !!(detalhes && resumo && resumo.parentNode === detalhes);
   }
 
-  document.addEventListener("pointerdown", function (e) {
-    if (aberto && !aberto.raiz.contains(e.target) && !noResumoDoPainel(aberto, e.target)) fechar(aberto, false);
+  aoTocarFora(function (alvo) {
+    if (aberto && !aberto.raiz.contains(alvo) && !noResumoDoPainel(aberto, alvo)) fechar(aberto, false);
   });
   document.addEventListener("focusin", function (e) {
+    if (gestoEmAndamento()) return;
     if (aberto && !aberto.raiz.contains(e.target) && !noResumoDoPainel(aberto, e.target)) fechar(aberto, false);
   });
   // `toggle` não sobe pela árvore: escuta na captura. Fechar o <details> do painel fecha o painel.

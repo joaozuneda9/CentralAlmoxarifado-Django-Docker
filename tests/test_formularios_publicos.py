@@ -249,8 +249,26 @@ def test_inicio_no_estilo_clean(client):
     r = client.get(reverse("pedidos:inicio"))
     # Limpeza, AB, reposição de peças das viaturas (spec 006), oficina mecânica (spec 007) e EPIs
     # (spec 008).
-    assert r.text.count('class="cartao cartao-opcao"') == 5
+    assert r.text.count('class="cartao cartao-opcao') == 5
     assert '<p class="rotulo-secao">Almoxarifado SAEP</p>' in r.text
+
+
+def test_inicio_mostra_o_formulario_geral_a_parte_e_por_ultimo(client):
+    html = client.get(reverse("pedidos:inicio")).text
+    # Os quatro específicos na grade; o AB, fora dela, depois da pergunta e com o título da inicial.
+    grade, geral = html.split('class="opcoes-geral"')
+    assert grade.count('class="cartao cartao-opcao"') == 4
+    assert reverse("pedidos:formulario", args=["ab"]) not in grade
+    assert geral.index("não se encaixa em nenhum dos tipos acima") < geral.index(
+        'class="cartao cartao-opcao cartao-opcao-geral" href="'
+        + reverse("pedidos:formulario", args=["ab"])
+    )
+    assert "Ferramentas, peças e outros materiais" in geral
+    assert "Ferramentas, peças e materiais" not in html
+    # O título novo é só da página inicial: o formulário continua com o de sempre.
+    formulario = client.get(reverse("pedidos:formulario", args=["ab"])).text
+    assert "Ferramentas, peças e materiais" in formulario
+    assert "outros materiais" not in formulario
 
 
 def test_filtro_por_grupo_e_subgrupo_igual_nos_dois_formularios(client):
@@ -461,8 +479,8 @@ def test_inicio_fala_pelo_conteudo_com_exemplos(client):
         assert termo not in r
     limpeza = r[r.index("Limpeza, copa e escritório") :]
     assert "Ex.: café, copo descartável, água sanitária, caneta" in limpeza
-    ab = r[r.index("Ferramentas, peças e materiais") :]
-    assert "Ex.: luva, botina, fita veda-rosca, cimento" in ab
+    ab = r[r.index("Ferramentas, peças e outros materiais") :]
+    assert "Ex.: ferramenta, cimento, fita veda-rosca" in ab
 
 
 @pytest.mark.parametrize(

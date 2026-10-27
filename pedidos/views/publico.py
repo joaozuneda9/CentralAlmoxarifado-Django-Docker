@@ -31,7 +31,15 @@ from pedidos.views.materiais import contexto_busca, urls_do_fluxo
 
 def inicio(request):
     """Página pública dos funcionários (sem login)."""
-    return render(request, "pedidos/inicio.html", {"fluxos_publicos": fluxos_publicos()})
+    publicos = fluxos_publicos()
+    return render(
+        request,
+        "pedidos/inicio.html",
+        {
+            "fluxos_publicos": [f for f in publicos if not f.geral],
+            "fluxos_gerais": [f for f in publicos if f.geral],
+        },
+    )
 
 
 def _contexto(fluxo, catalogo, envio, **extra) -> dict:
