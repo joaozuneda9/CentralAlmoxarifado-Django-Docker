@@ -483,6 +483,70 @@ def definir_qtd(frame: Frame, i: int, item: Item, etapa: str) -> None:
             )
 
 
+ESTABILIDADE_GRID_MS = 2000
+INTERVALO_GRID_MS = 500
+ESPERA_GRID_ESTAVEL_MS = 15000
+RODADAS_RECONCILIACAO = 3
+
+
+def aguardar_grid_estavel(frame: Frame) -> bool:
+    """Espera o grid de itens ficar igual por `ESTABILIDADE_GRID_MS`. O SCPI responde aos
+    lookups de forma assíncrona e uma resposta tardia pode redesenhar uma linha já conferida
+    (a QTD volta a 1, como visto no AV-000094): só vale conferir o grid depois que ele parar
+    de mudar. Devolve False se não estabilizou no tempo."""
+    leituras_iguais = 0
+    anterior = None
+    leituras = ESTABILIDADE_GRID_MS // INTERVALO_GRID_MS
+    for _ in range(ESPERA_GRID_ESTAVEL_MS // INTERVALO_GRID_MS):
+        atual = ler_itens(frame)
+        leituras_iguais = leituras_iguais + 1 if atual == anterior else 0
+        if leituras_iguais >= leituras:
+            return True
+        anterior = atual
+        frame.page.wait_for_timeout(INTERVALO_GRID_MS)
+    return False
+
+
+def linha_confere(linha: dict[str, str], item: Item) -> bool:
+    """Código, QTD e (quando há) placa da linha do grid iguais ao pedido."""
+    if linha.get("Código") != item.cadpro or not qtd_confere(linha, item):
+        return False
+    return not item.placa or norm_placa(linha.get("Placa (F9)", "")) == item.placa
+
+
+def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
+    """Última barreira antes de salvar: com o grid estável, confere TODAS as linhas contra o
+    pedido; as que divergirem (QTD devolvida ao padrão por uma resposta tardia do SCPI) são
+    preenchidas de novo, por algumas rodadas. Se ainda divergir, o lote falha (`ErroSCPI`) e
+    nada é salvo: o `conferir_item` de cada linha acontece cedo demais para pegar isso."""
+    total = len(req.itens)
+    for rodada in range(1, RODADAS_RECONCILIACAO + 1):
+        aguardar_grid_estavel(frame)
+        linhas = ler_itens(frame)
+        divergentes = [
+            i
+            for i, item in enumerate(req.itens)
+            if i >= len(linhas) or not linha_confere(linhas[i], item)
+        ]
+        if not divergentes:
+            log(f"  conferência final: {total} item(ns) do grid iguais ao pedido")
+            return
+        if rodada == RODADAS_RECONCILIACAO:
+            break
+        log(
+            f"  conferência final: item(ns) {[i + 1 for i in divergentes]} divergem do pedido; "
+            f"corrigindo ({rodada}/{RODADAS_RECONCILIACAO})"
+        )
+        for i in divergentes:
+            item = req.itens[i]
+            definir_qtd(frame, i, item, f"item {i + 1}/{total} ({item.cadpro})")
+    for i, item in enumerate(req.itens):  # levanta o erro específico da primeira divergência
+        conferir_item(
+            frame, i, item, req, f"item {i + 1}/{total} ({item.cadpro}) na conferência final"
+        )
+    raise ErroSCPI("conferência final: os itens do grid continuam divergindo do pedido")
+
+
 def adicionar_itens(frame: Frame, req: Requisicao) -> None:
     frame.get_by_role("tab", name="Itens da Saída").click()
     aguardar_mascara(frame)
@@ -522,6 +586,7 @@ def adicionar_itens(frame: Frame, req: Requisicao) -> None:
     linhas_grid = [r for r in ler_itens(frame) if RE_CADPRO.match(r.get("Código", ""))]
     if len(linhas_grid) != len(req.itens):
         raise ErroSCPI(f"grid de itens tem {len(linhas_grid)} linha(s), esperado {len(req.itens)}")
+    reconciliar_itens(frame, req)
 
 
 def conferir_item(frame: Frame, i: int, item: Item, req: Requisicao, etapa: str) -> None:

@@ -431,3 +431,89 @@ def test_aguardar_modo_inclusao_desiste_se_os_campos_nunca_habilitam(monkeypatch
 
     with pytest.raises(lancador.ErroAberturaFormulario, match="modo de inclusão"):
         lancador.aguardar_modo_inclusao(_Quadro())
+
+
+def _item_n(cadpro, qtd):
+    from scpi.requisicoes import Item
+
+    return Item(cadpro=cadpro, qtd=qtd, placa="")
+
+
+def _linha_n(cadpro, qtd):
+    return {
+        "Código": cadpro,
+        "Descrição do Produto/Serviço": "X",
+        "QTD": qtd,
+        "Est. Atual": "100",
+        "C.Custo": "7",
+    }
+
+
+class _PedidoDe:
+    cod_ccusto = "7"
+
+    def __init__(self, itens):
+        self.itens = itens
+
+
+def test_linha_confere_compara_codigo_qtd_e_placa():
+    from scpi.lancador import linha_confere
+    from scpi.requisicoes import Item
+
+    item = Item(cadpro="016.002.098", qtd="5", placa="")
+    assert linha_confere({"Código": "016.002.098", "QTD": "5"}, item)
+    assert not linha_confere({"Código": "016.002.098", "QTD": "1"}, item)
+    assert not linha_confere({"Código": "016.002.099", "QTD": "5"}, item)
+
+    com_placa = Item(cadpro="006.010.011", qtd="1", placa="R77")
+    assert linha_confere({"Código": "006.010.011", "QTD": "1", "Placa (F9)": "R-77"}, com_placa)
+    assert not linha_confere({"Código": "006.010.011", "QTD": "1", "Placa (F9)": ""}, com_placa)
+
+
+def test_aguardar_grid_estavel_exige_leituras_iguais_seguidas(monkeypatch):
+    from scpi import lancador
+
+    leituras = iter([[1], [2], [2], [2], [2], [2]])
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: next(leituras))
+
+    assert lancador.aguardar_grid_estavel(_Quadro()) is True
+    assert next(leituras, None) is None  # parou assim que ficou igual por 2 s
+
+
+def test_reconciliar_itens_corrige_a_qtd_devolvida_ao_padrao(monkeypatch):
+    from scpi import lancador
+
+    # AV-000094: itens 3, 5 e 8 voltaram a QTD 1 depois de conferidos
+    itens = [_item_n("A", "3"), _item_n("B", "5"), _item_n("C", "4")]
+    grids = iter(
+        [
+            [_linha_n("A", "3"), _linha_n("B", "1"), _linha_n("C", "1")],
+            [_linha_n("A", "3"), _linha_n("B", "5"), _linha_n("C", "4")],
+        ]
+    )
+    refeitos = []
+    monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: next(grids))
+    monkeypatch.setattr(lancador, "definir_qtd", lambda frame, i, item, etapa: refeitos.append(i))
+
+    lancador.reconciliar_itens(_Quadro(), _PedidoDe(itens))
+    assert refeitos == [1, 2]
+
+
+def test_reconciliar_itens_recusa_o_lote_se_a_divergencia_persiste(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    itens = [_item_n("A", "3"), _item_n("B", "5")]
+    monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
+    monkeypatch.setattr(
+        lancador, "ler_itens", lambda frame: [_linha_n("A", "3"), _linha_n("B", "1")]
+    )
+    refeitos = []
+    monkeypatch.setattr(lancador, "definir_qtd", lambda frame, i, item, etapa: refeitos.append(i))
+
+    with pytest.raises(ErroSCPI, match="grid mostra QTD 1, esperado 5"):
+        lancador.reconciliar_itens(_Quadro(), _PedidoDe(itens))
+    assert refeitos == [1] * (lancador.RODADAS_RECONCILIACAO - 1)
