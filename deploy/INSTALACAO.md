@@ -5,7 +5,9 @@ Docker Desktop 4.36.0, Engine 27.3.1 e Compose 2.30.3. Há produção em uso e
 outros containers (`gis-stack`) no mesmo Docker. Não reiniciar Windows, WSL ou
 Docker, não reinstalar componentes e não executar limpeza de recursos.
 
-A nova instalação será em `C:\docker\almoxarifado-prod`, projeto `almoxarifado-prod`.
+A produção fica em `C:\docker\producao`. Hoje roda pelo `compose.yaml` legado, com
+projeto `almoxarifado_prod`; o projeto `almoxarifado-prod` é o que o `atualizar.ps1` espera
+(ver a nota de situação em [AMBIENTES.md](AMBIENTES.md)).
 A instalação do Desktop continua atendendo os usuários até a virada. Ter outra
 pasta não basta: o Compose legado fixa o nome do projeto e a imagem.
 

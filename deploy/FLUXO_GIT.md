@@ -86,7 +86,7 @@ Git ou chat. A credencial de Git e a de registry são independentes.
 
 ## Clones e configuração local do Git
 
-Produção usa clone exclusivo em `C:\docker\almoxarifado-prod`, com checkout
+Produção usa clone exclusivo em `C:\docker\producao`, com checkout
 destacado na tag. Não editar código, fazer commit/push, trocar para `develop`
 ou resolver conflitos nessa pasta. O script não executa `pull`, `fetch`, `checkout`
 ou `reset`: preparar a versão é uma ação separada, visível e revisada.

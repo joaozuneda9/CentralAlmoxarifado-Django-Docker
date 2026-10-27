@@ -32,7 +32,7 @@ e `deploy/atualizar.ps1`). Resumo que vale para todo agente que trabalha aqui (C
   **Nunca** faça commit, push, merge
   local, rebase, force push, `reset --hard`, `clean -fd` nem troca de branch para apagar
   divergência em `main`, `develop` ou numa tag, nem na instalação de produção (clone em
-  `C:\docker\almoxarifado-prod`, HEAD destacado numa tag, somente leitura). Essas branches só
+  `C:\docker\producao`, HEAD destacado numa tag, somente leitura). Essas branches só
   mudam pelo merge de um PR, e o merge é do usuário ou por ele autorizado; o agente não o faz por
   conta própria. Trazer `develop` para a sua branch (merge ou rebase dela) é permitido.
 - Promoção só por PR. O fluxo normal é `claude/*` ou `codex/*` → `develop` → `main`. Squash é aceito

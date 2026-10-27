@@ -4,13 +4,24 @@
 
 | | Atual → desenvolvimento (somente após virada) | Nova produção |
 |---|---|---|
-| Pasta | `C:\Users\laboratorio\Desktop\CentralAlmoxarifado-Django-Docker` | `C:\docker\almoxarifado-prod` |
+| Pasta | `C:\Users\laboratorio\Desktop\CentralAlmoxarifado-Django-Docker` | `C:\docker\producao` |
 | Projeto | `almoxarifado` (preservado deliberadamente) | `almoxarifado-prod` |
 | Git | `develop` | Tag aprovada de `main`, HEAD destacado |
 | Imagem | `central-almoxarifado-dev:<SHA>` | GHCR com digest e label de revisão |
 | Banco | `almoxarifado_banco-dados` | `almoxarifado-prod_banco-dados` |
 | Perfil SCPI | `almoxarifado_perfil-navegador` | `almoxarifado-prod_perfil-navegador` |
 | Porta | Loopback, por exemplo `127.0.0.1:8012` | Preparação em `127.0.0.1:8011` |
+
+> **Situação em 27/10/2026.** A produção em uso fica em `C:\docker\producao`, e não em
+> uma pasta `almoxarifado-prod`. Ela ainda roda pelo `compose.yaml` legado, alterado
+> localmente (`git status` mostra ` M compose.yaml`): projeto `almoxarifado_prod` (com
+> underscore), imagem construída no próprio servidor (`build: .`) e web publicado em
+> `0.0.0.0:8012`. O `deploy/atualizar.ps1` opera o projeto `almoxarifado-prod` (com
+> hífen), com volumes próprios, e exige clone sem alterações; por isso **não se aplica
+> a essa pasta enquanto ela não for migrada**, e o marcador `.deploy-ambiente` não deve
+> ser criado nela só para o script aceitar: o `-Aplicar` subiria uma instalação nova, com
+> banco vazio, ao lado da que atende os usuários. Os nomes de projeto e volumes das
+> colunas acima descrevem o fluxo do script, não a produção de hoje.
 
 As portas propostas ainda precisam ser conferidas no Windows antes de usar.
 Volumes são prefixados pelo projeto. Bind mounts `./dados` ficam em cada clone.
@@ -51,13 +62,13 @@ Uma migration pode alterar o banco e recriar web interrompe suas requisições:
 ## Preparar produção nova (após merge e release)
 
 Não executar esta seção sobre a pasta antiga. Clonar o repositório para
-`C:\docker\almoxarifado-prod`, preferencialmente com credencial somente leitura.
+`C:\docker\producao`, preferencialmente com credencial somente leitura.
 Conferir `git status`, fazer fetch de `main` e tags e checkout destacado da tag
 escolhida. Exemplo, com versão já publicada:
 
 ```powershell
-git -C C:\docker\almoxarifado-prod fetch origin --tags
-git -C C:\docker\almoxarifado-prod switch --detach v1.1.1
+git -C C:\docker\producao fetch origin --tags
+git -C C:\docker\producao switch --detach v1.1.1
 ```
 
 Criar `.env` a partir de `.env.example`, `.env.banco` a partir de
