@@ -212,6 +212,14 @@ def abrir_tela_saida(frame: Frame) -> None:
     aguardar_mascara(frame)
 
 
+class ErroAberturaFormulario(ErroSCPI):
+    """O formulário de inclusão não abriu. Nada foi preenchido nem salvo, então o lote pode
+    recomeçar do zero depois de limpar a tela."""
+
+
+TENTATIVAS_ABERTURA = 3
+
+
 def abrir_formulario(frame: Frame) -> None:
     """Inserir → 'Nova Requisição de Saída' → Produto ▾ → Lançamento Manual."""
     frame.get_by_role("tab", name="Dados da Saída").click()
@@ -225,7 +233,7 @@ def abrir_formulario(frame: Frame) -> None:
             break
         except Exception:
             if tentativa == 2:
-                raise ErroSCPI(
+                raise ErroAberturaFormulario(
                     "diálogo 'Nova Requisição de Saída' não abriu após 3 cliques em Inserir"
                 ) from None
             checar_mensagem(frame, "abrir formulário")
@@ -243,7 +251,7 @@ def abrir_formulario(frame: Frame) -> None:
             break
         except Exception:
             if tentativa == 2:
-                raise ErroSCPI(
+                raise ErroAberturaFormulario(
                     "submenu 'Lançamento Manual' não abriu após 3 cliques em Produto ▾"
                 ) from None
     aguardar_mascara(frame)
@@ -253,7 +261,7 @@ def abrir_formulario(frame: Frame) -> None:
     data = campo(frame, "Data e Hora da Saída")
     data.wait_for(state="visible", timeout=TIMEOUT)
     if not data.is_enabled() or not campo(frame, "Recebimento").is_enabled():
-        raise ErroSCPI("formulário não entrou em modo de inclusão")
+        raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
 
 
 def preencher_cabecalho(frame: Frame, req: Requisicao) -> None:
@@ -371,6 +379,61 @@ def preencher_celula(frame: Frame, linha: int, coluna: str, valor: str):
             aguardar_mascara(frame)
 
 
+ESTABILIDADE_LINHA_MS = 400
+LEITURAS_ESTAVEIS = 2
+ESPERA_LINHA_ESTAVEL_MS = 10000
+TENTATIVAS_QTD = 3
+
+
+def aguardar_linha_estavel(frame: Frame, i: int, item: Item) -> bool:
+    """Depois do Tab no código, o SCPI termina o lookup do produto de forma assíncrona e
+    redesenha a linha (volta a QTD para 1 e fecha o editor). Espera a linha mostrar o produto
+    e ficar igual em leituras seguidas antes de mexer na QTD. Devolve False se não estabilizou:
+    quem chama segue, e a conferência da QTD decide."""
+    anterior = None
+    iguais = 0
+    for _ in range(ESPERA_LINHA_ESTAVEL_MS // ESTABILIDADE_LINHA_MS):
+        linhas = ler_itens(frame)
+        atual = linhas[i] if i < len(linhas) else None
+        pronta = bool(atual) and atual.get("Código") == item.cadpro
+        pronta = pronta and bool(atual.get("Descrição do Produto/Serviço", "").strip())
+        iguais = iguais + 1 if pronta and atual == anterior else 0
+        if iguais >= LEITURAS_ESTAVEIS - 1 and pronta:
+            return True
+        anterior = atual
+        frame.page.wait_for_timeout(ESTABILIDADE_LINHA_MS)
+    return False
+
+
+def qtd_confere(linha: dict[str, str], item: Item) -> bool:
+    try:
+        return parse_decimal_br(linha.get("QTD", "")) == Decimal(item.qtd.replace(",", "."))
+    except InvalidOperation:
+        return False
+
+
+def definir_qtd(frame: Frame, i: int, item: Item, etapa: str) -> None:
+    """Preenche a QTD e confere no grid; se o SCPI a devolveu ao padrão (redesenho tardio da
+    linha), espera a linha estabilizar e preenche de novo. Depois das tentativas, deixa a
+    divergência para `conferir_item`, que recusa o lote."""
+    for tentativa in range(1, TENTATIVAS_QTD + 1):
+        aguardar_linha_estavel(frame, i, item)
+        qtd = preencher_celula(frame, i, "QTD", item.qtd)
+        qtd.press("Tab")
+        aguardar_mascara(frame)
+        checar_mensagem(frame, etapa)
+        frame.page.keyboard.press("Escape")
+        linhas = ler_itens(frame)
+        if i < len(linhas) and qtd_confere(linhas[i], item):
+            return
+        if tentativa < TENTATIVAS_QTD:
+            valor = linhas[i].get("QTD") if i < len(linhas) else None
+            log(
+                f"  QTD voltou para {valor!r} no grid; "
+                f"preenchendo de novo ({tentativa}/{TENTATIVAS_QTD})"
+            )
+
+
 def adicionar_itens(frame: Frame, req: Requisicao) -> None:
     frame.get_by_role("tab", name="Itens da Saída").click()
     aguardar_mascara(frame)
@@ -392,11 +455,7 @@ def adicionar_itens(frame: Frame, req: Requisicao) -> None:
             aguardar_mascara(frame)
             checar_mensagem(frame, etapa)
 
-            qtd = preencher_celula(frame, i, "QTD", item.qtd)
-            qtd.press("Tab")
-            aguardar_mascara(frame)
-            checar_mensagem(frame, etapa)
-            frame.page.keyboard.press("Escape")
+            definir_qtd(frame, i, item, etapa)
 
             # centro de custo de veículo já preenche a placa no item
             if item.placa and norm_placa(ler_itens(frame)[i].get("Placa (F9)", "")) != item.placa:
@@ -647,7 +706,19 @@ class NavegadorSCPI(Sessao):
         frame = self.frame
         try:
             log("  etapa: abrir formulário")
-            abrir_formulario(frame)
+            for tentativa in range(1, TENTATIVAS_ABERTURA + 1):
+                try:
+                    abrir_formulario(frame)
+                    break
+                except ErroAberturaFormulario as e:
+                    if tentativa == TENTATIVAS_ABERTURA:
+                        raise
+                    log(
+                        f"  {e}; limpando a tela e tentando de novo "
+                        f"({tentativa}/{TENTATIVAS_ABERTURA})"
+                    )
+                    self.limpar()
+                    frame = self.frame  # a limpeza pode ter reaberto o módulo
             log(
                 f"  etapa: cabeçalho (data {req.data}, tipo {req.tipo_saida}, "
                 f"c.custo {req.cod_ccusto})"

@@ -162,3 +162,146 @@ def test_limpeza_termina_quando_o_dialogo_fecha(monkeypatch):
 
     lancador.cancelar_formulario(quadro)  # 2ª rodada: o Escape fechou o diálogo
     assert quadro.page.keyboard.teclas.count("Escape") == 6
+
+
+def _item(qtd="5"):
+    from scpi.requisicoes import Item
+
+    return Item(cadpro="016.002.018", qtd=qtd, placa="")
+
+
+def _linha(qtd, desc="ADAPTADOR"):
+    return {"Código": "016.002.018", "Descrição do Produto/Serviço": desc, "QTD": qtd}
+
+
+def test_aguardar_linha_estavel_espera_o_produto_carregar_e_parar_de_mudar(monkeypatch):
+    from scpi import lancador
+
+    leituras = iter(
+        [
+            [{"Código": "016.002.018", "Descrição do Produto/Serviço": "", "QTD": "1"}],
+            [_linha("1", "ADAPTADOR EM CARGA")],
+            [_linha("1")],
+            [_linha("1")],
+        ]
+    )
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: next(leituras))
+
+    assert lancador.aguardar_linha_estavel(_Quadro(), 0, _item()) is True
+    assert next(leituras, None) is None  # consumiu as 4 leituras, nem uma a menos
+
+
+def test_aguardar_linha_estavel_desiste_sem_levantar_erro(monkeypatch):
+    from scpi import lancador
+
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: [])
+
+    assert lancador.aguardar_linha_estavel(_Quadro(), 0, _item()) is False
+
+
+def test_definir_qtd_repreenche_quando_o_grid_volta_para_1(monkeypatch):
+    from scpi import lancador
+
+    # o SCPI aceita o fill e, depois, redesenha a linha com a QTD padrão (AV-000094 e 103)
+    grids = iter([[_linha("1")], [_linha("5")]])
+    preenchidos = []
+
+    class Campo:
+        def press(self, tecla):
+            pass
+
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: next(grids))
+    monkeypatch.setattr(lancador, "aguardar_linha_estavel", lambda frame, i, item: True)
+    monkeypatch.setattr(
+        lancador,
+        "preencher_celula",
+        lambda frame, i, coluna, valor: preenchidos.append(valor) or Campo(),
+    )
+    monkeypatch.setattr(lancador, "aguardar_mascara", lambda frame: None)
+    monkeypatch.setattr(lancador, "checar_mensagem", lambda frame, etapa: None)
+
+    lancador.definir_qtd(_Quadro(), 0, _item("5"), "item 1/1")
+    assert preenchidos == ["5", "5"]
+
+
+def test_definir_qtd_deixa_a_divergencia_para_a_conferencia_do_item(monkeypatch):
+    from scpi import lancador
+
+    chamadas = []
+
+    class Campo:
+        def press(self, tecla):
+            pass
+
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha("1")])
+    monkeypatch.setattr(lancador, "aguardar_linha_estavel", lambda frame, i, item: True)
+    monkeypatch.setattr(lancador, "preencher_celula", lambda *a: chamadas.append(a) or Campo())
+    monkeypatch.setattr(lancador, "aguardar_mascara", lambda frame: None)
+    monkeypatch.setattr(lancador, "checar_mensagem", lambda frame, etapa: None)
+
+    lancador.definir_qtd(_Quadro(), 0, _item("5"), "item 1/1")  # não levanta
+    assert len(chamadas) == lancador.TENTATIVAS_QTD
+
+
+def _navegador_com_abertura(monkeypatch, resultados):
+    """NavegadorSCPI cujo `abrir_formulario` segue `resultados` (None = abriu, ou a exceção)."""
+    from scpi import lancador
+
+    nav = lancador.NavegadorSCPI(object())
+    nav.frame = _Quadro()
+    limpezas = []
+    sequencia = iter(resultados)
+
+    def abrir(frame):
+        resultado = next(sequencia)
+        if resultado:
+            raise resultado
+
+    monkeypatch.setattr(lancador, "abrir_formulario", abrir)
+    monkeypatch.setattr(lancador, "preencher_cabecalho", lambda frame, req: None)
+    monkeypatch.setattr(lancador, "adicionar_itens", lambda frame, req: None)
+    monkeypatch.setattr(lancador, "conferir_cabecalho", lambda frame, req: None)
+    monkeypatch.setattr(lancador, "localizar_salvar", lambda frame: object())
+    monkeypatch.setattr(nav, "limpar", lambda: limpezas.append(1))
+    return nav, limpezas
+
+
+class _Requisicao:
+    data = "26/10/2026"
+    tipo_saida = "BALCÃO"
+    cod_ccusto = "15"
+
+
+def test_preencher_limpa_e_repete_quando_o_formulario_nao_entra_em_inclusao(monkeypatch):
+    from scpi.lancador import ErroAberturaFormulario
+
+    erro = ErroAberturaFormulario("formulário não entrou em modo de inclusão")
+    nav, limpezas = _navegador_com_abertura(monkeypatch, [erro, erro, None])
+
+    nav.preencher(_Requisicao())
+    assert len(limpezas) == 2
+
+
+def test_preencher_desiste_da_abertura_depois_das_tentativas(monkeypatch):
+    import pytest
+
+    from scpi.lancador import ErroAberturaFormulario
+
+    erro = ErroAberturaFormulario("formulário não entrou em modo de inclusão")
+    nav, limpezas = _navegador_com_abertura(monkeypatch, [erro, erro, erro])
+
+    with pytest.raises(ErroAberturaFormulario):
+        nav.preencher(_Requisicao())
+    assert len(limpezas) == 2
+
+
+def test_preencher_nao_repete_erro_que_nao_e_de_abertura(monkeypatch):
+    import pytest
+
+    from scpi.requisicoes import ErroSCPI
+
+    nav, limpezas = _navegador_com_abertura(monkeypatch, [ErroSCPI("SCPI respondeu 'Ajax Error'")])
+
+    with pytest.raises(ErroSCPI):
+        nav.preencher(_Requisicao())
+    assert limpezas == []
