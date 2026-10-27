@@ -484,11 +484,19 @@ def test_reconciliar_itens_corrige_a_qtd_devolvida_ao_padrao(monkeypatch):
     from scpi import lancador
 
     # AV-000094: itens 3, 5 e 8 voltaram a QTD 1 depois de conferidos
-    itens = [_item_n("A", "3"), _item_n("B", "5"), _item_n("C", "4")]
+    itens = [_item_n("001.000.001", "3"), _item_n("001.000.002", "5"), _item_n("001.000.003", "4")]
     grids = iter(
         [
-            [_linha_n("A", "3"), _linha_n("B", "1"), _linha_n("C", "1")],
-            [_linha_n("A", "3"), _linha_n("B", "5"), _linha_n("C", "4")],
+            [
+                _linha_n("001.000.001", "3"),
+                _linha_n("001.000.002", "1"),
+                _linha_n("001.000.003", "1"),
+            ],
+            [
+                _linha_n("001.000.001", "3"),
+                _linha_n("001.000.002", "5"),
+                _linha_n("001.000.003", "4"),
+            ],
         ]
     )
     refeitos = []
@@ -506,10 +514,12 @@ def test_reconciliar_itens_recusa_o_lote_se_a_divergencia_persiste(monkeypatch):
     from scpi import lancador
     from scpi.requisicoes import ErroSCPI
 
-    itens = [_item_n("A", "3"), _item_n("B", "5")]
+    itens = [_item_n("001.000.001", "3"), _item_n("001.000.002", "5")]
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
     monkeypatch.setattr(
-        lancador, "ler_itens", lambda frame: [_linha_n("A", "3"), _linha_n("B", "1")]
+        lancador,
+        "ler_itens",
+        lambda frame: [_linha_n("001.000.001", "3"), _linha_n("001.000.002", "1")],
     )
     refeitos = []
     monkeypatch.setattr(lancador, "definir_qtd", lambda frame, i, item, etapa: refeitos.append(i))
@@ -541,7 +551,46 @@ def test_reconciliar_itens_recusa_o_lote_se_o_grid_nao_estabiliza(monkeypatch):
 
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: False)
     # mesmo com a leitura igual ao pedido, o grid instável não autoriza o salvamento
-    monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha_n("A", "3")])
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha_n("001.000.001", "3")])
 
     with pytest.raises(ErroSCPI, match="grid não estabilizou"):
-        lancador.reconciliar_itens(_Quadro(), _PedidoDe([_item_n("A", "3")]))
+        lancador.reconciliar_itens(_Quadro(), _PedidoDe([_item_n("001.000.001", "3")]))
+
+
+def test_aguardar_modo_inclusao_espera_o_campo_recebimento_aparecer(monkeypatch):
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    chamadas = {"Recebimento": 0}
+    data = _CampoQueHabilitaDepois(0)
+
+    def campo(frame, rotulo):
+        if rotulo == "Recebimento":
+            chamadas["Recebimento"] += 1
+            if chamadas["Recebimento"] <= 2:  # ainda não existe no DOM
+                raise ErroSCPI("campo 'Recebimento' não encontrado no formulário")
+        return data
+
+    monkeypatch.setattr(lancador, "campo", campo)
+
+    lancador.aguardar_modo_inclusao(_Quadro())  # não levanta: segue esperando
+    assert chamadas["Recebimento"] == 3
+
+
+def test_reconciliar_itens_recusa_o_grid_com_linha_a_mais(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI
+
+    itens = [_item_n("001.000.001", "3")]
+    monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
+    # o item esperado é um prefixo válido, mas há uma linha codificada a mais
+    monkeypatch.setattr(
+        lancador,
+        "ler_itens",
+        lambda frame: [_linha_n("001.000.001", "3"), _linha_n("001.000.009", "1")],
+    )
+
+    with pytest.raises(ErroSCPI, match="grid tem 2 item"):
+        lancador.reconciliar_itens(_Quadro(), _PedidoDe(itens))

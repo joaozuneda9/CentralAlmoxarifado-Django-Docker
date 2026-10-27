@@ -252,11 +252,14 @@ def aguardar_modo_inclusao(frame: Frame) -> None:
     declarar que o formulário não entrou em modo de inclusão."""
     pausas = ESPERA_MODO_INCLUSAO_MS // INTERVALO_MODO_INCLUSAO_MS
     for tentativa in range(pausas + 1):  # uma consulta a mais: depois da última pausa
-        with falha_de_abertura("campos do formulário não apareceram"):
-            habilitados = (
-                campo_da_abertura(frame, "Data e Hora da Saída").is_enabled()
-                and campo_da_abertura(frame, "Recebimento").is_enabled()
-            )
+        try:
+            with falha_de_abertura("campos do formulário não apareceram"):
+                habilitados = (
+                    campo_da_abertura(frame, "Data e Hora da Saída").is_enabled()
+                    and campo_da_abertura(frame, "Recebimento").is_enabled()
+                )
+        except ErroAberturaFormulario:
+            habilitados = False  # campo ainda ausente: segue esperando, dentro do prazo
         if habilitados:
             return
         if tentativa < pausas:
@@ -529,6 +532,12 @@ def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
                 f"conferência final: grid não estabilizou ({rodada}/{RODADAS_RECONCILIACAO})"
             )
         linhas = ler_itens(frame)
+        # as linhas esperadas podem ser só o começo do grid: uma linha a mais seria salva junto
+        codificadas = [linha for linha in linhas if RE_CADPRO.match(linha.get("Código", ""))]
+        if len(codificadas) != total:
+            raise ErroSCPI(
+                f"conferência final: grid tem {len(codificadas)} item(ns), esperado {total}"
+            )
         divergentes = [
             i
             for i, item in enumerate(req.itens)
