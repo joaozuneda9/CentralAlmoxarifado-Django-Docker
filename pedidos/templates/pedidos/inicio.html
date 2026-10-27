@@ -17,5 +17,21 @@
   </a>
   {% endfor %}
 </div>
+{% if fluxos_gerais %}
+{# O formulário geral (`Fluxo.geral`): à parte e mais discreto, para o que não se encaixa nos de cima. #}
+<section class="opcoes-geral" aria-labelledby="opcoes-geral-pergunta">
+  <p class="opcoes-separador" id="opcoes-geral-pergunta">Seu material não se encaixa em nenhum dos tipos acima?</p>
+  {% for f in fluxos_gerais %}
+  <a class="cartao cartao-opcao cartao-opcao-geral" href="{% url 'pedidos:formulario' f.nome %}">
+    {% include "interface/_icone.html" with nome=f.icone %}
+    <div class="cartao-opcao-texto">
+      <h2>{{ f.titulo_inicio|default:f.titulo }}</h2>
+      <span class="texto-secundario">Formulário geral, para o que não está nos outros. {{ f.exemplo_inicio }}</span>
+    </div>
+    <span class="cartao-opcao-seta">{% include "interface/_icone.html" with nome="seta-direita" %}</span>
+  </a>
+  {% endfor %}
+</section>
+{% endif %}
 <p class="texto-suave texto-pequeno">Enviar um pedido não é a saída do material: o almoxarifado confere, separa e confirma o atendimento depois.</p>
 {% endblock %}

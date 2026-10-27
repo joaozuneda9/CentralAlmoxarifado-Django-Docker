@@ -116,7 +116,8 @@ def test_assinaturas_lado_a_lado_e_impressao_compacta(client, logado):
     r = client.get(reverse("pedidos:detalhe", args=[numero]))
     assinaturas = r.text[r.text.index('<div class="assinaturas">') :]
     assinaturas = assinaturas[: assinaturas.index("</div>")]
-    assert "<p>Entregue por:</p>" in assinaturas and "<p>Recebido por:</p>" in assinaturas
+    # "Recebido por" à esquerda, "Entregue por" à direita.
+    assert "<p>Recebido por:</p>\n    <p>Entregue por:</p>" in assinaturas
     assert "___" not in assinaturas  # a linha vem do CSS e cabe em meia largura
     texto = Path(finders.find("pedidos/css/pedidos.css")).read_text(encoding="utf-8")
     regra = texto[texto.index(".assinaturas {") :]

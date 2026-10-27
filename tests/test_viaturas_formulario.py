@@ -81,6 +81,14 @@ def test_o_formulario_tem_ocorrencia_e_folha_e_os_outros_nao(client):
         assert 'name="ocorrencia"' not in outro and "data-folha-abrir" not in outro
 
 
+def test_o_destino_se_chama_numero_da_viatura_so_neste_formulario(client):
+    html = client.get(URL).text
+    assert '<label class="campo-rotulo" for="destino">Número da viatura</label>' in html
+    assert "Destino dos materiais" not in html
+    outro = client.get(reverse("pedidos:formulario", args=["ab"])).text
+    assert '<label class="campo-rotulo" for="destino">Destino dos materiais</label>' in outro
+
+
 # Folha
 
 

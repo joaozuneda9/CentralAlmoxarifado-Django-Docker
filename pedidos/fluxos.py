@@ -56,6 +56,7 @@ class Fluxo:
     exemplo_inicio: str = ""  # o exemplo no cartão da página inicial
     icone: str = "caixa"  # o ícone do cartão da página inicial
     exemplo_destino: str = "Posto de trabalho, placa do veículo ou setor"  # no campo de destino
+    rotulo_destino: str = "Destino dos materiais"  # o rótulo do campo de destino
     publico: bool = True
     # Quem pede segue a unidade do material (`por_unidade`); a equipe aceita fração em qualquer
     # unidade (`livre`).
@@ -70,6 +71,10 @@ class Fluxo:
     # O pedido passa por autorização da Segurança do Trabalho antes do atendimento (spec 008): o
     # registro cria a `AutorizacaoPedido` e o aviso ao almoxarifado só sai depois de autorizado.
     exige_autorizacao: bool = False
+    # O formulário para o que não se encaixa nos outros: na página inicial, um cartão à parte,
+    # depois dos outros, com `titulo_inicio` (quando preenchido) no lugar do título.
+    geral: bool = False
+    titulo_inicio: str = ""
 
     @property
     def max_itens(self) -> int | None:
@@ -104,16 +109,6 @@ FLUXOS: dict[str, Fluxo] = {
         icone="caixa",
         centros=partial(centros_do_formulario, LIMPEZA),
     ),
-    "ab": Fluxo(
-        nome="ab",
-        origem=AB,
-        titulo="Ferramentas, peças e materiais",
-        catalogo=formulario_ab,
-        exemplo_busca="Ex.: luva, fita veda rosca",
-        exemplo_inicio="Ex.: luva, botina, fita veda-rosca, cimento",
-        icone="catalogo",
-        centros=partial(centros_do_formulario, AB),
-    ),
     "viaturas": Fluxo(
         nome="viaturas",
         origem=VIATURAS,
@@ -123,9 +118,22 @@ FLUXOS: dict[str, Fluxo] = {
         exemplo_inicio="Ex.: cotovelo, luva, tee, registro, tubo",
         icone="atualizar",
         exemplo_destino="Centro de custo da equipe",
+        rotulo_destino="Número da viatura",
         folha=folha_viaturas,
         centros=partial(centros_do_formulario, VIATURAS),
         pede_ocorrencia=True,
+    ),
+    "ab": Fluxo(
+        nome="ab",
+        origem=AB,
+        titulo="Ferramentas, peças e materiais",
+        catalogo=formulario_ab,
+        exemplo_busca="Ex.: luva, fita veda rosca",
+        exemplo_inicio="Ex.: ferramenta, cimento, fita veda-rosca",
+        icone="catalogo",
+        centros=partial(centros_do_formulario, AB),
+        geral=True,
+        titulo_inicio="Ferramentas, peças e outros materiais",
     ),
     "oficina": Fluxo(
         nome="oficina",
@@ -134,7 +142,7 @@ FLUXOS: dict[str, Fluxo] = {
         catalogo=formulario_oficina,
         exemplo_busca="Ex.: filtro de óleo, pneu",
         exemplo_inicio="Ex.: filtro, óleo, pneu, aditivo, lâmpada",
-        icone="caixa-check",
+        icone="chave-inglesa",
         exemplo_destino="Oficina mecânica ou placa da viatura",
         centros=partial(centros_do_formulario, OFICINA),
     ),
