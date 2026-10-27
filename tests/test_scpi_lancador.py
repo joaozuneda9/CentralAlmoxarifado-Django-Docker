@@ -617,22 +617,68 @@ def test_aguardar_modo_inclusao_limita_cada_consulta_ao_prazo(monkeypatch):
     assert all(t <= lancador.ESPERA_MODO_INCLUSAO_MS for t in campo.timeouts)
 
 
-def test_aguardar_modo_inclusao_respeita_o_prazo_monotonico(monkeypatch):
+def test_aguardar_modo_inclusao_recalcula_o_prazo_antes_de_cada_consulta(monkeypatch):
+    import pytest
+    from playwright.sync_api import TimeoutError as TimeoutPlaywright
+
+    from scpi import lancador
+
+    agora = [0.0]
+    monkeypatch.setattr(lancador.time, "monotonic", lambda: agora[0])
+    consultas = []
+
+    class Data:
+        def is_enabled(self, timeout=None):
+            consultas.append(("data", timeout))
+            if len(consultas) == 1:
+                agora[0] += 5.9  # a primeira consulta consome quase todo o prazo de 6 s
+            return True
+
+    class Recebimento:
+        def is_enabled(self, timeout=None):
+            consultas.append(("recebimento", timeout))
+            raise TimeoutPlaywright("input substituído")
+
+    campos = {"Data e Hora da Saída": Data(), "Recebimento": Recebimento()}
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campos[rotulo])
+
+    quadro = _Quadro()
+    quadro.page.wait_for_timeout = lambda ms: agora.__setitem__(0, agora[0] + ms / 1000)
+
+    with pytest.raises(lancador.ErroAberturaFormulario):
+        lancador.aguardar_modo_inclusao(quadro)
+
+    assert consultas[0][1] == lancador.ESPERA_MODO_INCLUSAO_MS  # prazo inteiro na 1ª
+    # a 2ª recebe só o que resta (mínimo), não o orçamento anterior; e o prazo encerra a espera
+    assert consultas[1][1] == lancador.MIN_CONSULTA_MODO_INCLUSAO_MS
+    # o que restava do prazo (100 ms) vira pausa; a volta seguinte também só recebe o mínimo
+    assert all(t == lancador.MIN_CONSULTA_MODO_INCLUSAO_MS for _, t in consultas[1:])
+
+
+def test_aguardar_modo_inclusao_limita_a_pausa_ao_prazo(monkeypatch):
     import pytest
 
     from scpi import lancador
 
-    relogio = iter(range(0, 1000))  # cada leitura do relógio avança 1 s
-    monkeypatch.setattr(lancador.time, "monotonic", lambda: float(next(relogio)))
-    consultas = []
+    agora = [0.0]
+    pausas = []
+    monkeypatch.setattr(lancador.time, "monotonic", lambda: agora[0])
+
+    class Quadro(_Quadro):
+        def __init__(self):
+            super().__init__()
+            self.page.wait_for_timeout = lambda ms: (
+                pausas.append(ms),
+                agora.__setitem__(0, agora[0] + ms / 1000),
+            )
 
     class Campo:
         def is_enabled(self, timeout=None):
-            consultas.append(timeout)
             return False
 
     monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: Campo())
 
     with pytest.raises(lancador.ErroAberturaFormulario):
-        lancador.aguardar_modo_inclusao(_Quadro())
-    assert len(consultas) < 2 * (lancador.ESPERA_MODO_INCLUSAO_MS // 1000) + 3  # parou no prazo
+        lancador.aguardar_modo_inclusao(Quadro())
+    assert pausas and all(0 < p <= lancador.INTERVALO_MODO_INCLUSAO_MS for p in pausas)
+    assert sum(pausas) <= lancador.ESPERA_MODO_INCLUSAO_MS

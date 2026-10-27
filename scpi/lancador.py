@@ -251,25 +251,32 @@ def aguardar_modo_inclusao(frame: Frame) -> None:
     """O SCPI habilita os campos do formulário um instante depois de a máscara sumir: uma
     única conferência logo em seguida dava falso negativo (o print tirado 0,1 s depois do erro
     já mostrava o formulário em inclusão). Consulta por até `ESPERA_MODO_INCLUSAO_MS` antes de
-    declarar que o formulário não entrou em modo de inclusão. Cada consulta é limitada ao
-    tempo que resta do prazo (o `is_enabled` espera 30 s por padrão se o SCPI trocar o input)."""
+    declarar que o formulário não entrou em modo de inclusão. O tempo restante é recalculado
+    antes de CADA consulta e de cada pausa (o `is_enabled` espera 30 s por padrão se o SCPI
+    trocar o input, e `timeout=0` desligaria o limite); depois do prazo só resta uma última
+    consulta, com `MIN_CONSULTA_MODO_INCLUSAO_MS`, para não perder o que habilitou na pausa
+    final."""
     prazo = time.monotonic() + ESPERA_MODO_INCLUSAO_MS / 1000
-    pausas = ESPERA_MODO_INCLUSAO_MS // INTERVALO_MODO_INCLUSAO_MS
-    for tentativa in range(pausas + 1):  # uma consulta a mais: depois da última pausa
-        restante_ms = max((prazo - time.monotonic()) * 1000, MIN_CONSULTA_MODO_INCLUSAO_MS)
+
+    def restante_ms() -> float:
+        return (prazo - time.monotonic()) * 1000
+
+    def habilitado(rotulo: str) -> bool:
+        timeout = max(restante_ms(), MIN_CONSULTA_MODO_INCLUSAO_MS)
+        return campo_da_abertura(frame, rotulo).is_enabled(timeout=timeout)
+
+    while True:
         try:
             with falha_de_abertura("campos do formulário não apareceram"):
-                habilitados = campo_da_abertura(frame, "Data e Hora da Saída").is_enabled(
-                    timeout=restante_ms
-                ) and campo_da_abertura(frame, "Recebimento").is_enabled(timeout=restante_ms)
+                habilitados = habilitado("Data e Hora da Saída") and habilitado("Recebimento")
         except ErroAberturaFormulario:
             habilitados = False  # campo ausente ou trocado: consulta de novo na próxima volta
         if habilitados:
             return
-        if time.monotonic() >= prazo:
+        restante = restante_ms()
+        if restante <= 0:
             break
-        if tentativa < pausas:
-            frame.page.wait_for_timeout(INTERVALO_MODO_INCLUSAO_MS)
+        frame.page.wait_for_timeout(min(INTERVALO_MODO_INCLUSAO_MS, restante))
     raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
 
 
