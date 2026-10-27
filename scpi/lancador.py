@@ -18,6 +18,7 @@ from __future__ import annotations
 
 import logging
 import re
+import time
 from collections.abc import Iterator
 from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
@@ -241,6 +242,49 @@ def campo_da_abertura(frame: Frame, rotulo: str):
         raise ErroAberturaFormulario(str(e)) from e
 
 
+ESPERA_MODO_INCLUSAO_MS = 6000
+INTERVALO_MODO_INCLUSAO_MS = 250
+CONSULTA_MODO_INCLUSAO_MS = 250  # teto de cada is_enabled: o laço consulta o campo de novo
+
+
+def aguardar_modo_inclusao(frame: Frame) -> None:
+    """O SCPI habilita os campos do formulário um instante depois de a máscara sumir: uma
+    única conferência logo em seguida dava falso negativo (o print tirado 0,1 s depois do erro
+    já mostrava o formulário em inclusão). Consulta por até `ESPERA_MODO_INCLUSAO_MS` antes de
+    declarar que o formulário não entrou em modo de inclusão. Cada consulta espera no máximo
+    `CONSULTA_MODO_INCLUSAO_MS` (o `is_enabled` espera 30 s por padrão se o SCPI trocar o input
+    depois de achado o ID, e o laço não chegaria a consultar o novo; `timeout=0` desligaria o
+    limite). O prazo de 6 s é nominal: o tempo restante é recalculado a cada volta, a pausa é
+    limitada a ele e a última consulta, depois do prazo, pode somar até esse teto por campo."""
+    from playwright.sync_api import Error as ErroPlaywright
+
+    prazo = time.monotonic() + ESPERA_MODO_INCLUSAO_MS / 1000
+
+    def restante_ms() -> float:
+        return (prazo - time.monotonic()) * 1000
+
+    def habilitado(rotulo: str) -> bool:
+        return campo_da_abertura(frame, rotulo).is_enabled(timeout=CONSULTA_MODO_INCLUSAO_MS)
+
+    while True:
+        try:
+            with falha_de_abertura("campos do formulário não apareceram"):
+                habilitados = habilitado("Data e Hora da Saída") and habilitado("Recebimento")
+        except ErroAberturaFormulario:
+            habilitados = False  # campo ausente ou trocado: consulta de novo na próxima volta
+        except ErroPlaywright as e:
+            if "not attached to the DOM" not in str(e):
+                raise
+            habilitados = False  # o SCPI trocou o input durante a consulta
+        if habilitados:
+            return
+        restante = restante_ms()
+        if restante <= 0:
+            break
+        frame.page.wait_for_timeout(min(INTERVALO_MODO_INCLUSAO_MS, restante))
+    raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
+
+
 def abrir_formulario(frame: Frame) -> None:
     """Inserir → 'Nova Requisição de Saída' → Produto ▾ → Lançamento Manual."""
     with falha_de_abertura("aba 'Dados da Saída' não respondeu"):
@@ -284,9 +328,7 @@ def abrir_formulario(frame: Frame) -> None:
     with falha_de_abertura("campos do formulário não apareceram"):
         data = campo_da_abertura(frame, "Data e Hora da Saída")
         data.wait_for(state="visible", timeout=TIMEOUT)
-        habilitados = data.is_enabled() and campo_da_abertura(frame, "Recebimento").is_enabled()
-    if not habilitados:
-        raise ErroAberturaFormulario("formulário não entrou em modo de inclusão")
+    aguardar_modo_inclusao(frame)
 
 
 def preencher_cabecalho(frame: Frame, req: Requisicao) -> None:
@@ -464,6 +506,80 @@ def definir_qtd(frame: Frame, i: int, item: Item, etapa: str) -> None:
             )
 
 
+ESTABILIDADE_GRID_MS = 2000
+INTERVALO_GRID_MS = 500
+ESPERA_GRID_ESTAVEL_MS = 15000
+RODADAS_RECONCILIACAO = 3
+
+
+def aguardar_grid_estavel(frame: Frame) -> bool:
+    """Espera o grid de itens ficar igual por `ESTABILIDADE_GRID_MS`. O SCPI responde aos
+    lookups de forma assíncrona e uma resposta tardia pode redesenhar uma linha já conferida
+    (a QTD volta a 1, como visto no AV-000094): só vale conferir o grid depois que ele parar
+    de mudar. Devolve False se não estabilizou no tempo."""
+    leituras_iguais = 0
+    anterior = None
+    leituras = ESTABILIDADE_GRID_MS // INTERVALO_GRID_MS
+    for _ in range(ESPERA_GRID_ESTAVEL_MS // INTERVALO_GRID_MS):
+        atual = ler_itens(frame)
+        leituras_iguais = leituras_iguais + 1 if atual == anterior else 0
+        if leituras_iguais >= leituras:
+            return True
+        anterior = atual
+        frame.page.wait_for_timeout(INTERVALO_GRID_MS)
+    return False
+
+
+def linha_confere(linha: dict[str, str], item: Item) -> bool:
+    """Código, QTD e (quando há) placa da linha do grid iguais ao pedido."""
+    if linha.get("Código") != item.cadpro or not qtd_confere(linha, item):
+        return False
+    return not item.placa or norm_placa(linha.get("Placa (F9)", "")) == item.placa
+
+
+def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
+    """Última barreira antes de salvar: com o grid estável, confere TODAS as linhas contra o
+    pedido; as que divergirem (QTD devolvida ao padrão por uma resposta tardia do SCPI) são
+    preenchidas de novo, por algumas rodadas. Se ainda divergir, o lote falha (`ErroSCPI`) e
+    nada é salvo: o `conferir_item` de cada linha acontece cedo demais para pegar isso."""
+    total = len(req.itens)
+    for rodada in range(1, RODADAS_RECONCILIACAO + 1):
+        if not aguardar_grid_estavel(frame):
+            # uma leitura que coincide com o pedido não vale com o SCPI ainda mexendo no grid
+            raise ErroSCPI(
+                f"conferência final: grid não estabilizou ({rodada}/{RODADAS_RECONCILIACAO})"
+            )
+        linhas = ler_itens(frame)
+        # as linhas esperadas podem ser só o começo do grid: uma linha a mais seria salva junto
+        codificadas = [linha for linha in linhas if RE_CADPRO.match(linha.get("Código", ""))]
+        if len(codificadas) != total:
+            raise ErroSCPI(
+                f"conferência final: grid tem {len(codificadas)} item(ns), esperado {total}"
+            )
+        divergentes = [
+            i
+            for i, item in enumerate(req.itens)
+            if i >= len(linhas) or not linha_confere(linhas[i], item)
+        ]
+        if not divergentes:
+            log(f"  conferência final: {total} item(ns) do grid iguais ao pedido")
+            return
+        if rodada == RODADAS_RECONCILIACAO:
+            break
+        log(
+            f"  conferência final: item(ns) {[i + 1 for i in divergentes]} divergem do pedido; "
+            f"corrigindo ({rodada}/{RODADAS_RECONCILIACAO})"
+        )
+        for i in divergentes:
+            item = req.itens[i]
+            definir_qtd(frame, i, item, f"item {i + 1}/{total} ({item.cadpro})")
+    for i, item in enumerate(req.itens):  # levanta o erro específico da primeira divergência
+        conferir_item(
+            frame, i, item, req, f"item {i + 1}/{total} ({item.cadpro}) na conferência final"
+        )
+    raise ErroSCPI("conferência final: os itens do grid continuam divergindo do pedido")
+
+
 def adicionar_itens(frame: Frame, req: Requisicao) -> None:
     frame.get_by_role("tab", name="Itens da Saída").click()
     aguardar_mascara(frame)
@@ -503,6 +619,7 @@ def adicionar_itens(frame: Frame, req: Requisicao) -> None:
     linhas_grid = [r for r in ler_itens(frame) if RE_CADPRO.match(r.get("Código", ""))]
     if len(linhas_grid) != len(req.itens):
         raise ErroSCPI(f"grid de itens tem {len(linhas_grid)} linha(s), esperado {len(req.itens)}")
+    reconciliar_itens(frame, req)
 
 
 def conferir_item(frame: Frame, i: int, item: Item, req: Requisicao, etapa: str) -> None:
