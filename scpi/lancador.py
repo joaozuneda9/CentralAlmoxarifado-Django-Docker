@@ -37,7 +37,6 @@ if TYPE_CHECKING:
     from playwright.sync_api import Frame, Page
 
 TIMEOUT = 60000
-PAUSA_DRY_RUN_MS = 8000  # tempo para conferir o formulário preenchido na simulação
 
 log = logging.getLogger("scpi.lancamento").info
 
@@ -909,11 +908,7 @@ class NavegadorSCPI(Sessao):
         self.reabrir_modulo()
 
     def encerrar_simulacao(self) -> None:
-        log(
-            f"  [DRY-RUN] formulário preenchido e conferido — NÃO clicado em Salvar "
-            f"(aguardando {PAUSA_DRY_RUN_MS // 1000}s para conferência visual)"
-        )
-        self.frame.page.wait_for_timeout(PAUSA_DRY_RUN_MS)
+        log("  [DRY-RUN] formulário preenchido e conferido — NÃO clicado em Salvar")
         self.limpar()
 
     def descartar(self, lote: str) -> None:
