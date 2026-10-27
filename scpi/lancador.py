@@ -244,26 +244,25 @@ def campo_da_abertura(frame: Frame, rotulo: str):
 
 ESPERA_MODO_INCLUSAO_MS = 6000
 INTERVALO_MODO_INCLUSAO_MS = 250
-MIN_CONSULTA_MODO_INCLUSAO_MS = 250
+CONSULTA_MODO_INCLUSAO_MS = 250  # teto de cada is_enabled: o laço consulta o campo de novo
 
 
 def aguardar_modo_inclusao(frame: Frame) -> None:
     """O SCPI habilita os campos do formulário um instante depois de a máscara sumir: uma
     única conferência logo em seguida dava falso negativo (o print tirado 0,1 s depois do erro
     já mostrava o formulário em inclusão). Consulta por até `ESPERA_MODO_INCLUSAO_MS` antes de
-    declarar que o formulário não entrou em modo de inclusão. O tempo restante é recalculado
-    antes de CADA consulta e de cada pausa (o `is_enabled` espera 30 s por padrão se o SCPI
-    trocar o input, e `timeout=0` desligaria o limite); depois do prazo só resta uma última
-    consulta, com `MIN_CONSULTA_MODO_INCLUSAO_MS`, para não perder o que habilitou na pausa
-    final."""
+    declarar que o formulário não entrou em modo de inclusão. Cada consulta espera no máximo
+    `CONSULTA_MODO_INCLUSAO_MS` (o `is_enabled` espera 30 s por padrão se o SCPI trocar o input
+    depois de achado o ID, e o laço não chegaria a consultar o novo; `timeout=0` desligaria o
+    limite). O prazo de 6 s é nominal: o tempo restante é recalculado a cada volta, a pausa é
+    limitada a ele e a última consulta, depois do prazo, pode somar até esse teto por campo."""
     prazo = time.monotonic() + ESPERA_MODO_INCLUSAO_MS / 1000
 
     def restante_ms() -> float:
         return (prazo - time.monotonic()) * 1000
 
     def habilitado(rotulo: str) -> bool:
-        timeout = max(restante_ms(), MIN_CONSULTA_MODO_INCLUSAO_MS)
-        return campo_da_abertura(frame, rotulo).is_enabled(timeout=timeout)
+        return campo_da_abertura(frame, rotulo).is_enabled(timeout=CONSULTA_MODO_INCLUSAO_MS)
 
     while True:
         try:

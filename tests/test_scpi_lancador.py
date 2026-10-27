@@ -614,7 +614,7 @@ def test_aguardar_modo_inclusao_limita_cada_consulta_ao_prazo(monkeypatch):
     monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: campo)
 
     lancador.aguardar_modo_inclusao(_Quadro())  # a expiração vira "ainda não": consulta de novo
-    assert all(t <= lancador.ESPERA_MODO_INCLUSAO_MS for t in campo.timeouts)
+    assert all(t == lancador.CONSULTA_MODO_INCLUSAO_MS for t in campo.timeouts)
 
 
 def test_aguardar_modo_inclusao_recalcula_o_prazo_antes_de_cada_consulta(monkeypatch):
@@ -648,11 +648,11 @@ def test_aguardar_modo_inclusao_recalcula_o_prazo_antes_de_cada_consulta(monkeyp
     with pytest.raises(lancador.ErroAberturaFormulario):
         lancador.aguardar_modo_inclusao(quadro)
 
-    assert consultas[0][1] == lancador.ESPERA_MODO_INCLUSAO_MS  # prazo inteiro na 1ª
-    # a 2ª recebe só o que resta (mínimo), não o orçamento anterior; e o prazo encerra a espera
-    assert consultas[1][1] == lancador.MIN_CONSULTA_MODO_INCLUSAO_MS
+    # nenhuma consulta espera o prazo inteiro: cada uma tem o teto curto e o laço consulta de novo
+    assert consultas[0][1] == lancador.CONSULTA_MODO_INCLUSAO_MS
+    assert consultas[1][1] == lancador.CONSULTA_MODO_INCLUSAO_MS
     # o que restava do prazo (100 ms) vira pausa; a volta seguinte também só recebe o mínimo
-    assert all(t == lancador.MIN_CONSULTA_MODO_INCLUSAO_MS for _, t in consultas[1:])
+    assert all(t == lancador.CONSULTA_MODO_INCLUSAO_MS for _, t in consultas[1:])
 
 
 def test_aguardar_modo_inclusao_limita_a_pausa_ao_prazo(monkeypatch):
