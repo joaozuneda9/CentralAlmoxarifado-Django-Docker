@@ -144,7 +144,7 @@ def enviar_formulario(
     """Envia o formulário público como o navegador (HTMX), com o carrinho dado. `campos` troca ou
     acrescenta campos do POST (`obs`, `ocorrencia`, `confirmacao_extra`)."""
     dados = {
-        "token": (token or emitir(aberto_em=time.time() - 60)).token,
+        "token": (emitir(aberto_em=time.time() - 60) if token is None else token).token,
         "solicitante": solicitante,
         "destino": destino,
         "obs": "",

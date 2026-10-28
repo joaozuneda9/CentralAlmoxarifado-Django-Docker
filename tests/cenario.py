@@ -127,10 +127,10 @@ def montar_cenario(*, com_estoque: bool = True) -> None:
         ("PICKUP 01", "31", "ABC1D23"),
         ("RETRO A", "41", "XYZ9K99"),
     ]
-    existentes = set(CentroCusto.objects.values_list("descricao", "codigo"))
     for descricao, codigo, placa in centros:
-        if (descricao, codigo) not in existentes:
-            # `create` um a um: o `save` do centro normaliza a placa.
+        # Conferido no banco, pela collation (o centro não tem chave única que barre a cópia), e
+        # criado um a um: o `save` do centro normaliza a placa.
+        if not CentroCusto.objects.filter(descricao=descricao, codigo=codigo).exists():
             CentroCusto.objects.create(descricao=descricao, codigo=codigo, placa=placa)
     # Os centros do cenário são destino onde as regras antigas os ofereciam (spec 009).
     habilitar_como_antes()
