@@ -501,8 +501,7 @@ class DadosSaida:
 class ItemSaida:
     codigo: str
     quantidade: Decimal | int | None  # None = inválida
-    maximo: Decimal | int | None = None
-    estoque: Decimal | None = None  # saldo que limita a saída (None = sem limite)
+    estoque: Decimal | None = field(default=None, kw_only=True)  # saldo que limita a saída
 
 
 @dataclass(frozen=True)
@@ -598,8 +597,6 @@ def validar_saida(
             erros.append(Erro(i.codigo, f"Material {i.codigo} está com cadastro duplicado."))
         elif q is None or q < 0:
             erros.append(Erro(i.codigo, f"Quantidade inválida para {i.codigo}."))
-        elif i.maximo is not None and q > i.maximo:
-            erros.append(Erro(i.codigo, f"Entrega de {i.codigo} maior que a quantidade pedida."))
         elif i.estoque is not None and q > i.estoque:
             erros.append(
                 Erro(i.codigo, f"Saída de {i.codigo} maior que o estoque ({qtd_br(i.estoque)}).")

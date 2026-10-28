@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from catalogo.models import Opcao
+from catalogo.models import Material, Opcao
 from pedidos.models import Atendimento, LinhaSaida, Pedido
 from pedidos.regras import AB, AVULSA, LIMPEZA
 from pedidos.servicos import confirmar_atendimento
@@ -97,10 +97,38 @@ def test_reenvio_igual_confirma_e_outro_atendimento_e_recusado(pedido, usuario):
     assert Atendimento.objects.count() == 1 and LinhaSaida.objects.count() == 2
 
 
-def test_entrega_maior_e_placa_fora_da_lista_sao_recusadas(pedido, usuario):
+def test_entrega_maior_que_a_pedida_e_aceita(pedido, usuario):
     r = atender(pedido, usuario, qtds={"023.001.002": "3", "008.001.002": "1"})
-    assert textos(r) == ["Entrega de 023.001.002 maior que a quantidade pedida."]
-    assert r.mensagem == "Corrija os dados da saída."
+    assert r.ok, textos(r)
+    assert LinhaSaida.objects.get(codigo="023.001.002").qtd == Decimal("3")
+
+
+def test_entrega_acima_do_pedido_e_do_estoque_e_recusada(pedido, usuario):
+    r = atender(pedido, usuario, qtds={"023.001.002": "101", "008.001.002": "1"})
+    assert textos(r) == [
+        "Entrega de 023.001.002 acima do máximo de 100 (o maior entre o pedido e o estoque)."
+    ]
+    assert not LinhaSaida.objects.exists()
+
+
+def test_sem_saldo_o_teto_e_o_proprio_pedido(pedido, usuario):
+    """Material sem saldo (ou fora do catálogo da avulsa) entrega o pedido, nunca mais que ele."""
+    Material.objects.filter(codigo="023.001.002").update(estoque=Decimal(0))
+    r = atender(pedido, usuario, qtds={"023.001.002": "3", "008.001.002": "1"})
+    assert textos(r) == [
+        "Entrega de 023.001.002 acima do máximo de 2 (o maior entre o pedido e o estoque)."
+    ]
+    assert atender(pedido, usuario, qtds={"023.001.002": "2", "008.001.002": "1"}).ok
+
+
+def test_campo_da_entrega_leva_o_teto_para_a_tela(client, pedido, logado):
+    html = client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
+    for codigo in ("023.001.002", "008.001.002"):
+        campo = re.search(rf'<input[^>]*name="entregue-{codigo}"[^>]*>', html).group(0)
+        assert 'data-maximo="100"' in campo
+
+
+def test_placa_fora_da_lista_e_recusada(pedido, usuario):
     r = atender(pedido, usuario, saida(placa="ZZZ0000"))
     assert textos(r) == ["A placa ZZZ0000 não está na lista de centros de custo."]
     assert not LinhaSaida.objects.exists() and not Atendimento.objects.exists()
@@ -198,7 +226,7 @@ def dados_post(atendimento_id, **extra):
 def test_atender_pela_pagina(client, pedido, logado):
     url = reverse("pedidos:atender", args=[pedido.numero])
     detalhe = reverse("pedidos:detalhe", args=[pedido.numero])
-    r = client.post(url, dados_post(uuid.uuid4(), **{"entregue-023.001.002": "abc"}))
+    r = client.post(url, dados_post(uuid.uuid4(), **{"entregue-023.001.002": "-1"}))
     assert r.status_code == 200
     assert "Quantidade inválida" in r.text and 'value="Carla"' in r.text
     r = client.post(url, dados_post("x"))
@@ -248,12 +276,12 @@ def test_area_interna_mostra_a_unidade_do_scpi(client, pedido, logado):
 
 def test_item_recusado_fica_marcado_na_tabela(client, pedido, logado):
     url = reverse("pedidos:atender", args=[pedido.numero])
-    texto = client.post(url, dados_post(uuid.uuid4(), **{"entregue-023.001.002": "9"})).text
+    texto = client.post(url, dados_post(uuid.uuid4(), **{"entregue-023.001.002": "-1"})).text
     marcado = re.search(
         r'entrega-erro">(?:(?!<div class="entrega[ "]).)*?name="([^"]+)"', texto, re.S
     )
     assert marcado and marcado.group(1) == "entregue-023.001.002"
-    assert 'value="9"' in texto
+    assert 'value="-1"' in texto
     assert texto.count("entrega-erro") == 1
 
 
