@@ -18,7 +18,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from catalogo.catalogos import ItemCatalogo
-from catalogo.models import CentroCusto, Opcao
+from catalogo.models import CentroCusto, Material, Opcao
 from contas.acesso import da_seguranca_trabalho
 from pedidos.fluxos import fluxo_da_origem
 from pedidos.models import (
@@ -59,6 +59,7 @@ from pedidos.regras import (
     norm_placa,
     norm_u,
     parse_qtd_br,
+    qtd_br,
     registro_confere,
     requisicao_valida,
     somar_por_codigo,
@@ -591,6 +592,31 @@ def _erros_dos_adicionados(
     return unicos, erros
 
 
+def tetos_de_entrega(itens: list[ItemPedido]) -> dict[str, Decimal]:
+    """Quanto o almoxarifado pode entregar de cada item pedido: entregar mais que o pedido é
+    permitido, mas só até o maior entre o pedido e o teto de estoque da saída
+    (`_limites_de_estoque`: o saldo do cadastro truncado a 3 casas, ou o já gravado se maior).
+    Nunca recusa o que o pedido já permitia, e uma edição não derruba a entrega gravada. Uma
+    consulta só, pelos códigos."""
+    materiais = {m.codigo: m for m in Material.objects.filter(codigo__in=[i.codigo for i in itens])}
+    estoque = _limites_de_estoque(materiais, itens)
+    return {i.codigo: max(i.qtd_pedida, estoque.get(i.codigo, Decimal(0))) for i in itens}
+
+
+def _erros_de_entrega_acima(itens: list[ItemPedido], parsed: dict) -> list[Erro]:
+    """A entrega acima do teto de `tetos_de_entrega` é recusada."""
+    tetos = tetos_de_entrega(itens)
+    return [
+        Erro(
+            i.codigo,
+            f"Entrega de {i.codigo} acima do máximo de {qtd_br(tetos[i.codigo])} "
+            "(o maior entre o pedido e o estoque).",
+        )
+        for i in itens
+        if parsed[i.codigo] is not None and parsed[i.codigo] > tetos[i.codigo]
+    ]
+
+
 def _erros_de_troca_entregue(
     unicos: list[Adicionado], pedidos: list[ItemPedido], parsed: dict
 ) -> list[Erro]:
@@ -651,7 +677,7 @@ def _validar_atendimento(
     # por material vêm de `_erros_dos_adicionados`.
     codigos_unicos = {a.codigo for a in unicos}
     v = validar(
-        [ItemSaida(i.codigo, parsed[i.codigo], i.qtd_pedida) for i in itens]
+        [ItemSaida(i.codigo, parsed[i.codigo]) for i in itens]
         + [ItemSaida(a.codigo, qtds_adicionadas[a.codigo]) for a in unicos]
     )
     erros = (
@@ -665,6 +691,7 @@ def _validar_atendimento(
         )
         + [e for e in v.erros if e.codigo is None or e.codigo not in codigos_unicos]
         + erros_adicionados
+        + _erros_de_entrega_acima(itens, parsed)
         + _erros_de_troca_entregue(unicos, itens, parsed)
         + erros_extras_da_saida(dados, nao_lancar, v.centro)
     )
