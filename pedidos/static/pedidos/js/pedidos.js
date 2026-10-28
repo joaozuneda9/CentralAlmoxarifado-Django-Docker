@@ -157,6 +157,11 @@
     return /^\d+(,\d{1,3})?$/.test(t) ? parseFloat(t.replace(",", ".")) : NaN;
   }
 
+  // Compara em milésimos inteiros (o servidor usa Decimal de 3 casas): sem o ruído do float.
+  function milesimos(n) {
+    return Math.round(n * 1000);
+  }
+
   function formatarQtd(n) {
     return String(+n.toFixed(3)).replace(".", ",");
   }
@@ -188,9 +193,9 @@
     // Acrescentado pelo almoxarifado: não tem quantidade pedida, então não há parcial nem acima
     // ("ok" não mostra texto de estado).
     else if (bloco.closest("tr[data-adicionado]")) estado = "ok";
-    else if (valor > lerQtd(campo.getAttribute("data-maximo"))) estado = "maximo";
-    else if (valor > pedido) estado = "acima";
-    else if (valor < pedido) estado = "parcial";
+    else if (milesimos(valor) > milesimos(lerQtd(campo.getAttribute("data-maximo")))) estado = "maximo";
+    else if (milesimos(valor) > milesimos(pedido)) estado = "acima";
+    else if (milesimos(valor) < milesimos(pedido)) estado = "parcial";
     else estado = "total";
     bloco.setAttribute("data-estado", estado);
     var faltam = bloco.querySelector("[data-faltam]");

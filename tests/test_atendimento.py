@@ -123,8 +123,9 @@ def test_sem_saldo_o_teto_e_o_proprio_pedido(pedido, usuario):
 
 def test_campo_da_entrega_leva_o_teto_para_a_tela(client, pedido, logado):
     html = client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
-    assert re.search(r'name="entregue-023.001.002"[^>]*data-maximo="100"', html)
-    assert re.search(r'name="entregue-008.001.002"[^>]*data-maximo="100"', html)
+    for codigo in ("023.001.002", "008.001.002"):
+        campo = re.search(rf'<input[^>]*name="entregue-{codigo}"[^>]*>', html).group(0)
+        assert 'data-maximo="100"' in campo
 
 
 def test_placa_fora_da_lista_e_recusada(pedido, usuario):

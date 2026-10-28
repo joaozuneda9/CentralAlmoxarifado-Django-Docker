@@ -594,20 +594,13 @@ def _erros_dos_adicionados(
 
 def tetos_de_entrega(itens: list[ItemPedido]) -> dict[str, Decimal]:
     """Quanto o almoxarifado pode entregar de cada item pedido: entregar mais que o pedido é
-    permitido, mas só até o maior entre o pedido, o saldo do cadastro (truncado a 3 casas) e o que
-    já está gravado. Nunca recusa o que o pedido já permitia, e uma edição não derruba a entrega
-    gravada. Uma consulta só, pelos códigos dos itens."""
-    saldos = dict(
-        Material.objects.filter(codigo__in=[i.codigo for i in itens]).values_list(
-            "codigo", "estoque"
-        )
-    )
-    return {
-        i.codigo: max(
-            i.qtd_pedida, truncar_qtd(saldos.get(i.codigo) or Decimal(0)), i.qtd_entregue or 0
-        )
-        for i in itens
-    }
+    permitido, mas só até o maior entre o pedido e o teto de estoque da saída
+    (`_limites_de_estoque`: o saldo do cadastro truncado a 3 casas, ou o já gravado se maior).
+    Nunca recusa o que o pedido já permitia, e uma edição não derruba a entrega gravada. Uma
+    consulta só, pelos códigos."""
+    materiais = {m.codigo: m for m in Material.objects.filter(codigo__in=[i.codigo for i in itens])}
+    estoque = _limites_de_estoque(materiais, itens)
+    return {i.codigo: max(i.qtd_pedida, estoque.get(i.codigo, Decimal(0))) for i in itens}
 
 
 def _erros_de_entrega_acima(itens: list[ItemPedido], parsed: dict) -> list[Erro]:
