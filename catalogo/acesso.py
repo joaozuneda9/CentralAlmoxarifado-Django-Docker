@@ -24,6 +24,11 @@ def pode_alterar_centros(usuario) -> bool:
     return _pode(usuario, "catalogo.change_centrocusto")
 
 
+def pode_criar_centros(usuario) -> bool:
+    """Criar centro de custo (no admin, a partir da aba Centros de custo)."""
+    return _pode(usuario, "catalogo.add_centrocusto")
+
+
 def pode_alterar_materiais(usuario) -> bool:
     """Exceções de material (acrescentar, retirar, restaurar) e operações em lote."""
     return _pode(usuario, "catalogo.change_excecaomaterial")

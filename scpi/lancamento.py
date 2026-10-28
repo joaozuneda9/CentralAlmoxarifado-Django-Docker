@@ -29,7 +29,7 @@ from django.utils import timezone
 from pedidos.models import TRAVA_LANCAMENTO, ExecucaoRobo, LinhaSaida
 from pedidos.regras import EM_LANCAMENTO, ERRO, LANCADA, PENDENTE, VERIFICAR, texto
 from pedidos.servicos import centros
-from scpi.execucao import trava
+from scpi.execucao import PREFIXO_FALHA_INESPERADA, trava
 from scpi.leitura import ErroImportacao
 from scpi.requisicoes import ESTADOS_TRAVA, FalhaCritica, Requisicao, selecionar
 
@@ -315,7 +315,7 @@ def executar_lancamento(
             raise
         except Exception as exc:
             logger.exception("✘ Falha inesperada no lançamento")
-            _encerrar_com_falha(execucao, f"Falha inesperada: {exc}")
+            _encerrar_com_falha(execucao, f"{PREFIXO_FALHA_INESPERADA} {exc}")
             raise
         finally:
             logger.removeHandler(registro)

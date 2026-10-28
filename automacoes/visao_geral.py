@@ -66,25 +66,29 @@ def linha_lancamento(
     nivel, selo = _estado(ultima, travados, em_andamento, interrompida)
     pagina = reverse("automacoes:pagina")
     if travados:
-        acao = ("Conferir travas", f"{pagina}?aba=lancamento#travas", False)
+        acao_rotulo, acao_url, acao_discreta = (
+            "Conferir travas",
+            f"{pagina}?aba=lancamento#travas",
+            False,
+        )
     else:
-        acao = ("Abrir", f"{pagina}?aba=lancamento", True)
-    quando = complemento = erro = None
+        acao_rotulo, acao_url, acao_discreta = "Abrir", f"{pagina}?aba=lancamento", True
+    quando, complemento, erro = None, "", ""
     if ultima is not None:
         quando = ultima.fim or ultima.inicio
         complemento = "última: simulação" if ultima.simulacao else "último: lançamento real"
         falha = andamento.explicar_falha(ultima)
-        erro = falha.frase if falha else None
+        erro = falha.frase if falha else ""
     return LinhaAutomacao(
         rotulo="Lançamento no SCPI",
         nivel=nivel,
         selo=selo,
         resumo=_aguardando(pendentes),
-        complemento=complemento or "",
+        complemento=complemento,
         quando=quando,
         ha_quanto=ha_quanto(quando, agora) if quando else "",
-        erro=erro or "",
-        acao_rotulo=acao[0],
-        acao_url=acao[1],
-        acao_discreta=acao[2],
+        erro=erro,
+        acao_rotulo=acao_rotulo,
+        acao_url=acao_url,
+        acao_discreta=acao_discreta,
     )
