@@ -103,6 +103,14 @@ def test_entrega_maior_que_a_pedida_e_aceita(pedido, usuario):
     assert LinhaSaida.objects.get(codigo="023.001.002").qtd == Decimal("3")
 
 
+def test_entrega_acima_do_pedido_e_do_estoque_e_recusada(pedido, usuario):
+    r = atender(pedido, usuario, qtds={"023.001.002": "101", "008.001.002": "1"})
+    assert textos(r) == [
+        "Entrega de 023.001.002 acima do máximo de 100 (o maior entre o pedido e o estoque)."
+    ]
+    assert not LinhaSaida.objects.exists()
+
+
 def test_placa_fora_da_lista_e_recusada(pedido, usuario):
     r = atender(pedido, usuario, saida(placa="ZZZ0000"))
     assert textos(r) == ["A placa ZZZ0000 não está na lista de centros de custo."]

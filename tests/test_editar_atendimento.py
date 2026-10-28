@@ -214,6 +214,13 @@ def test_recusas_da_validacao(atendido, usuario, dados, qtds, adicionados, trech
     assert Pedido.objects.get().versao == 0
 
 
+def test_edicao_aceita_entrega_acima_do_pedido_ate_o_estoque(atendido, usuario):
+    assert editar(atendido, usuario, qtds={**TUDO, "023.001.002": "3"}).ok
+    assert LinhaSaida.objects.get(codigo="023.001.002").qtd == Decimal("3")
+    r = editar(atendido, usuario, versao=1, qtds={**TUDO, "023.001.002": "101"})
+    assert not r.ok and any("acima do máximo de 100" in t for t in textos(r)), textos(r)
+
+
 def test_zerar_tudo_recusa_ao_menos_um_material(atendido, usuario):
     antes = ids_das_linhas()
     r = editar(atendido, usuario, qtds={"023.001.002": "0", "008.001.002": "0"})

@@ -151,10 +151,10 @@
 
   // Quantidade entregue na tabela do atendimento (_recibo.html): o estado (total, parcial, não
   // entregue, acima do pedido) é só aviso na tela; quem decide é o servidor. Números em pt-BR:
-  // vírgula decimal, sem separador de milhar.
+  // vírgula decimal, até 3 casas (o limite do servidor), sem separador de milhar.
   function lerQtd(texto) {
     var t = (texto || "").trim();
-    return /^\d+(,\d+)?$/.test(t) ? parseFloat(t.replace(",", ".")) : NaN;
+    return /^\d+(,\d{1,3})?$/.test(t) ? parseFloat(t.replace(",", ".")) : NaN;
   }
 
   function formatarQtd(n) {
