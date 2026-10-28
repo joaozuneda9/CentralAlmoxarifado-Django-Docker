@@ -87,12 +87,10 @@ def iniciar_importacao(
     return True
 
 
-def iniciar_lancamento(
-    usuario, *, simulacao: bool, limite: int | None = None
-) -> ExecucaoRobo | None:
+def iniciar_lancamento(usuario, *, simulacao: bool, lotes: list[str]) -> ExecucaoRobo | None:
     """Cria a `ExecucaoRobo` e inicia `manage.py lancar_saidas` num processo separado.
 
-    Com `limite`, o robô lança no máximo essa quantidade de requisições.
+    O robô processa só as requisições de `lotes` (`--lote` de cada uma).
 
     Devolve None, sem criar nada, se já houver lançamento em andamento. Dois cliques quase
     juntos ainda podem criar duas execuções; a trava do lançamento (`GET_LOCK`) faz a segunda
@@ -104,8 +102,8 @@ def iniciar_lancamento(
     argumentos = ["lancar_saidas", "--execucao", str(execucao.pk)]
     if simulacao:
         argumentos.append("--dry-run")
-    if limite:
-        argumentos += ["--limite", str(limite)]
+    for lote in lotes:
+        argumentos += ["--lote", lote]
     try:
         _iniciar_comando(
             argumentos, "lancar_saidas.log", "Simular no SCPI" if simulacao else "Lançar no SCPI"

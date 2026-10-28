@@ -1,5 +1,3 @@
-from argparse import ArgumentTypeError
-
 from django.conf import settings
 from django.core.management import BaseCommand, CommandError
 from django.utils import timezone
@@ -8,17 +6,6 @@ from pedidos.models import ExecucaoRobo
 from scpi.lancador import navegador
 from scpi.lancamento import LANCAMENTO_BLOQUEADO, LancamentoEmAndamento, executar_lancamento
 from scpi.requisicoes import FalhaCritica
-
-
-def inteiro_positivo(valor: str) -> int:
-    """Tipo do `--limite`: 0 ou negativo cortaria a lista pelo fim (`[:-1]` lança quase tudo)."""
-    try:
-        numero = int(valor)
-    except ValueError:
-        numero = 0
-    if numero < 1:
-        raise ArgumentTypeError(f"precisa ser um inteiro maior que zero (recebido: {valor!r})")
-    return numero
 
 
 class Command(BaseCommand):
@@ -36,12 +23,18 @@ class Command(BaseCommand):
             help="Preenche o formulário e descarta, sem salvar nem alterar nenhuma linha.",
         )
         parser.add_argument(
-            "--limite",
-            type=inteiro_positivo,
-            help="Lança no máximo N requisições (para os primeiros testes).",
+            "--lote",
+            action="append",
+            dest="lotes",
+            default=[],
+            metavar="NÚMERO",
+            help="Número da requisição (P-0123, AV-0004) a processar; repita para mais de uma.",
         )
 
-    def handle(self, *args, execucao=None, dry_run=False, limite=None, **opcoes):
+    def handle(self, *args, execucao=None, dry_run=False, lotes=(), **opcoes):
+        lotes = [lote.strip() for lote in lotes if lote.strip()]
+        if not lotes:
+            raise CommandError("Informe ao menos uma requisição com --lote (ex.: --lote P-0123).")
         registro = None
         if execucao is not None:
             registro = ExecucaoRobo.objects.filter(
@@ -69,7 +62,7 @@ class Command(BaseCommand):
         registro.save(update_fields=["simulacao"])
 
         try:
-            registro = executar_lancamento(registro, navegador, limite=limite)
+            registro = executar_lancamento(registro, navegador, lotes=lotes)
         except LancamentoEmAndamento as exc:
             raise CommandError("Outro lançamento já está em andamento.") from exc
         except FalhaCritica as exc:

@@ -559,17 +559,25 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 }
 .botao-suave[disabled] { opacity: 0.5; cursor: not-allowed; transform: none; }
 
-/* Formulário do lançamento: os dois botões e o limite numa linha que quebra no celular. */
-.lancar-acao { display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-1) var(--esp-3); }
+/* Formulário do lançamento: a barra com a contagem e os dois botões, e a fila com a coluna de marcar. */
+.fila-form { display: grid; gap: var(--esp-2); }
+.fila-barra {
+  position: sticky; top: var(--fila-topo, 0px); z-index: 2;
+  display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-1) var(--esp-2);
+  padding: var(--esp-1) 0 var(--esp-2); background: var(--fundo); border-bottom: 1px solid var(--borda);
+}
+.fila-contagem { margin: 0; font-weight: 500; flex: 1 1 14rem; }
+.fila-contagem small { display: block; font-weight: 400; color: var(--texto-secundario); font-size: 0.9em; }
 .lancar-botoes { display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-1); }
-/* "Só as primeiras [N] requisições" é uma frase só: não quebra no meio. */
-.lancar-limite { display: flex; align-items: center; gap: var(--esp-1); white-space: nowrap; }
-.lancar-limite .campo-rotulo { margin: 0; }
-.lancar-limite .campo-entrada { width: 5.5rem; }
 .lancar-motivo { flex-basis: 100%; margin: 0; color: var(--texto-secundario); }
-/* A fila do robô, separada dos botões por um filete. */
-.fila-robo { padding-top: var(--esp-2); border-top: 1px solid var(--borda); }
-.fila-total { margin: 0; font-weight: 500; }
+.tabela .celula-marca { width: 1%; padding: 0; }
+.celula-marca label { display: flex; align-items: center; justify-content: center; min-width: 44px; min-height: 44px; cursor: pointer; }
+.celula-marca input { width: 20px; height: 20px; margin: 0; accent-color: var(--destaque); cursor: pointer; }
+.celula-marca input:disabled { cursor: not-allowed; }
+.celula-marca input:focus-visible { outline: none; box-shadow: var(--anel-foco); border-radius: 4px; }
+.js .fila-robo tbody tr[data-fila-linha] { cursor: pointer; }
+.fila-robo tbody tr.marcada, .fila-robo tbody tr.marcada:hover { background: var(--destaque-superficie); box-shadow: inset 3px 0 0 var(--destaque); }
+html:not(.js) #dialogo-lancar { display: none; }
 .fila-robo td .mono { white-space: nowrap; }
 
 /* Barra do pedido no celular sem material: só o texto, na altura de quando há botão (a folga da

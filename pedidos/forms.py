@@ -1,9 +1,10 @@
 """Formulário do lançamento no SCPI: o modo (vem do botão clicado, "Simular" ou "Lançar no SCPI")
-e o limite de requisições."""
+e as requisições escolhidas na fila."""
 
 from django import forms
 from django.conf import settings
 
+from pedidos.consultas import fila_do_robo
 from scpi.lancamento import LANCAMENTO_BLOQUEADO
 
 MODOS = [("lancar", "Lançar no SCPI"), ("simular", "Simular (preenche e descarta, sem salvar)")]
@@ -11,14 +12,19 @@ MODOS = [("lancar", "Lançar no SCPI"), ("simular", "Simular (preenche e descart
 
 class LancamentoForm(forms.Form):
     modo = forms.ChoiceField(label="Modo", choices=MODOS)
-    limite = forms.IntegerField(
-        label="Limite de requisições",
-        required=False,
-        min_value=1,
-        max_value=10000,
-        help_text="Deixe vazio para lançar todas. Use 1 nos primeiros testes.",
-        widget=forms.NumberInput(attrs={"class": "campo-entrada", "min": 1}),
+    lotes = forms.MultipleChoiceField(
+        label="Requisições",
+        error_messages={
+            "required": "Marque ao menos uma requisição da fila.",
+            "invalid_choice": "A requisição %(value)s não está mais na fila do robô.",
+        },
     )
+
+    def __init__(self, *args, **kwargs):
+        super().__init__(*args, **kwargs)
+        # Só o que está na fila agora: uma requisição lançada ou travada depois de a página abrir
+        # é recusada aqui, não chega ao robô.
+        self.fields["lotes"].choices = [(r.lote, r.lote) for r in fila_do_robo().requisicoes]
 
     def clean_modo(self):
         modo = self.cleaned_data["modo"]

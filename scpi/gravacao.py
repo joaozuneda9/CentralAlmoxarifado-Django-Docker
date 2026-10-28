@@ -77,7 +77,10 @@ def gravar_cadastro(leitura: Leitura, forcar: bool = False, parcial: bool = Fals
             return Resultado(0, avisos)
         raise ErroImportacao("Cadastro: o CSV não tem nenhum material; nada foi alterado.")
 
-    existentes = {chave(m.codigo): m for m in Material.objects.all()}
+    # Todos, mesmo na importação parcial: o banco compara o código pela collation (maiúsculas,
+    # acentos, espaço no fim) e `chave()` também colapsa espaços internos; um filtro `codigo__in`
+    # com os códigos do CSV não acharia '0-A  B' para '0-A B' e criaria um segundo material.
+    existentes = {chave(m.codigo): m for m in Material.objects.only("codigo", *CAMPOS_CADASTRO)}
     visiveis = [c for c, m in existentes.items() if not m.oculto]
     sumidos = [] if parcial else [c for c in visiveis if c not in novos]
     if visiveis and len(sumidos) > LIMITE_SUMIDOS * len(visiveis) and not forcar:
@@ -105,13 +108,10 @@ def gravar_cadastro(leitura: Leitura, forcar: bool = False, parcial: bool = Fals
             for campo, valor in valores.items():
                 setattr(material, campo, valor)
             atualizar.append(material)
-    for c in sumidos:
-        material = existentes[c]
-        material.oculto = True
-        atualizar.append(material)
 
     Material.objects.bulk_create(criar, batch_size=LOTE)
     Material.objects.bulk_update(atualizar, CAMPOS_CADASTRO, batch_size=LOTE)
+    Material.objects.filter(pk__in=[existentes[c].pk for c in sumidos]).update(oculto=True)
     return Resultado(len(novos), avisos)
 
 
@@ -134,7 +134,9 @@ def gravar_estoque(leitura: Leitura, em) -> Resultado:
 
     Material.objects.update(estoque=0, estoque_em=em)
     materiais = [
-        m for m in Material.objects.filter(codigo__in=codigos.values()) if chave(m.codigo) in saldos
+        m
+        for m in Material.objects.filter(codigo__in=codigos.values()).only("codigo", "estoque")
+        if chave(m.codigo) in saldos
     ]
     for material in materiais:
         material.estoque = saldos[chave(material.codigo)]

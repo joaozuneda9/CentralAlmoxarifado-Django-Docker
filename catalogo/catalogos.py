@@ -73,10 +73,14 @@ def _grupo(texto: str) -> str:
     return norm_u(texto).replace(" ", "")
 
 
+def _grupos(lista: str) -> set[str]:
+    """Os grupos de uma lista `Opcao`, normalizados (sem acento, maiúsculas, sem espaços)."""
+    return {_grupo(v) for v in Opcao.valores(lista)}
+
+
 def grupos_ocultos_ab() -> set[str]:
-    """Grupos fora do formulário AB, normalizados (sem acento, maiúsculas, sem espaços)."""
-    valores = Opcao.valores(Opcao.Lista.GRUPO_OCULTO_AB) or GRUPOS_OCULTOS_PADRAO
-    return {_grupo(v) for v in valores}
+    """Grupos fora do formulário AB, normalizados como `_grupos`."""
+    return _grupos(Opcao.Lista.GRUPO_OCULTO_AB) or {_grupo(v) for v in GRUPOS_OCULTOS_PADRAO}
 
 
 def unidades_fracionaveis() -> set[str]:
@@ -145,8 +149,7 @@ def regra_de_origem(
     if origem == LIMPEZA:
         return catalogo_limpeza()
     if origem == AB:
-        ab = ab if ab is not None else catalogo_ab()
-        return ab.itens if ab is not None else []
+        return _itens_ab(ab)
     if origem == VIATURAS:
         return _base_viaturas(ab, viaturas)
     if origem == OFICINA:
@@ -168,6 +171,20 @@ def catalogo_efetivo(
     return aplicar_excecoes(
         origem, regra_de_origem(origem, ab, viaturas), ordem_do_banco=origem in (OFICINA, EPIS)
     )
+
+
+def _itens_ab(ab: CatalogoAB | None) -> list[ItemCatalogo]:
+    """Os itens do catálogo AB já calculado pelo chamador (sem ele, calculado aqui)."""
+    ab = ab if ab is not None else catalogo_ab()
+    return ab.itens if ab is not None else []
+
+
+def _formulario(origem: str) -> list[ItemCatalogo] | None:
+    """O catálogo efetivo do formulário, ou None se ele está indisponível: o saldo nunca foi
+    importado (o formulário limita pelo saldo) ou não há nada a oferecer (depois das exceções)."""
+    if not saldo_importado():
+        return None
+    return catalogo_efetivo(origem) or None
 
 
 def catalogo_limpeza() -> list[ItemCatalogo]:
@@ -242,20 +259,11 @@ def catalogo_avulsa() -> list[ItemCatalogo]:
 
 
 def formulario_limpeza() -> list[ItemCatalogo] | None:
-    """O catálogo do formulário de limpeza, ou None se ele está indisponível: o saldo nunca foi
-    importado (o formulário limita pelo saldo) ou não há item algum (depois das exceções)."""
-    if not saldo_importado():
-        return None
-    return aplicar_excecoes(LIMPEZA, catalogo_limpeza()) or None
+    return _formulario(LIMPEZA)
 
 
 def formulario_ab() -> list[ItemCatalogo] | None:
-    """O catálogo do formulário AB, ou None se ele está indisponível: o saldo nunca foi importado
-    ou nenhum material com saída entra no catálogo (depois das exceções)."""
-    ab = catalogo_ab()
-    if ab is None:
-        return None
-    return aplicar_excecoes(AB, ab.itens) or None
+    return _formulario(AB)
 
 
 def formulario_avulsa() -> list[ItemCatalogo] | None:
@@ -278,17 +286,12 @@ def _base_viaturas(
     lista. `viaturas` é a lista já calculada pelo chamador (sem ela, é calculada aqui)."""
     lista = viaturas if viaturas is not None else catalogo_viaturas()
     na_lista = {norm_u(i.codigo) for i in lista}
-    ab = ab if ab is not None else catalogo_ab()
-    resto = [i for i in (ab.itens if ab is not None else []) if norm_u(i.codigo) not in na_lista]
+    resto = [i for i in _itens_ab(ab) if norm_u(i.codigo) not in na_lista]
     return lista + resto
 
 
 def formulario_viaturas() -> list[ItemCatalogo] | None:
-    """O catálogo do formulário de viaturas: a lista e, depois, o catálogo AB sem repetir as peças
-    da lista, com as exceções; None se o saldo nunca foi importado ou não há nada a oferecer."""
-    if not saldo_importado():
-        return None
-    return aplicar_excecoes(VIATURAS, _base_viaturas()) or None
+    return _formulario(VIATURAS)
 
 
 def folha_viaturas() -> list[str]:
@@ -341,7 +344,7 @@ def centros_do_formulario(origem: str) -> list[Centro]:
 def grupos_oficina() -> set[str]:
     """Os grupos do formulário da oficina mecânica (spec 007), normalizados como os ocultos do AB.
     Lista vazia: nenhum grupo (sem padrão)."""
-    return {_grupo(v) for v in Opcao.valores(Opcao.Lista.GRUPO_OFICINA)}
+    return _grupos(Opcao.Lista.GRUPO_OFICINA)
 
 
 def _materiais_dos_grupos(grupos: set[str]) -> list[ItemCatalogo]:
@@ -362,17 +365,13 @@ def catalogo_oficina() -> list[ItemCatalogo]:
 
 
 def formulario_oficina() -> list[ItemCatalogo] | None:
-    """O catálogo do formulário da oficina, ou None se ele está indisponível: o saldo nunca foi
-    importado ou a oficina não tem material visível (depois das exceções)."""
-    if not saldo_importado():
-        return None
-    return aplicar_excecoes(OFICINA, catalogo_oficina(), ordem_do_banco=True) or None
+    return _formulario(OFICINA)
 
 
 def grupos_epis() -> set[str]:
     """Os grupos do formulário de EPIs (spec 008), normalizados como os da oficina. Lista vazia:
     nenhum grupo (sem padrão)."""
-    return {_grupo(v) for v in Opcao.valores(Opcao.Lista.GRUPO_EPI)}
+    return _grupos(Opcao.Lista.GRUPO_EPI)
 
 
 def catalogo_epis() -> list[ItemCatalogo]:
@@ -382,8 +381,4 @@ def catalogo_epis() -> list[ItemCatalogo]:
 
 
 def formulario_epis() -> list[ItemCatalogo] | None:
-    """O catálogo do formulário de EPIs, ou None se ele está indisponível: o saldo nunca foi
-    importado ou a escolha dos EPIs não tem material visível (depois das exceções)."""
-    if not saldo_importado():
-        return None
-    return aplicar_excecoes(EPIS, catalogo_epis(), ordem_do_banco=True) or None
+    return _formulario(EPIS)

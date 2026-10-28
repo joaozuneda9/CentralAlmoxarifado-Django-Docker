@@ -1,6 +1,6 @@
 {% load interface_extras %}
 {% comment %}
-Aba Lançamento no SCPI de Automações: formulário único ("Simular", "Lançar no SCPI" e o limite),
+Aba Lançamento no SCPI de Automações: formulário único (a fila com as requisições a marcar e os botões "Simular" e "Lançar no SCPI"),
 andamento da última execução do robô e travas para conferir (as execuções anteriores ficam no
 histórico da visão geral). Enquanto houver execução em andamento, o HTMX recarrega este trecho a
 cada 3 s (a view o escolhe pelo HX-Target `section#lancamentos`). Quando a execução termina, a resposta seguinte já vem sem
@@ -10,60 +10,72 @@ em andamento, nunca ficam numa seção recarregada (perderiam o que o usuário d
 {% endcomment %}
 <section id="lancamentos" class="pilha-larga"{% if acompanhar_lancamento %} hx-get="{% url 'automacoes:pagina' %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
   <div class="cartao pilha">
-    {# Um formulário só: o botão clicado diz o modo e o limite vale para ele. A ação em destaque é a que dá para executar agora: "Simular" com o lançamento real bloqueado (LANCAMENTO_REAL), "Lançar no SCPI" com ele liberado. Bloqueado, o "Lançar no SCPI" fica aria-disabled e type="button", como no cartão do painel: continua no Tab e mostra o motivo numa dica, sem enviar nada. #}
-    <form method="post" action="{% url 'automacoes:lancar' %}" class="lancar-acao" data-acao-lancamento>
+    {# Um formulário só, com a fila: as requisições marcadas dizem o que o robô processa e o botão clicado diz o modo. Sem nenhuma marcada, os botões ficam desabilitados (fila-robo.js) e o servidor recusa o envio. A ação em destaque é a que dá para executar agora: "Simular" com o lançamento real bloqueado (LANCAMENTO_REAL), "Lançar no SCPI" com ele liberado. Bloqueado, o "Lançar no SCPI" fica aria-disabled e type="button", como no cartão do painel: continua no Tab e mostra o motivo numa dica, sem enviar nada. Com JavaScript, o lançamento real passa por uma confirmação (#dialogo-lancar). #}
+    <form method="post" action="{% url 'automacoes:lancar' %}" id="fila-form" class="fila-form" data-fila-robo>
       {% csrf_token %}
-      <div class="lancar-botoes">
-        <button type="submit" name="modo" value="simular" class="botao {% if pode_executar and not lancamento_real %}botao-primario{% else %}botao-secundario{% endif %}"{% if not pode_executar %} disabled{% endif %}>{% include "interface/_icone.html" with nome="olho" %}Simular</button>
-        {% if lancamento_real %}
-        <button type="submit" name="modo" value="lancar" class="botao {% if pode_executar %}botao-primario{% else %}botao-secundario{% endif %}"{% if not pode_executar %} disabled{% endif %}>{% include "interface/_icone.html" with nome="robo" %}Lançar no SCPI</button>
-        {% else %}
-        <span class="dica-flutuante">
-          <button type="button" class="botao botao-secundario" aria-disabled="true" aria-describedby="dica-lancamento-real">{% include "interface/_icone.html" with nome="robo" %}Lançar no SCPI{% include "interface/_icone.html" with nome="cadeado" %}</button>
-          <span class="dica-flutuante-texto" role="tooltip" id="dica-lancamento-real">Lançamento real bloqueado neste ambiente: só a simulação roda.</span>
-        </span>
+      <div class="fila-barra">
+        <p class="fila-contagem" data-fila-contagem aria-live="polite">{% if fila.total %}{{ fila.total }} {{ fila.total|pluralize:"requisição aguardando o robô,requisições aguardando o robô" }}<small>Marque na lista o que o robô deve processar.</small>{% else %}Nada aguardando o robô.{% endif %}</p>
+        <div class="lancar-botoes">
+          <button type="submit" name="modo" value="simular" data-requer-selecao class="botao {% if pode_executar and not lancamento_real %}botao-primario{% else %}botao-secundario{% endif %}"{% if not pode_executar %} disabled{% endif %}>{% include "interface/_icone.html" with nome="olho" %}Simular</button>
+          {% if lancamento_real %}
+          <button type="submit" name="modo" value="lancar" data-requer-selecao data-confirmar-lancamento class="botao {% if pode_executar %}botao-primario{% else %}botao-secundario{% endif %}"{% if not pode_executar %} disabled{% endif %}>{% include "interface/_icone.html" with nome="robo" %}Lançar no SCPI</button>
+          {% else %}
+          <span class="dica-flutuante">
+            <button type="button" class="botao botao-secundario" aria-disabled="true" aria-describedby="dica-lancamento-real">{% include "interface/_icone.html" with nome="robo" %}Lançar no SCPI{% include "interface/_icone.html" with nome="cadeado" %}</button>
+            <span class="dica-flutuante-texto" role="tooltip" id="dica-lancamento-real">Lançamento real bloqueado neste ambiente: só a simulação roda.</span>
+          </span>
+          {% endif %}
+        </div>
+        {% if lancamento_em_andamento %}<p class="lancar-motivo">Há uma execução em andamento.</p>{% endif %}
+      </div>
+      <p class="campo-dica">A simulação preenche cada requisição no SCPI e não salva: nenhuma linha muda de estado.{% if not lancamento_real %} O lançamento real é liberado pelo LANCAMENTO_REAL no .env.{% endif %}</p>
+      {# A fila do robô: é o que se confere antes de clicar. Sem nada nela, a frase da contagem é também o motivo de os botões estarem desabilitados. #}
+      <div class="fila-robo" id="fila">
+        {% if fila.requisicoes %}
+        <div class="tabela-rolagem">
+          <table class="tabela">
+            <thead>
+              <tr>
+                <th scope="col" class="celula-marca"><label><input type="checkbox" data-fila-todas aria-label="Marcar todas as requisições da fila"{% if not pode_executar %} disabled{% endif %}></label></th>
+                <th scope="col">Nº</th>
+                <th scope="col">Data</th>
+                <th scope="col">Recebedor</th>
+                <th scope="col">Centro de custo</th>
+                <th scope="col">Materiais</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% for req in fila.requisicoes %}
+              <tr data-fila-linha>
+                <td class="celula-marca"><label><input type="checkbox" name="lotes" value="{{ req.lote }}" aria-label="Selecionar a requisição {{ req.lote }}"{% if not pode_executar %} disabled{% endif %}></label></td>
+                <td><a class="mono" href="{% url 'pedidos:detalhe' req.lote %}">{{ req.lote }}</a></td>
+                <td class="tabela-data">{{ req.data|date:"d/m/Y" }}</td>
+                <td>{{ req.recebedor }}</td>
+                <td>{{ req.centro_custo }}</td>
+                <td class="tabela-data">{{ req.materiais }}</td>
+              </tr>
+              {% endfor %}
+            </tbody>
+          </table>
+        </div>
         {% endif %}
       </div>
-      <div class="lancar-limite">
-        <label class="campo-rotulo" for="limite-lancamento">Só as primeiras</label>
-        <input id="limite-lancamento" class="campo-entrada" type="number" name="limite" min="1" max="10000" inputmode="numeric" placeholder="todas"{% if not pode_executar %} disabled{% endif %}>
-        <span class="texto-secundario">requisições</span>
-      </div>
-      {% if lancamento_em_andamento %}<p class="lancar-motivo">Há uma execução em andamento.</p>{% endif %}
+      <!-- /fila -->
     </form>
-    <p class="campo-dica">A simulação preenche cada requisição no SCPI e não salva: nenhuma linha muda de estado.{% if not lancamento_real %} O lançamento real é liberado pelo LANCAMENTO_REAL no .env.{% endif %}</p>
-    {# A fila do robô logo abaixo dos botões: é o que se confere antes de clicar. Sem nada nela, a frase é também o motivo de os botões estarem desabilitados. #}
-    <div class="fila-robo pilha" id="fila">
-      <p class="fila-total">{% if fila.total %}{{ fila.total }} {{ fila.total|pluralize:"requisição aguardando o robô,requisições aguardando o robô" }}{% else %}Nada aguardando o robô.{% endif %}</p>
-      {% if fila.requisicoes %}
-      <div class="tabela-rolagem">
-        <table class="tabela">
-          <thead>
-            <tr>
-              <th scope="col">Nº</th>
-              <th scope="col">Data</th>
-              <th scope="col">Recebedor</th>
-              <th scope="col">Centro de custo</th>
-              <th scope="col">Materiais</th>
-            </tr>
-          </thead>
-          <tbody>
-            {% for req in fila.requisicoes %}
-            <tr>
-              <td><a class="mono" href="{% url 'pedidos:detalhe' req.lote %}">{{ req.lote }}</a></td>
-              <td class="tabela-data">{{ req.data|date:"d/m/Y" }}</td>
-              <td>{{ req.recebedor }}</td>
-              <td>{{ req.centro_custo }}</td>
-              <td class="tabela-data">{{ req.materiais }}</td>
-            </tr>
-            {% endfor %}
-          </tbody>
-        </table>
+    {% if lancamento_real %}
+    <dialog class="dialogo-confirmacao" id="dialogo-lancar" aria-labelledby="dialogo-lancar-titulo">
+      <div class="dialogo-confirmacao-corpo">
+        <div class="dialogo-confirmacao-texto">
+          <h2 id="dialogo-lancar-titulo" class="dialogo-confirmacao-titulo">Lançar no SCPI?</h2>
+          <p data-fila-confirmacao>As requisições marcadas serão lançadas de verdade no SCPI. Não dá para desfazer por aqui.</p>
+        </div>
+        <div class="dialogo-confirmacao-acoes">
+          <button type="button" class="botao botao-secundario" data-fechar-dialogo>Cancelar</button>
+          <button type="submit" form="fila-form" name="modo" value="lancar" class="botao botao-primario">{% include "interface/_icone.html" with nome="robo" %}Lançar no SCPI</button>
+        </div>
       </div>
-      {% if fila.fora %}<p class="texto-secundario texto-pequeno">e mais {{ fila.fora }} {{ fila.fora|pluralize:"requisição,requisições" }}</p>{% endif %}
-      {% endif %}
-    </div>
-    <!-- /fila -->
+    </dialog>
+    {% endif %}
   </div>
 
   {# A última execução numa frase (pedidos/andamento.py), com quem iniciou e a duração; só os contadores diferentes de zero. A falha vem explicada em português, com o texto técnico recolhido. #}
@@ -88,12 +100,6 @@ em andamento, nunca ficam numa seção recarregada (perderiam o que o usuário d
     {% if falha %}
     <div class="aviso aviso-erro" role="alert">{% include "interface/_icone.html" with nome="alerta" %}<div class="pilha-curta"><p><strong>{{ falha.frase|linebreaksbr }}</strong></p><p>{{ falha.ate_onde }} {{ falha.proximo_passo }}</p></div></div>
     <div class="acoes">
-      {% if falha.simular_de_novo %}
-      <form method="post" action="{% url 'automacoes:lancar' %}">
-        {% csrf_token %}
-        <button type="submit" name="modo" value="simular" class="botao botao-secundario"{% if lancamento_em_andamento or not fila.total %} disabled{% endif %}>{% include "interface/_icone.html" with nome="olho" %}Simular de novo</button>
-      </form>
-      {% endif %}
       {% if andamento.precisa_conferir %}<a class="botao botao-texto" href="#travas">Ver as travas</a>{% endif %}
     </div>
     {% if falha.tecnico %}
