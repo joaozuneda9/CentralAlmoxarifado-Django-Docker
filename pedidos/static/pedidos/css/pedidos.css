@@ -427,6 +427,9 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
   .entrega-passo, .entrega-estado { display: none; }
   .entrega-caixa, .entrega[data-confirmado] .entrega-caixa { width: auto; height: auto; border: 0; background: none; }
   .entrega-forma { display: none; }
+  /* Quantidade entregue ainda não confirmada (o pedidos.js marca `data-pode-confirmar`; sem ele o
+     campo imprime como está): sai em branco no papel, com a unidade, para não valer como entregue. */
+  .entrega[data-pode-confirmar]:not([data-confirmado]) .entrega-campo { visibility: hidden; }
   .recibo-itens th { padding: 2px 6px; font-size: 9px; }
   .recibo-itens td { padding: 1px 6px; line-height: 1.3; }
   .recibo-itens th:first-child, .recibo-itens td:first-child { padding-left: 0; }
