@@ -550,15 +550,18 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
   /* No cartão, os dois selos voltam a ficar lado a lado, quebrando linha se faltar largura. */
   .situacao-selos { flex-direction: row; flex-wrap: wrap; gap: 6px var(--esp-1); }
 }
-/* No tablet, cabe tudo na primeira linha: o Nº com os selos ao lado e a data à direita; embaixo,
-   quem pediu e o destino. No celular, os selos ficam embaixo, como acima. */
+/* No tablet, o Nº com os selos ao lado na primeira linha; embaixo, quem pediu e o destino, com a data
+   no canto inferior direito (solta do fluxo, para os selos, que quebram linha, não a empurrarem).
+   No celular, os selos ficam embaixo, como acima. */
 @container (min-width: 481px) and (max-width: 720px) {
   .tabela-pedidos .col-numero { flex: none; margin-right: var(--esp-meio); }
   .tabela-pedidos .col-origem { order: 2; }
   .tabela-pedidos .col-situacao { order: 3; }
-  .tabela-pedidos .col-data { order: 4; margin-left: auto; }
+  .tabela-pedidos .col-data { position: absolute; right: var(--esp-1); bottom: 14px; white-space: nowrap; }
   .tabela-pedidos .col-pessoa { order: 5; margin-top: 2px; }
   .tabela-pedidos .col-destino { order: 6; }
+  /* A última linha de texto deixa o canto da data livre. */
+  .tabela-pedidos .col-destino, .tabela-pedidos .col-extra { padding-right: 9rem; }
 }
 .botao-suave[disabled] { opacity: 0.5; cursor: not-allowed; transform: none; }
 
