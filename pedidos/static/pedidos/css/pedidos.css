@@ -603,12 +603,11 @@ html:not(.js) #dialogo-lancar { display: none; }
 .formulario-pedido .campo-com-erro .campo-entrada:focus { box-shadow: 0 0 0 3px var(--erro-superficie); }
 
 /* "Não é você? Limpar" (nome e destino lembrados), discreto e com área de toque de 44px. */
-/* "Limpar" dentro do campo (nome e destino): no destino, à esquerda da seta do dropdown. */
+/* "Limpar" dentro do campo (nome e destino). No destino, com o botão à mostra, a seta do dropdown sai
+   e o botão ocupa o lugar dela: assim não cobre o texto digitado. */
 .acao-limpar { right: 10px; }
-.com-acao:has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 96px; text-overflow: ellipsis; }
-.com-acao:has(.dropdown) .acao-limpar { right: 40px; }
-/* O wrapper do dropdown já reserva os 44px da seta: o campo só cobre o resto até o botão. */
-.com-acao:has(.dropdown):has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 84px; }
+.com-acao:has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 104px; text-overflow: ellipsis; }
+.com-acao:has(.acao-limpar:not([hidden])) .dropdown-seta-campo { display: none; }
 
 /* "Adicionado" no lugar do "Adicionar" por 2 s. */
 .botao-adicionado { color: var(--ok-texto); background: var(--ok-superficie); border-color: transparent; }
