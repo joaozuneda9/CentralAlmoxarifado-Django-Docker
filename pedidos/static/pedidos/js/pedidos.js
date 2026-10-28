@@ -188,12 +188,15 @@
     // Acrescentado pelo almoxarifado: não tem quantidade pedida, então não há parcial nem acima
     // ("ok" não mostra texto de estado).
     else if (bloco.closest("tr[data-adicionado]")) estado = "ok";
+    else if (valor > lerQtd(campo.getAttribute("data-maximo"))) estado = "maximo";
     else if (valor > pedido) estado = "acima";
     else if (valor < pedido) estado = "parcial";
     else estado = "total";
     bloco.setAttribute("data-estado", estado);
     var faltam = bloco.querySelector("[data-faltam]");
     if (faltam && estado === "parcial") faltam.textContent = formatarQtd(pedido - valor);
+    var maximo = bloco.querySelector("[data-maximo-valor]");
+    if (maximo && estado === "maximo") maximo.textContent = campo.getAttribute("data-maximo");
   }
 
   document.addEventListener("input", function (e) {
@@ -238,11 +241,11 @@
   function confirmarEntrega(bloco) {
     if (!bloco) return false;
     var campo = bloco.querySelector(".entrega-campo");
-    // Inválido não se confirma: o servidor recusaria (acima do pedido é aviso, como o parcial). Nem o acrescentado com 0
+    // Inválido ou acima do máximo (o maior entre pedido e estoque, `data-maximo`) não se confirma: o servidor recusaria (acima do pedido é só aviso, como o parcial). Nem o acrescentado com 0
     // (acrescentar sem entregar não tem sentido; para desistir dele, "Remover" ou "Desfazer troca").
     var estado = bloco.getAttribute("data-estado");
     var adicionadoZero = estado === "zero" && bloco.closest("tr[data-adicionado]");
-    if (estado === "invalido" || adicionadoZero) {
+    if (estado === "invalido" || estado === "maximo" || adicionadoZero) {
       campo.focus();
       return false;
     }
@@ -1593,7 +1596,7 @@
     // Quantidades gravadas já valem: abrem confirmadas (as trocadas o `iniciarTrocas` confirmou).
     document.querySelectorAll(".entrega[data-pode-confirmar]:not([data-confirmado])").forEach(function (bloco) {
       var estado = bloco.getAttribute("data-estado");
-      if (estado === "invalido") return;
+      if (estado === "invalido" || estado === "maximo") return;
       if (estado === "zero" && bloco.closest("tr[data-adicionado]")) return;
       confirmarEntrega(bloco);
     });

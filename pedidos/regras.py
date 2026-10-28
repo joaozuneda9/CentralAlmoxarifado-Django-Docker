@@ -501,7 +501,7 @@ class DadosSaida:
 class ItemSaida:
     codigo: str
     quantidade: Decimal | int | None  # None = inválida
-    estoque: Decimal | None = None  # saldo que limita a saída (None = sem limite)
+    estoque: Decimal | None = field(default=None, kw_only=True)  # saldo que limita a saída
 
 
 @dataclass(frozen=True)

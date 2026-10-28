@@ -213,7 +213,7 @@ html:not(.js) .formulario-pedido { display: none; }
 }
 .entrega[data-estado="parcial"], .entrega[data-estado="acima"] { --borda-c: #c9891a; --fundo-c: var(--aviso-superficie); --cor-passo: var(--aviso-texto); }
 .entrega[data-estado="zero"] { --borda-c: var(--borda); --fundo-c: var(--superficie); --cor-passo: var(--texto-secundario); }
-.entrega[data-estado="invalido"], .entrega.entrega-erro {
+.entrega[data-estado="invalido"], .entrega[data-estado="maximo"], .entrega.entrega-erro {
   --borda-c: var(--erro-texto); --fundo-c: var(--erro-superficie); --cor-passo: var(--erro-texto);
 }
 /* Confirmada com tudo o que foi pedido, a caixa fica no verde do "Total": pronto, nada a fazer. */
@@ -288,10 +288,11 @@ html:not(.js) .formulario-pedido { display: none; }
 .entrega[data-estado="parcial"] [data-estado="parcial"],
 .entrega[data-estado="zero"] [data-estado="zero"],
 .entrega[data-estado="acima"] [data-estado="acima"],
+.entrega[data-estado="maximo"] [data-estado="maximo"],
 .entrega[data-estado="invalido"] [data-estado="invalido"] { display: block; }
 .entrega[data-estado="parcial"] .entrega-estado, .entrega[data-estado="acima"] .entrega-estado { color: var(--aviso-texto); }
 .entrega[data-estado="zero"] .entrega-estado { color: var(--texto-secundario); }
-.entrega[data-estado="invalido"] .entrega-estado { color: var(--erro-texto); }
+.entrega[data-estado="maximo"] .entrega-estado, .entrega[data-estado="invalido"] .entrega-estado { color: var(--erro-texto); }
 /* Confirmada (pedidos.js), a quantidade vira um número fechado: some o − e o +, e o contorno com as
    abas dá lugar a um retângulo nas cores do estado, na mesma largura (as colunas não se mexem). O
    "Confirmar" vira "Alterar": o estado nunca fica só na forma. */

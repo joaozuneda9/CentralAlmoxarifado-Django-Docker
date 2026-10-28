@@ -8,7 +8,7 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
-from catalogo.models import Opcao
+from catalogo.models import Material, Opcao
 from pedidos.models import Atendimento, LinhaSaida, Pedido
 from pedidos.regras import AB, AVULSA, LIMPEZA
 from pedidos.servicos import confirmar_atendimento
@@ -109,6 +109,22 @@ def test_entrega_acima_do_pedido_e_do_estoque_e_recusada(pedido, usuario):
         "Entrega de 023.001.002 acima do máximo de 100 (o maior entre o pedido e o estoque)."
     ]
     assert not LinhaSaida.objects.exists()
+
+
+def test_sem_saldo_o_teto_e_o_proprio_pedido(pedido, usuario):
+    """Material sem saldo (ou fora do catálogo da avulsa) entrega o pedido, nunca mais que ele."""
+    Material.objects.filter(codigo="023.001.002").update(estoque=Decimal(0))
+    r = atender(pedido, usuario, qtds={"023.001.002": "3", "008.001.002": "1"})
+    assert textos(r) == [
+        "Entrega de 023.001.002 acima do máximo de 2 (o maior entre o pedido e o estoque)."
+    ]
+    assert atender(pedido, usuario, qtds={"023.001.002": "2", "008.001.002": "1"}).ok
+
+
+def test_campo_da_entrega_leva_o_teto_para_a_tela(client, pedido, logado):
+    html = client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
+    assert re.search(r'name="entregue-023.001.002"[^>]*data-maximo="100"', html)
+    assert re.search(r'name="entregue-008.001.002"[^>]*data-maximo="100"', html)
 
 
 def test_placa_fora_da_lista_e_recusada(pedido, usuario):

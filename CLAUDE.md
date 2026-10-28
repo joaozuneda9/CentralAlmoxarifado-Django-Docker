@@ -266,7 +266,7 @@ transações precisam se comportar como no servidor.
   unidade é a do cadastro do SCPI (`consultas.unidades_scpi`), nunca a unidade exibida do
   formulário de limpeza (`ItemPedido.unidade`, que só vale para código fora do cadastro), e vai
   dentro do campo da quantidade entregue. Com JavaScript, cada quantidade entregue é confirmada
-  ("Confirmar" ou Enter; o − e o + somem e a própria caixa, com um lápis, vira o "Alterar", com o lugar do "Confirmar" guardado; inválida não confirma, e acima do pedido confirma com o aviso âmbar da parcial, até o maior entre o pedido e o saldo (`servicos._erros_de_entrega_acima`);
+  ("Confirmar" ou Enter; o − e o + somem e a própria caixa, com um lápis, vira o "Alterar", com o lugar do "Confirmar" guardado; inválida não confirma, e acima do pedido confirma com o aviso âmbar da parcial, até o maior entre o pedido, o saldo e o que já está gravado (`servicos.tetos_de_entrega`, também no `data-maximo` do campo: acima dele, o estado "máximo" não confirma);
   "Entregar tudo" preenche e confirma) e o `pedidos.js` barra o envio com alguma pendente.
   No atendimento, o almoxarifado troca um material pedido por outro ou acrescenta um
   (`ItemPedido.origem` `PEDIDO` ou `ALMOXARIFADO`; o acrescentado tem `qtd_pedida` nula,

@@ -18,7 +18,7 @@ from django.db.models import Q
 from django.utils import timezone
 
 from catalogo.catalogos import ItemCatalogo
-from catalogo.models import CentroCusto, Opcao
+from catalogo.models import CentroCusto, Material, Opcao
 from contas.acesso import da_seguranca_trabalho
 from pedidos.fluxos import fluxo_da_origem
 from pedidos.models import (
@@ -592,26 +592,36 @@ def _erros_dos_adicionados(
     return unicos, erros
 
 
-def _erros_de_entrega_acima(
-    itens: list[ItemPedido], parsed: dict, da_saida: dict[str, ItemCatalogo]
-) -> list[Erro]:
-    """Entregar mais que o pedido é permitido (o almoxarifado decide), mas só até o maior entre o
-    pedido, o saldo do cadastro (truncado a 3 casas) e o que já está gravado: nunca recusa o que
-    o pedido já permitia, e uma edição não derruba a entrega gravada."""
-    erros = []
-    for i in itens:
-        q = parsed[i.codigo]
-        saldo = truncar_qtd(da_saida[i.codigo].estoque) if i.codigo in da_saida else Decimal(0)
-        teto = max(i.qtd_pedida, saldo, i.qtd_entregue or 0)
-        if q is not None and q > teto:
-            erros.append(
-                Erro(
-                    i.codigo,
-                    f"Entrega de {i.codigo} acima do máximo de {qtd_br(teto)} "
-                    "(o maior entre o pedido e o estoque).",
-                )
-            )
-    return erros
+def tetos_de_entrega(itens: list[ItemPedido]) -> dict[str, Decimal]:
+    """Quanto o almoxarifado pode entregar de cada item pedido: entregar mais que o pedido é
+    permitido, mas só até o maior entre o pedido, o saldo do cadastro (truncado a 3 casas) e o que
+    já está gravado. Nunca recusa o que o pedido já permitia, e uma edição não derruba a entrega
+    gravada. Uma consulta só, pelos códigos dos itens."""
+    saldos = dict(
+        Material.objects.filter(codigo__in=[i.codigo for i in itens]).values_list(
+            "codigo", "estoque"
+        )
+    )
+    return {
+        i.codigo: max(
+            i.qtd_pedida, truncar_qtd(saldos.get(i.codigo) or Decimal(0)), i.qtd_entregue or 0
+        )
+        for i in itens
+    }
+
+
+def _erros_de_entrega_acima(itens: list[ItemPedido], parsed: dict) -> list[Erro]:
+    """A entrega acima do teto de `tetos_de_entrega` é recusada."""
+    tetos = tetos_de_entrega(itens)
+    return [
+        Erro(
+            i.codigo,
+            f"Entrega de {i.codigo} acima do máximo de {qtd_br(tetos[i.codigo])} "
+            "(o maior entre o pedido e o estoque).",
+        )
+        for i in itens
+        if parsed[i.codigo] is not None and parsed[i.codigo] > tetos[i.codigo]
+    ]
 
 
 def _erros_de_troca_entregue(
@@ -659,8 +669,7 @@ def _validar_atendimento(
             catalogo=catalogo,
         )
 
-    da_saida = {c.codigo: c for c in catalogo_de(AVULSA) or []}
-    catalogo = dict(da_saida) if adicionados else {}
+    catalogo = {c.codigo: c for c in catalogo_de(AVULSA) or []} if adicionados else {}
     base = dict(catalogo)
     catalogo.update(catalogo_extra or {})
     unicos, erros_adicionados = _erros_dos_adicionados(
@@ -689,7 +698,7 @@ def _validar_atendimento(
         )
         + [e for e in v.erros if e.codigo is None or e.codigo not in codigos_unicos]
         + erros_adicionados
-        + _erros_de_entrega_acima(itens, parsed, da_saida)
+        + _erros_de_entrega_acima(itens, parsed)
         + _erros_de_troca_entregue(unicos, itens, parsed)
         + erros_extras_da_saida(dados, nao_lancar, v.centro)
     )
