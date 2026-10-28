@@ -18,6 +18,10 @@ from scpi.leitura import ErroImportacao
 
 logger = logging.getLogger("scpi")
 
+# Começo do erro gravado quando a falha não foi prevista (Playwright, rede): o texto que vem
+# depois é técnico, e a tela o resume (`saude.resumo_do_erro`, `andamento.explicar_falha`).
+PREFIXO_FALHA_INESPERADA = "Falha inesperada:"
+
 
 @dataclass
 class Resultado:
@@ -73,7 +77,7 @@ def executar(
             logger.warning("Importação %s falhou: %s", tipo, exc)
         except Exception as exc:
             importacao.situacao = Importacao.Situacao.FALHA
-            importacao.erro = f"Falha inesperada: {exc}"
+            importacao.erro = f"{PREFIXO_FALHA_INESPERADA} {exc}"
             logger.exception("Importação %s falhou", tipo)
         else:
             importacao.situacao = Importacao.Situacao.SUCESSO

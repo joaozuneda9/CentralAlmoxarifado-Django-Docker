@@ -31,6 +31,7 @@ from catalogo.models import (
     Opcao,
     PecaViatura,
 )
+from scpi.execucao import PREFIXO_FALHA_INESPERADA
 from scpi.gravacao import lista_curta
 
 # Importações que o catálogo precisa sempre; a carga dos pares de/para (DEPARA) é única e só
@@ -43,9 +44,6 @@ IMPORTACOES_DO_SCPI = (
 
 # Saldo mais antigo que isto gera aviso.
 LIMITE_SALDO = timedelta(hours=24)
-
-# Erros que não foram previstos pelo importador (Playwright, rede): o texto é técnico e longo.
-PREFIXO_FALHA_INESPERADA = "Falha inesperada:"
 
 
 @dataclass(frozen=True)
@@ -124,17 +122,6 @@ def ha_quanto(momento: datetime, agora: datetime) -> str:
     return f"{local:%d/%m} às {local:%H:%M}"
 
 
-def duracao(importacao: Importacao) -> str:
-    if importacao.fim is None:
-        return "—"
-    minutos = int((importacao.fim - importacao.inicio).total_seconds() // 60)
-    if minutos < 1:
-        return "menos de 1 min"
-    if minutos < 60:
-        return f"{minutos} min"
-    return f"{minutos // 60} h {minutos % 60:02d} min"
-
-
 def _importacao(tipo: Importacao.Tipo, agora: datetime) -> ItemSaude:
     rotulo = tipo.label
     ultima = Importacao.objects.filter(tipo=tipo).order_by("-inicio").first()
@@ -205,6 +192,12 @@ class _Catalogos:
     def epis(self) -> list:
         return catalogo_efetivo(Formulario.EPIS)
 
+    @cached_property
+    def grupos_visiveis(self) -> set[str]:
+        """Os grupos com algum material visível, normalizados (os da oficina e dos EPIs)."""
+        visiveis = Material.objects.filter(oculto=False).values_list("grupo", flat=True)
+        return {_grupo(g) for g in visiveis.distinct()}
+
 
 FORMULARIO_VIATURAS = "Formulário de reposição de peças das viaturas"
 
@@ -256,6 +249,34 @@ def _viaturas(ab: CatalogoAB, catalogos: _Catalogos) -> list[ItemSaude]:
 FORMULARIO_OFICINA = "Formulário da oficina mecânica"
 
 
+def _materiais(n: int) -> str:
+    return "1 material" if n == 1 else f"{numero(n)} materiais"
+
+
+def _grupos_e_ocultos(catalogos: _Catalogos, origem: str, lista: str, de: str) -> list[ItemSaude]:
+    """Os avisos dos formulários por grupos (oficina e EPIs): os grupos da lista sem material
+    visível e os avulsos (exceções que acrescentam) ocultos no SCPI. `de`: "da oficina", "de
+    EPIs"."""
+    saude = []
+    sem_material = [v for v in Opcao.valores(lista) if _grupo(v) not in catalogos.grupos_visiveis]
+    if sem_material:
+        saude.append(
+            ItemSaude("aviso", f"Grupos {de} sem material visível: {lista_curta(sem_material)}.")
+        )
+    ocultos = list(
+        ExcecaoMaterial.objects.filter(
+            formulario=origem, habilitado=True, material__oculto=True
+        ).values_list("material__codigo", flat=True)
+    )
+    if ocultos:
+        saude.append(
+            ItemSaude(
+                "aviso", f"Materiais {de} ocultos no SCPI (não aparecem): {lista_curta(ocultos)}."
+            )
+        )
+    return saude
+
+
 def _oficina(catalogos: _Catalogos) -> list[ItemSaude]:
     """O formulário da oficina mecânica (spec 007): quanto oferece ou por que está indisponível,
     os grupos da lista sem material visível, os avulsos ocultos e a falta do centro da oficina
@@ -280,8 +301,7 @@ def _oficina(catalogos: _Catalogos) -> list[ItemSaude]:
             )
         )
     else:
-        materiais = "1 material" if n == 1 else f"{numero(n)} materiais"
-        saude.append(ItemSaude("ok", f"{FORMULARIO_OFICINA}: {materiais}."))
+        saude.append(ItemSaude("ok", f"{FORMULARIO_OFICINA}: {_materiais(n)}."))
     if centros and all(c.so_com_placa for c in centros):
         saude.append(
             ItemSaude(
@@ -290,32 +310,9 @@ def _oficina(catalogos: _Catalogos) -> list[ItemSaude]:
                 "(ou não está cadastrado); só as viaturas são oferecidas.",
             )
         )
-    visiveis = {
-        _grupo(g)
-        for g in Material.objects.filter(oculto=False).values_list("grupo", flat=True).distinct()
-    }
-    sem_material = [
-        v for v in Opcao.valores(Opcao.Lista.GRUPO_OFICINA) if _grupo(v) not in visiveis
-    ]
-    if sem_material:
-        saude.append(
-            ItemSaude(
-                "aviso", f"Grupos da oficina sem material visível: {lista_curta(sem_material)}."
-            )
-        )
-    ocultos = list(
-        ExcecaoMaterial.objects.filter(
-            formulario=Formulario.OFICINA, habilitado=True, material__oculto=True
-        ).values_list("material__codigo", flat=True)
+    return saude + _grupos_e_ocultos(
+        catalogos, Formulario.OFICINA, Opcao.Lista.GRUPO_OFICINA, "da oficina"
     )
-    if ocultos:
-        saude.append(
-            ItemSaude(
-                "aviso",
-                f"Materiais da oficina ocultos no SCPI (não aparecem): {lista_curta(ocultos)}.",
-            )
-        )
-    return saude
 
 
 FORMULARIO_EPIS = "Formulário de EPIs"
@@ -326,41 +323,18 @@ def _epis(catalogos: _Catalogos) -> list[ItemSaude]:
     lista sem material visível e os avulsos ocultos (o saldo já foi importado). O destino é
     qualquer centro de custo, como nos formulários de limpeza e AB, então não há aviso de destino
     aqui (o aviso geral de "nenhum centro de custo cadastrado" já cobre)."""
-    saude = []
     n = len(catalogos.epis)
-    if not n:
-        saude.append(
-            ItemSaude(
-                "erro",
-                f"{FORMULARIO_EPIS}: nenhum material nos grupos nem entre os materiais de EPIs; "
-                "o formulário fica indisponível.",
-            )
-        )
+    if n:
+        oferta = ItemSaude("ok", f"{FORMULARIO_EPIS}: {_materiais(n)}.")
     else:
-        materiais = "1 material" if n == 1 else f"{numero(n)} materiais"
-        saude.append(ItemSaude("ok", f"{FORMULARIO_EPIS}: {materiais}."))
-    visiveis = {
-        _grupo(g)
-        for g in Material.objects.filter(oculto=False).values_list("grupo", flat=True).distinct()
-    }
-    sem_material = [v for v in Opcao.valores(Opcao.Lista.GRUPO_EPI) if _grupo(v) not in visiveis]
-    if sem_material:
-        saude.append(
-            ItemSaude("aviso", f"Grupos de EPIs sem material visível: {lista_curta(sem_material)}.")
+        oferta = ItemSaude(
+            "erro",
+            f"{FORMULARIO_EPIS}: nenhum material nos grupos nem entre os materiais de EPIs; "
+            "o formulário fica indisponível.",
         )
-    ocultos = list(
-        ExcecaoMaterial.objects.filter(
-            formulario=Formulario.EPIS, habilitado=True, material__oculto=True
-        ).values_list("material__codigo", flat=True)
+    return [oferta] + _grupos_e_ocultos(
+        catalogos, Formulario.EPIS, Opcao.Lista.GRUPO_EPI, "de EPIs"
     )
-    if ocultos:
-        saude.append(
-            ItemSaude(
-                "aviso",
-                f"Materiais de EPIs ocultos no SCPI (não aparecem): {lista_curta(ocultos)}.",
-            )
-        )
-    return saude
 
 
 FORMULARIOS_SEM_AVISO_PROPRIO = {

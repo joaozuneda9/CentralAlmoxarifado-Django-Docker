@@ -14,7 +14,7 @@ testes).
 
 import json
 import logging
-from collections.abc import Callable
+from collections.abc import Callable, Collection
 from contextlib import AbstractContextManager
 from dataclasses import asdict, dataclass
 from pathlib import Path
@@ -29,7 +29,7 @@ from django.utils import timezone
 from pedidos.models import TRAVA_LANCAMENTO, ExecucaoRobo, LinhaSaida
 from pedidos.regras import EM_LANCAMENTO, ERRO, LANCADA, PENDENTE, VERIFICAR, texto
 from pedidos.servicos import centros
-from scpi.execucao import trava
+from scpi.execucao import PREFIXO_FALHA_INESPERADA, trava
 from scpi.leitura import ErroImportacao
 from scpi.requisicoes import ESTADOS_TRAVA, FalhaCritica, Requisicao, selecionar
 
@@ -230,8 +230,9 @@ def _lancar_um(req: Requisicao, scpi: SCPI, execucao: ExecucaoRobo, resumo: Resu
         scpi.reiniciar()
 
 
-def lancar(execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, limite: int | None = None) -> Resumo:
-    """Lança no SCPI os lotes `PENDENTE` válidos, um por requisição, e devolve o resumo.
+def lancar(execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, lotes: Collection[str]) -> Resumo:
+    """Lança no SCPI os `lotes` escolhidos (só os `PENDENTE` válidos), um por requisição, e
+    devolve o resumo.
 
     Lotes com linha esperando conferência ficam de fora; os inválidos viram `ERRO` sem abrir
     o navegador. Na simulação, nenhuma linha muda e o Salvar nunca é chamado."""
@@ -239,21 +240,24 @@ def lancar(execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, limite: int | None 
     resumo = Resumo()
     linhas = LinhaSaida.objects.filter(status__in=(PENDENTE, *ESTADOS_TRAVA)).order_by("id")
     sel = selecionar(list(linhas), centros())
+    escolhidos = set(lotes)
 
     for lote in sel.travados:
-        logger.warning("⚠ lote %s travado — conferir no SCPI", lote)
-        resumo.ignoradas += 1
+        if lote in escolhidos:
+            logger.warning("⚠ lote %s travado — conferir no SCPI", lote)
+            resumo.ignoradas += 1
     for req in sel.requisicoes:
-        if req.erro:
+        if req.erro and req.lote in escolhidos:
             logger.error("✘ %s — validação: %s", req, req.erro)
             resumo.falhas += 1
             if not simulacao:
                 _gravar(req, ERRO, execucao_id=execucao.pk, mensagem=req.erro[:500], critico=False)
 
     validas = [req for req in sel.requisicoes if not req.erro]
-    if limite is not None and len(validas) > limite:
-        resumo.ignoradas += len(validas) - limite
-        validas = validas[:limite]
+    for lote in sorted(escolhidos - {req.lote for req in sel.requisicoes} - set(sel.travados)):
+        logger.warning("⚠ %s não está mais na fila do robô — não será lançada", lote)
+    resumo.ignoradas += sum(1 for req in validas if req.lote not in escolhidos)
+    validas = [req for req in validas if req.lote in escolhidos]
     resumo.requisicoes = len(validas)
     _salvar_resumo(execucao, resumo)
     if not validas:
@@ -289,7 +293,7 @@ def _encerrar_com_falha(execucao: ExecucaoRobo, erro: str) -> None:
 
 
 def executar_lancamento(
-    execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, limite: int | None = None
+    execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, lotes: Collection[str]
 ) -> ExecucaoRobo:
     """Roda `lancar` sob a trava única do lançamento e registra o resultado na execução."""
     with trava(TRAVA_LANCAMENTO) as obtida:
@@ -304,14 +308,14 @@ def executar_lancamento(
         registro = RegistroNaExecucao(execucao)
         logger.addHandler(registro)
         try:
-            resumo = lancar(execucao, abrir_scpi, limite=limite)
+            resumo = lancar(execucao, abrir_scpi, lotes=lotes)
         except (FalhaCritica, ErroImportacao) as exc:
             logger.error("✘ Execução interrompida: %s", exc)
             _encerrar_com_falha(execucao, str(exc))
             raise
         except Exception as exc:
             logger.exception("✘ Falha inesperada no lançamento")
-            _encerrar_com_falha(execucao, f"Falha inesperada: {exc}")
+            _encerrar_com_falha(execucao, f"{PREFIXO_FALHA_INESPERADA} {exc}")
             raise
         finally:
             logger.removeHandler(registro)

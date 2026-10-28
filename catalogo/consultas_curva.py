@@ -86,13 +86,10 @@ def _reconciliar(brutas: list[LinhaSaidas], linhas: list[LinhaConsolidada]) -> R
     )
 
 
-def consolidado(
-    periodo: Periodo, mapa: dict[str, tuple[str, Decimal]] | None = None
-) -> tuple[list[LinhaConsolidada], Reconciliacao]:
+def consolidado(periodo: Periodo) -> tuple[list[LinhaConsolidada], Reconciliacao]:
     """Saídas do período somadas pelo canônico, e a reconciliação dos totais."""
-    mapa = canonicos() if mapa is None else mapa
     brutas = saidas_por_codigo(periodo)
-    linhas = consolidar(brutas, mapa)
+    linhas = consolidar(brutas, canonicos())
     return linhas, _reconciliar(brutas, linhas)
 
 
@@ -192,8 +189,6 @@ class DadosCurva:
     valor: list[LinhaCurva]
     pendentes: list[Pendente]
     reposicao: list[LinhaReposicao]
-    consolidadas: list[LinhaConsolidada]
-    pares: list[Par]
 
 
 def dados_da_curva(periodo: Periodo) -> DadosCurva:
@@ -221,6 +216,4 @@ def dados_da_curva(periodo: Periodo) -> DadosCurva:
             {chave: (m["nome"], m["oculto"]) for chave, m in materiais.items()},
         ),
         reposicao=tabela_de_reposicao(linhas, lista_pares, periodo),
-        consolidadas=linhas,
-        pares=lista_pares,
     )

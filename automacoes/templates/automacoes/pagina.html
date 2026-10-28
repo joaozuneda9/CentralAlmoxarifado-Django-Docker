@@ -5,7 +5,8 @@
 {% block extra_css %}<link rel="stylesheet" href="{% static 'catalogo/css/catalogo.css' %}">
 <link rel="stylesheet" href="{% static 'pedidos/css/pedidos.css' %}">{% endblock %}
 {% block extra_head %}<script src="{% static 'catalogo/js/importacoes.js' %}" defer></script>
-<script src="{% static 'pedidos/js/pedidos.js' %}" defer></script>{% endblock %}
+<script src="{% static 'pedidos/js/pedidos.js' %}" defer></script>
+<script src="{% static 'pedidos/js/fila-robo.js' %}" defer></script>{% endblock %}
 {% block heading %}Automações{% endblock %}
 {% block sub %}Robôs que trazem dados do SCPI e lançam as saídas atendidas.{% endblock %}
 

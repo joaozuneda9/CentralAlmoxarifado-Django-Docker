@@ -162,6 +162,18 @@ def test_codigo_igual_para_o_banco_atualiza_em_vez_de_duplicar(tmp_path):
     assert Material.objects.get().nome == "NOVO"
 
 
+def test_periodo_acha_o_material_pela_mesma_chave_do_codigo_com_espacos_internos(tmp_path):
+    """`chave()` colapsa espaços internos, a collation do banco não: '000.009.0  A' e
+    '000.009.0 A' são o mesmo material para a importação, parcial ou completa, e não viram dois.
+    Só o CSV salvo por uma planilha (separado por vírgula) aceita espaço no meio do código."""
+    Material.objects.create(codigo="000.009.0  A", nome="ANTIGO")
+    arquivo = tmp_path / "c.csv"
+    planilha = CABECALHO.replace(";", ",") + "000.009.0 A,NOVO,UN,G,S,Não,001\r\n"
+    arquivo.write_bytes(planilha.encode("utf-8-sig"))
+    call_command("importar_cadastro", arquivo=arquivo, desde="01/01/2024")
+    assert Material.objects.count() == 1 and Material.objects.get().nome == "NOVO"
+
+
 # ---- importação parcial (--desde / --ate): grava o que o CSV traz e não oculta ninguém ----------
 
 

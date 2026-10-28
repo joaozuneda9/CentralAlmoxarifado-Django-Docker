@@ -25,7 +25,7 @@ from catalogo.models import Importacao
 from catalogo.saude import situacao_do_catalogo
 from interface.htmx import regiao_pedida, render_regiao
 from pedidos import andamento
-from pedidos.consultas import fila_do_robo, lotes_travados
+from pedidos.consultas import fila_do_robo, lotes_pendentes, lotes_travados
 from pedidos.forms import LancamentoForm
 from pedidos.models import ExecucaoRobo
 from pedidos.servicos import resolver_lote
@@ -51,6 +51,7 @@ LINHAS_POR_PAGINA = 20
 CARENCIA = timedelta(seconds=30)
 CHAVE_DISPARO = "catalogo_disparo_em"
 LINHAS_DO_LOG = 40
+JA_EM_ANDAMENTO = "Já há uma importação em andamento. Aguarde terminar."
 
 
 def aba_pedida(request) -> str:
@@ -83,30 +84,33 @@ def _terminou_agora(agora: datetime) -> bool:
     return Importacao.objects.filter(fim__gte=agora - CARENCIA).exists()
 
 
-def contexto_catalogo(request, formularios: dict | None = None) -> dict:
-    """Situação do catálogo e, por robô, o formulário (com o que a pessoa já preencheu, se houver
-    erro) e a última importação daquele tipo."""
+def contexto_catalogo(request) -> dict:
+    """Situação do catálogo e as marcas de importação em andamento."""
     agora = timezone.now()
     em_andamento = importacao_em_andamento(request, agora)
-    formularios = formularios or {}
-    situacao = situacao_do_catalogo(agora)
-    fontes = {fonte.tipo: fonte for fonte in situacao.fontes}
     return {
-        "situacao": situacao,
-        "fontes": fontes,
+        "situacao": situacao_do_catalogo(agora),
         "importacao_em_andamento": em_andamento,
         "acompanhar_catalogo": em_andamento or _terminou_agora(agora),
         "inicio_dados": INICIO_DADOS_CONFIAVEIS,
         # Fontes com aba de robô: a linha da fonte na situação leva até ela.
         "tipos_com_aba": [r.chave.upper() for r in ROBOS],
-        "robos": [
-            {
-                "robo": robo,
-                "form": formularios.get(robo.chave) or robo.novo(),
-                "fonte": fontes.get(robo.chave.upper()),
-            }
-            for robo in ROBOS
-        ],
+    }
+
+
+def _linha_do_lancamento(execucao, *, interrompida, em_andamento, pendentes, travados) -> dict:
+    """O que a situação lê do lançamento: a linha da visão geral e a marca de acompanhamento."""
+    return {
+        "linha_lancamento": linha_lancamento(
+            pendentes=pendentes,
+            travados=travados,
+            ultima=execucao,
+            em_andamento=em_andamento,
+            interrompida=interrompida,
+            agora=timezone.now(),
+        ),
+        "acompanhar_lancamento": em_andamento,
+        "lancamento_travado": bool(travados),
     }
 
 
@@ -116,9 +120,10 @@ def contexto_lancamento() -> dict:
     execucao = ExecucaoRobo.objects.select_related("iniciada_por").first()
     em_andamento = ExecucaoRobo.em_andamento(agora).exists()
     fila = fila_do_robo()
+    travados = lotes_travados()
+    interrompida = bool(execucao and execucao.interrompida)
     resumo = None
     if execucao:
-        interrompida = execucao.interrompida
         resumo = {
             "frase": andamento.frase(execucao, agora, interrompida),
             "interrompida": interrompida,
@@ -131,13 +136,32 @@ def contexto_lancamento() -> dict:
         "execucao": execucao,
         "andamento": resumo,
         "lancamento_em_andamento": em_andamento,
-        "acompanhar_lancamento": em_andamento,
         "log_recente": "\n".join(execucao.log.splitlines()[-LINHAS_DO_LOG:]) if execucao else "",
         "fila": fila,
         "pode_executar": bool(fila.total) and not em_andamento,
-        "travados": lotes_travados(),
+        "travados": travados,
         "lancamento_real": settings.LANCAMENTO_REAL,
+        **_linha_do_lancamento(
+            execucao,
+            interrompida=interrompida,
+            em_andamento=em_andamento,
+            pendentes=fila.total,
+            travados=len(travados),
+        ),
     }
+
+
+def _lancamento_resumido() -> dict:
+    """Só o que a situação lê do lançamento, sem a fila inteira nem o andamento da aba: a recarga
+    da situação não paga o contexto da aba Lançamento no SCPI."""
+    execucao = ExecucaoRobo.objects.first()
+    return _linha_do_lancamento(
+        execucao,
+        interrompida=bool(execucao and execucao.interrompida),
+        em_andamento=ExecucaoRobo.em_andamento(timezone.now()).exists(),
+        pendentes=lotes_pendentes(),
+        travados=len(lotes_travados()),
+    )
 
 
 def _contexto_historico(request) -> dict:
@@ -154,33 +178,16 @@ def _contexto_historico(request) -> dict:
     }
 
 
-def _linha_do_lancamento(lancamento: dict):
-    execucao = lancamento["execucao"]
-    return linha_lancamento(
-        pendentes=lancamento["fila"].total,
-        travados=len(lancamento["travados"]),
-        ultima=execucao,
-        em_andamento=lancamento["lancamento_em_andamento"],
-        interrompida=bool(lancamento["andamento"] and lancamento["andamento"]["interrompida"]),
-        agora=timezone.now(),
-    )
-
-
-def _contexto_situacao(request, formularios: dict | None = None) -> dict:
+def _contexto_situacao(request, lancamento: dict | None = None) -> dict:
     """O que `catalogo/_situacao.html` lê: a situação do catálogo (com o que a visão geral mostra
-    do lançamento: a linha e o resumo) e as marcas de acompanhamento."""
-    catalogo = contexto_catalogo(request, formularios)
-    lancamento = contexto_lancamento()
-    linha = _linha_do_lancamento(lancamento)
+    do lançamento: a linha e o resumo) e as marcas de acompanhamento. `lancamento` é o contexto
+    da aba, quando a página inteira já o montou."""
+    catalogo = contexto_catalogo(request)
+    lancamento = lancamento or _lancamento_resumido()
     resumo = catalogo["situacao"].resumo
-    if lancamento["travados"]:
-        resumo += f" Lançamento no SCPI: {linha.selo}."
-    return {
-        **catalogo,
-        **lancamento,
-        "linha_lancamento": linha,
-        "resumo_geral": resumo,
-    }
+    if lancamento["lancamento_travado"]:
+        resumo += f" Lançamento no SCPI: {lancamento['linha_lancamento'].selo}."
+    return {**catalogo, **lancamento, "resumo_geral": resumo}
 
 
 def _contexto_acompanhamento(request) -> dict:
@@ -194,19 +201,30 @@ def _contexto_acompanhamento(request) -> dict:
 
 
 def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
-    """Tudo o que a página mostra; também usado quando o formulário de um robô volta com erro."""
-    situacao = _contexto_situacao(request, formularios)
-    fontes = situacao["fontes"]
+    """Tudo o que a página mostra; também usado quando o formulário de um robô volta com erro
+    (`formularios`: o formulário de cada robô com o que a pessoa já preencheu)."""
+    situacao = _contexto_situacao(request, contexto_lancamento())
+    formularios = formularios or {}
+    fontes = {fonte.tipo: fonte for fonte in situacao["situacao"].fontes}
+    robos = [
+        {
+            "robo": robo,
+            "form": formularios.get(robo.chave) or robo.novo(),
+            "fonte": fontes.get(robo.chave.upper()),
+        }
+        for robo in ROBOS
+    ]
+    # A aba mostra o selo quando pede atenção ou está rodando.
+    estados = {
+        "lancamento": situacao["linha_lancamento"],
+        **{item["robo"].chave: item["fonte"] for item in robos},
+    }
     return {
         **_contexto_historico(request),
         **situacao,
+        "robos": robos,
         "aba": aba,
-        # (chave, rótulo, estado): a aba mostra o selo quando pede atenção ou está rodando.
-        "abas": [
-            ("visao-geral", "Visão geral", None),
-            ("lancamento", "Lançamento no SCPI", situacao["linha_lancamento"]),
-            *((r.chave, r.rotulo, fontes.get(r.chave.upper())) for r in ROBOS),
-        ],
+        "abas": [(chave, rotulo, estados.get(chave)) for chave, rotulo in ABAS],
     }
 
 
@@ -263,7 +281,7 @@ def atualizar(request):
             ),
         )
     else:
-        messages.warning(request, "Já há uma importação em andamento. Aguarde terminar.")
+        messages.warning(request, JA_EM_ANDAMENTO)
     return redirect(destino)
 
 
@@ -282,11 +300,12 @@ def importar(request, robo):
     agora = timezone.now()
     destino = url_da_aba(robo)
     if importacao_em_andamento(request, agora):
-        messages.warning(request, "Já há uma importação em andamento. Aguarde terminar.")
+        messages.warning(request, JA_EM_ANDAMENTO)
         return redirect(destino)
     dados = form.cleaned_data
     enviado = dados.get("arquivo")
     arquivo = guardar_csv_enviado(enviado) if enviado else None
+    iniciou = False
     try:
         iniciou = iniciar_importacao(
             robo,
@@ -296,14 +315,12 @@ def importar(request, robo):
             ate=dados.get("ate"),
             arquivo=arquivo,
         )
-    except Exception:
-        if arquivo:
+    finally:
+        # O comando apaga o CSV ao fim; se ele não iniciou, ninguém mais o apaga.
+        if arquivo and not iniciou:
             arquivo.unlink(missing_ok=True)
-        raise
     if not iniciou:
-        if arquivo:
-            arquivo.unlink(missing_ok=True)
-        messages.warning(request, "Já há uma importação em andamento. Aguarde terminar.")
+        messages.warning(request, JA_EM_ANDAMENTO)
         return redirect(destino)
     request.session[CHAVE_DISPARO] = agora.isoformat()
     messages.success(
@@ -323,8 +340,8 @@ def lancar(request):
             messages.error(request, " ".join(erros))
         return redirect(destino)
     simulacao = form.cleaned_data["modo"] == "simular"
-    limite = form.cleaned_data["limite"]
-    if iniciar_lancamento(request.user, simulacao=simulacao, limite=limite) is None:
+    lotes = form.cleaned_data["lotes"]
+    if iniciar_lancamento(request.user, simulacao=simulacao, lotes=lotes) is None:
         messages.warning(request, "Já há um lançamento em andamento. Aguarde terminar.")
     else:
         texto = (
@@ -332,8 +349,7 @@ def lancar(request):
             if simulacao
             else "Lançamento iniciado. Acompanhe o andamento abaixo."
         )
-        if limite:
-            texto += f" Limite: {limite} {'requisição' if limite == 1 else 'requisições'}."
+        texto += f" {', '.join(lotes)}."
         messages.success(request, texto)
     return redirect(destino)
 

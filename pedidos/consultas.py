@@ -237,8 +237,9 @@ def decididas_da_autorizacao() -> QuerySet:
     )
 
 
-def fila_do_robo(limite: int = 20) -> Fila:
-    """As requisições que o robô lançaria agora, na ordem em que as percorre, até `limite`.
+def fila_do_robo(limite: int | None = None) -> Fila:
+    """As requisições que o robô lançaria agora, na ordem em que as percorre: todas, ou só as
+    `limite` primeiras (`0` devolve só o total).
 
     Repete `requisicoes.agrupar` em SQL (lote com linha `PENDENTE` e sem nenhuma linha em
     `ESTADOS_TRAVA` nem `PENDENTE` com número de requisição), para não carregar todas as linhas
@@ -255,9 +256,9 @@ def fila_do_robo(limite: int = 20) -> Fila:
         .order_by("primeira")
     )
     total = lotes.count()
-    if not total or limite <= 0:
+    if not total or limite == 0:
         return Fila(total, [])
-    escolhidos = list(lotes[:limite])
+    escolhidos = list(lotes if limite is None else lotes[:limite])
     primeiras = LinhaSaida.objects.in_bulk([lote["primeira"] for lote in escolhidos])
     return Fila(
         total,

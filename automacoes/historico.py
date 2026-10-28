@@ -13,6 +13,7 @@ from django import forms
 from django.db.models import CharField, Q
 from django.db.models.functions import Cast
 
+from catalogo import forms as robos_catalogo
 from catalogo.models import Importacao
 from catalogo.saude import GrupoAvisos, agrupar_avisos, erro_tecnico, numero, resumo_do_erro
 from pedidos import andamento
@@ -21,9 +22,7 @@ from pedidos.models import ExecucaoRobo
 
 ROBOS = [
     ("lancamento", "Lançamento no SCPI"),
-    ("cadastro", "Cadastro"),
-    ("estoque", "Estoque"),
-    ("saidas", "Saídas"),
+    *((robo.chave, robo.rotulo) for robo in robos_catalogo.ROBOS),
     ("depara", "Pares de/para"),
 ]
 ROTULO_DO_TIPO = {chave.upper(): rotulo for chave, rotulo in ROBOS if chave != "lancamento"}

@@ -19,8 +19,8 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from catalogo.acesso import exige, pode_alterar_centros, pode_alterar_materiais
-from catalogo.catalogos import MODO_DESTINO, MODO_OFICINA, MODO_SEM_PLACA
+from catalogo.acesso import exige, pode_alterar_centros, pode_alterar_materiais, pode_criar_centros
+from catalogo.catalogos import MODO_DESTINO, MODO_OFICINA, MODO_PADRAO, MODO_SEM_PLACA
 from catalogo.disponibilidade import (
     ACOES,
     ACRESCENTADO,
@@ -70,7 +70,7 @@ PARAMETROS_DA_VOLTA = (
 
 # Como o formulário apresenta o destino, em palavras (a ajuda da aba Centros de custo).
 EXPLICACAO_DO_MODO = {
-    "padrao": (
+    MODO_PADRAO: (
         "O formulário oferece o centro pela descrição e, para a linha com placa, também como "
         "“descrição — placa”."
     ),
@@ -220,8 +220,8 @@ def _contexto_centros(
             "pagina_centros": pagina.number if pagina.number > 1 else "",
         },
         "pode_alterar_centros": pode_alterar_centros(usuario),
-        "pode_criar_centro": usuario.is_staff and usuario.has_perm("catalogo.add_centrocusto"),
-        "pode_editar_centro": usuario.is_staff and usuario.has_perm("catalogo.change_centrocusto"),
+        "pode_criar_centro": pode_criar_centros(usuario),
+        "pode_editar_centro": pode_alterar_centros(usuario),
         "sem_centros": not CentroCusto.objects.exists(),
     }
 

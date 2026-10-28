@@ -41,9 +41,10 @@ class _Teclado:
 class _Pagina:
     def __init__(self):
         self.keyboard = _Teclado()
+        self.pausas = []
 
     def wait_for_timeout(self, ms):
-        pass
+        self.pausas.append(ms)
 
 
 class _Quadro:
@@ -215,7 +216,7 @@ def test_definir_qtd_repreenche_quando_o_grid_volta_para_1(monkeypatch):
     monkeypatch.setattr(
         lancador,
         "preencher_celula",
-        lambda frame, i, coluna, valor: preenchidos.append(valor) or Campo(),
+        lambda frame, i, coluna, valor, **kw: preenchidos.append(valor) or Campo(),
     )
     monkeypatch.setattr(lancador, "aguardar_mascara", lambda frame: None)
     monkeypatch.setattr(lancador, "checar_mensagem", lambda frame, etapa: None)
@@ -235,7 +236,9 @@ def test_definir_qtd_deixa_a_divergencia_para_a_conferencia_do_item(monkeypatch)
 
     monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha("1")])
     monkeypatch.setattr(lancador, "aguardar_linha_estavel", lambda frame, i, item: True)
-    monkeypatch.setattr(lancador, "preencher_celula", lambda *a: chamadas.append(a) or Campo())
+    monkeypatch.setattr(
+        lancador, "preencher_celula", lambda *a, **kw: chamadas.append(a) or Campo()
+    )
     monkeypatch.setattr(lancador, "aguardar_mascara", lambda frame: None)
     monkeypatch.setattr(lancador, "checar_mensagem", lambda frame, etapa: None)
 
@@ -350,7 +353,7 @@ def test_definir_qtd_nao_preenche_com_a_linha_instavel(monkeypatch):
     monkeypatch.setattr(
         lancador,
         "preencher_celula",
-        lambda *a: pytest.fail("não deveria preencher a QTD com a linha instável"),
+        lambda *a, **kw: pytest.fail("não deveria preencher a QTD com a linha instável"),
     )
 
     with pytest.raises(ErroSCPI, match="não estabilizou"):
@@ -501,6 +504,7 @@ def test_reconciliar_itens_corrige_a_qtd_devolvida_ao_padrao(monkeypatch):
         ]
     )
     refeitos = []
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: True)
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
     monkeypatch.setattr(lancador, "ler_itens", lambda frame: next(grids))
     monkeypatch.setattr(lancador, "definir_qtd", lambda frame, i, item, etapa: refeitos.append(i))
@@ -516,6 +520,7 @@ def test_reconciliar_itens_recusa_o_lote_se_a_divergencia_persiste(monkeypatch):
     from scpi.requisicoes import ErroSCPI
 
     itens = [_item_n("001.000.001", "3"), _item_n("001.000.002", "5")]
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: True)
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
     monkeypatch.setattr(
         lancador,
@@ -550,6 +555,7 @@ def test_reconciliar_itens_recusa_o_lote_se_o_grid_nao_estabiliza(monkeypatch):
     from scpi import lancador
     from scpi.requisicoes import ErroSCPI
 
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: True)
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: False)
     # mesmo com a leitura igual ao pedido, o grid instável não autoriza o salvamento
     monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha_n("001.000.001", "3")])
@@ -585,6 +591,7 @@ def test_reconciliar_itens_recusa_o_grid_com_linha_a_mais(monkeypatch):
     from scpi.requisicoes import ErroSCPI
 
     itens = [_item_n("001.000.001", "3")]
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: True)
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
     # o item esperado é um prefixo válido, mas há uma linha codificada a mais
     monkeypatch.setattr(
@@ -730,3 +737,123 @@ def test_aguardar_modo_inclusao_nao_engole_outros_erros_do_playwright(monkeypatc
 
     with pytest.raises(ErroPlaywright, match="has been closed"):
         lancador.aguardar_modo_inclusao(_Quadro())
+
+
+class _QuadroQueRecarrega(_Quadro):
+    def __init__(self, resposta):
+        super().__init__()
+        self.resposta = resposta
+
+    def evaluate(self, js):
+        if isinstance(self.resposta, Exception):
+            raise self.resposta
+        return self.resposta
+
+
+def test_recarregar_grade_devolve_se_o_servidor_respondeu():
+    from scpi import lancador
+
+    assert lancador.recarregar_grade(_QuadroQueRecarrega(True)) is True
+
+
+def test_recarregar_grade_nao_derruba_o_lancamento_se_nao_recarregar(caplog):
+    import logging
+
+    from scpi import lancador
+
+    with caplog.at_level(logging.INFO, logger="scpi.lancamento"):
+        assert lancador.recarregar_grade(_QuadroQueRecarrega(False)) is False
+        assert lancador.recarregar_grade(_QuadroQueRecarrega(RuntimeError("x"))) is False
+    assert "não recarregou" in caplog.text and "não consegui recarregar" in caplog.text
+
+
+def test_reconciliar_recarrega_a_grade_do_servidor_antes_de_cada_conferencia(monkeypatch):
+    from scpi import lancador
+    from scpi.requisicoes import Requisicao
+
+    eventos = []
+    monkeypatch.setattr(
+        lancador, "recarregar_grade", lambda frame: eventos.append("recarregar") or True
+    )
+    monkeypatch.setattr(
+        lancador, "aguardar_grid_estavel", lambda frame: eventos.append("estavel") or True
+    )
+    monkeypatch.setattr(lancador, "registrar_servidor", lambda *a, **k: None)
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha("5")])
+    req = Requisicao(lote="AV-1", linhas=[], itens=[_item("5")])
+
+    lancador.reconciliar_itens(_Quadro(), req)
+    assert eventos == ["recarregar", "estavel"]
+
+
+class _EntradaTeclada:
+    def __init__(self):
+        self.eventos = []
+
+    def press(self, tecla, timeout=None):
+        self.eventos.append(("press", tecla))
+
+    def press_sequentially(self, texto, timeout=None):
+        self.eventos.append(("digitar", texto))
+
+    def fill(self, valor, timeout=None):
+        self.eventos.append(("fill", valor))
+
+
+def test_preencher_celula_digitando_seleciona_e_digita_sem_usar_fill(monkeypatch):
+    from scpi import lancador
+
+    entrada = _EntradaTeclada()
+    monkeypatch.setattr(lancador, "editar_celula", lambda frame, linha, coluna: entrada)
+
+    assert lancador.preencher_celula(_Quadro(), 0, "QTD", "12,5", digitando=True) is entrada
+    assert entrada.eventos == [("press", "ControlOrMeta+a"), ("digitar", "12,5")]
+
+
+def test_preencher_celula_sem_digitando_continua_usando_fill(monkeypatch):
+    from scpi import lancador
+
+    entrada = _EntradaTeclada()
+    monkeypatch.setattr(lancador, "editar_celula", lambda frame, linha, coluna: entrada)
+
+    lancador.preencher_celula(_Quadro(), 0, "Placa (F9)", "ABC1D23")
+    assert entrada.eventos == [("fill", "ABC1D23")]
+
+
+def test_definir_qtd_digita_a_quantidade(monkeypatch):
+    from scpi import lancador
+
+    chamadas = []
+
+    class Campo:
+        def press(self, tecla):
+            pass
+
+    monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha("5")])
+    monkeypatch.setattr(lancador, "aguardar_linha_estavel", lambda frame, i, item: True)
+    monkeypatch.setattr(
+        lancador, "preencher_celula", lambda *a, **kw: chamadas.append(kw) or Campo()
+    )
+    monkeypatch.setattr(lancador, "aguardar_mascara", lambda frame: None)
+    monkeypatch.setattr(lancador, "checar_mensagem", lambda frame, etapa: None)
+
+    lancador.definir_qtd(_Quadro(), 0, _item("5"), "item 1/1")
+    assert chamadas == [{"digitando": True}]
+
+
+def test_reconciliar_recusa_o_lote_se_a_grade_do_servidor_nao_recarrega(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI, Requisicao
+
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: False)
+    monkeypatch.setattr(
+        lancador,
+        "aguardar_grid_estavel",
+        lambda frame: pytest.fail("não deveria conferir sem a leitura do servidor"),
+    )
+    req = Requisicao(lote="AV-1", linhas=[], itens=[_item("5")])
+
+    with pytest.raises(ErroSCPI, match="não foi possível recarregar a grade do servidor"):
+        lancador.reconciliar_itens(_Quadro(), req)

@@ -37,7 +37,7 @@ if TYPE_CHECKING:
     from playwright.sync_api import Frame, Page
 
 TIMEOUT = 60000
-PAUSA_DRY_RUN_MS = 8000  # tempo para conferir o formulário preenchido na simulação
+PAUSA_ENTRE_ACOES_MS = 100  # entre as ações do preenchimento dos itens da saída
 
 log = logging.getLogger("scpi.lancamento").info
 
@@ -111,6 +111,46 @@ JS_LER_ITENS = """
     ));
 }
 """  # noqa: E501
+
+# Recarrega a grade do servidor (o mesmo pedido que o "Novo Item" faz) e espera a resposta.
+JS_RECARREGAR_GRADE = """
+() => new Promise(resolve => {
+    const E = window.Ext;
+    const grade = E && E.ComponentQuery.query('grid').find(g => g.isVisible()
+        && g.getColumns().some(c => (c.text || '').includes('Descrição do Produto/Serviço')));
+    if (!grade) return resolve(false);
+    const fim = setTimeout(() => resolve(false), 8000);
+    // o evento `load` também dispara quando a carga falha: vale o `successful` do callback
+    grade.store.load({callback: (registros, operacao, sucesso) => {
+        clearTimeout(fim);
+        resolve(Boolean(sucesso));
+    }});
+})
+"""
+
+# O "Novo Item" faz o SCPI recarregar a grade inteira do servidor (JSON com `rows`, colunas
+# "1" = código, "6" = QTD, "8" = total). Só diagnóstico: guarda o que cada recarga devolveu, sem
+# alterar nada.
+JS_DIAGNOSTICO_INSTALAR = """
+() => {
+    if (window.__diagGrade) return true;
+    if (!window.Ext || !window.Ext.Ajax) return false;
+    window.__diagGrade = [];
+    window.Ext.Ajax.on('requestcomplete', (conn, resp) => {
+        try {
+            const txt = resp.responseText || '';
+            if (!txt.startsWith('{"metaData"')) return;
+            const j = JSON.parse(txt);
+            window.__diagGrade.push((j.rows || []).map(r => [r['1'], r['6'], r['8']]));
+        } catch (e) {}
+    });
+    return true;
+}
+"""
+
+JS_DIAGNOSTICO_LER = """
+() => window.__diagGrade ? window.__diagGrade.splice(0) : []
+"""
 
 # nº gerado aparece logo abaixo do rótulo "Requisição" (canto superior esquerdo do formulário)
 JS_NUMERO_REQUISICAO = """
@@ -404,6 +444,11 @@ def celula_item(frame: Frame, linha: int, coluna: str):
     )
 
 
+def pausar(frame: Frame) -> None:
+    """Espera `PAUSA_ENTRE_ACOES_MS` entre duas ações do preenchimento dos itens."""
+    frame.page.wait_for_timeout(PAUSA_ENTRE_ACOES_MS)
+
+
 def editar_celula(frame: Frame, linha: int, coluna: str):
     """Garante o editor aberto na célula (linha, coluna) e devolve o input. O SCPI às vezes
     avança o foco sozinho (Código → QTD), às vezes não — nesse caso abre com duplo clique."""
@@ -424,17 +469,23 @@ ESPERA_FOCO_MS = 5000  # por tentativa: o editor que perde o foco não volta soz
 TENTATIVAS_CELULA = 3
 
 
-def preencher_celula(frame: Frame, linha: int, coluna: str, valor: str):
+def preencher_celula(frame: Frame, linha: int, coluna: str, valor: str, *, digitando: bool = False):
     """Abre o editor da célula e preenche. O SCPI às vezes redesenha a linha (o lookup do
     produto termina) entre a conferência do editor e o `fill`, e o editor fecha: sem foco, o
     `fill` esperaria 30 s e o lote inteiro cairia. Aqui cada tentativa espera pouco e, se o
-    foco sumiu, reabre o editor e preenche de novo (o `fill` é idempotente). Devolve o input."""
+    foco sumiu, reabre o editor e preenche de novo (o `fill` é idempotente). Com `digitando`, em vez
+    do `fill` (que troca o conteúdo de uma vez) seleciona o conteúdo e digita tecla a tecla, como
+    uma pessoa e como o código do produto. Devolve o input."""
     from playwright.sync_api import TimeoutError as TimeoutPlaywright
 
     for tentativa in range(1, TENTATIVAS_CELULA + 1):
         try:
             entrada = editar_celula(frame, linha, coluna)
-            entrada.fill(valor, timeout=ESPERA_FOCO_MS)
+            if digitando:
+                entrada.press("ControlOrMeta+a", timeout=ESPERA_FOCO_MS)
+                entrada.press_sequentially(valor, timeout=ESPERA_FOCO_MS)
+            else:
+                entrada.fill(valor, timeout=ESPERA_FOCO_MS)
             return entrada
         except (TimeoutPlaywright, ErroSCPI):
             if tentativa == TENTATIVAS_CELULA:
@@ -490,11 +541,14 @@ def definir_qtd(frame: Frame, i: int, item: Item, etapa: str) -> None:
         if not aguardar_linha_estavel(frame, i, item):
             # linha ausente ou com outro produto: preencher agora poderia gravar a QTD errada
             raise ErroSCPI(f"{etapa}: a linha do item não estabilizou no grid")
-        qtd = preencher_celula(frame, i, "QTD", item.qtd)
+        qtd = preencher_celula(frame, i, "QTD", item.qtd, digitando=True)
+        pausar(frame)
         qtd.press("Tab")
+        pausar(frame)
         aguardar_mascara(frame)
         checar_mensagem(frame, etapa)
         frame.page.keyboard.press("Escape")
+        pausar(frame)
         linhas = ler_itens(frame)
         if i < len(linhas) and qtd_confere(linhas[i], item):
             return
@@ -509,7 +563,7 @@ def definir_qtd(frame: Frame, i: int, item: Item, etapa: str) -> None:
 ESTABILIDADE_GRID_MS = 2000
 INTERVALO_GRID_MS = 500
 ESPERA_GRID_ESTAVEL_MS = 15000
-RODADAS_RECONCILIACAO = 3
+RODADAS_RECONCILIACAO = 5
 
 
 def aguardar_grid_estavel(frame: Frame) -> bool:
@@ -537,6 +591,80 @@ def linha_confere(linha: dict[str, str], item: Item) -> bool:
     return not item.placa or norm_placa(linha.get("Placa (F9)", "")) == item.placa
 
 
+def descrever_divergencias(linhas: list[dict[str, str]], itens: list[Item], indices) -> str:
+    """ "item 5: QTD '1' (esperado 4)", para o log dizer o que o SCPI deixou no grid."""
+    partes = []
+    for i in indices:
+        atual = linhas[i].get("QTD") if i < len(linhas) else None
+        partes.append(f"item {i + 1}: QTD {atual!r} (esperado {itens[i].qtd})")
+    return "; ".join(partes)
+
+
+def registrar_regressoes(
+    frame: Frame, req: Requisicao, ate: int, quando: str, vistos: set[int]
+) -> None:
+    """Só diagnóstico: as linhas já preenchidas (antes de `ate`) ainda mostram a QTD do pedido?
+    O SCPI às vezes devolve uma QTD ao padrão (1) depois do preenchimento; o log diz em que
+    momento, para achar o gatilho. Não altera nada."""
+    linhas = ler_itens(frame)
+    divergentes = [
+        i
+        for i in range(min(ate, len(req.itens)))
+        if i >= len(linhas) or not qtd_confere(linhas[i], req.itens[i])
+    ]
+    novos = [i for i in divergentes if i not in vistos]
+    vistos.update(divergentes)
+    if novos:
+        log(f"  ⚠ {quando}: {descrever_divergencias(linhas, req.itens, novos)}")
+
+
+def instalar_diagnostico(frame: Frame) -> None:
+    """Só diagnóstico: liga a escuta das recargas da grade. Nunca interrompe o lançamento."""
+    try:
+        if not frame.evaluate(JS_DIAGNOSTICO_INSTALAR):
+            log("  diagnóstico do servidor indisponível: Ext não encontrado no frame")
+    except Exception as e:
+        log(f"  diagnóstico do servidor indisponível ({type(e).__name__})")
+
+
+def registrar_servidor(frame: Frame, req: Requisicao, quando: str) -> None:
+    """Só diagnóstico: loga o que o servidor devolveu nas recargas da grade desde a última
+    leitura (código e QTD de cada linha, e se alguma QTD difere do pedido). Não altera nada nem
+    levanta erro."""
+    try:
+        dados = frame.evaluate(JS_DIAGNOSTICO_LER)
+    except Exception:
+        return
+    for linhas in dados:
+        resumo = " ".join(f"{i + 1}:{cod} x{qtd}" for i, (cod, qtd, _) in enumerate(linhas))
+        log(f"  🔎 {quando}: o SCPI recarregou a grade do servidor [{resumo}]")
+        for i, (cod, qtd, _) in enumerate(linhas[: len(req.itens)]):
+            if not str(cod or "").strip():
+                continue  # linha nova, ainda sem código
+            esperado = Decimal(req.itens[i].qtd.replace(",", "."))
+            try:
+                diverge = Decimal(str(qtd)) != esperado
+            except InvalidOperation:
+                diverge = True
+            if diverge:
+                log(f"  ⚠ servidor devolveu QTD {qtd} no item {i + 1} (pedido: {esperado})")
+
+
+def recarregar_grade(frame: Frame) -> bool:
+    """Faz a grade mostrar o que o SERVIDOR tem. A tela só se atualiza a partir do servidor no
+    "Novo Item": uma QTD que o servidor perdeu na última linha continuaria certa na tela, e a
+    conferência final a deixaria passar. Devolve False se não recarregou (quem chama recusa o
+    lote)."""
+    try:
+        recarregou = bool(frame.evaluate(JS_RECARREGAR_GRADE))
+    except Exception as e:
+        log(f"  ⚠ não consegui recarregar a grade do servidor ({type(e).__name__})")
+        return False
+    if not recarregou:
+        log("  ⚠ a grade não recarregou do servidor")
+    return recarregou
+
+
 def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
     """Última barreira antes de salvar: com o grid estável, confere TODAS as linhas contra o
     pedido; as que divergirem (QTD devolvida ao padrão por uma resposta tardia do SCPI) são
@@ -544,11 +672,18 @@ def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
     nada é salvo: o `conferir_item` de cada linha acontece cedo demais para pegar isso."""
     total = len(req.itens)
     for rodada in range(1, RODADAS_RECONCILIACAO + 1):
+        if not recarregar_grade(frame):
+            # sem a leitura do servidor, a tela pode mostrar uma QTD que ele não tem
+            raise ErroSCPI(
+                f"conferência final: não foi possível recarregar a grade do servidor "
+                f"({rodada}/{RODADAS_RECONCILIACAO})"
+            )
         if not aguardar_grid_estavel(frame):
             # uma leitura que coincide com o pedido não vale com o SCPI ainda mexendo no grid
             raise ErroSCPI(
                 f"conferência final: grid não estabilizou ({rodada}/{RODADAS_RECONCILIACAO})"
             )
+        registrar_servidor(frame, req, f"conferência final ({rodada}/{RODADAS_RECONCILIACAO})")
         linhas = ler_itens(frame)
         # as linhas esperadas podem ser só o começo do grid: uma linha a mais seria salva junto
         codificadas = [linha for linha in linhas if RE_CADPRO.match(linha.get("Código", ""))]
@@ -567,7 +702,8 @@ def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
         if rodada == RODADAS_RECONCILIACAO:
             break
         log(
-            f"  conferência final: item(ns) {[i + 1 for i in divergentes]} divergem do pedido; "
+            f"  conferência final: item(ns) {[i + 1 for i in divergentes]} divergem do pedido "
+            f"({descrever_divergencias(linhas, req.itens, divergentes)}); "
             f"corrigindo ({rodada}/{RODADAS_RECONCILIACAO})"
         )
         for i in divergentes:
@@ -582,38 +718,54 @@ def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
 
 def adicionar_itens(frame: Frame, req: Requisicao) -> None:
     frame.get_by_role("tab", name="Itens da Saída").click()
+    pausar(frame)
     aguardar_mascara(frame)
     novo_item = frame.get_by_role("button", name=re.compile(r"Novo Item"))
+    vistos: set[int] = set()  # linhas já registradas como devolvidas ao padrão (log de diagnóstico)
+    instalar_diagnostico(frame)
 
     for i, item in enumerate(req.itens):
         etapa = f"item {i + 1}/{len(req.itens)} ({item.cadpro})"
         log(f"  {etapa}: qtd {item.qtd}" + (f", placa {item.placa}" if item.placa else ""))
         try:
+            registrar_regressoes(frame, req, i, f"ao começar o item {i + 1}", vistos)
             linhas = ler_itens(frame)
             # reaproveita linha vazia já criada pelo SCPI; senão cria uma
             if not (len(linhas) > i and not RE_CADPRO.match(linhas[i].get("Código", ""))):
                 novo_item.click()
+                pausar(frame)
                 aguardar_mascara(frame)
+                registrar_regressoes(frame, req, i, f"depois do Novo Item do item {i + 1}", vistos)
+                registrar_servidor(frame, req, f"depois do Novo Item do item {i + 1}")
             # a máscara ___.___.___ do Código aceita só os dígitos
             codigo = editar_celula(frame, i, "Código")
+            pausar(frame)
             codigo.press_sequentially(item.cadpro.replace(".", ""))
+            pausar(frame)
             codigo.press("Tab")
+            pausar(frame)
             aguardar_mascara(frame)
             checar_mensagem(frame, etapa)
+            registrar_regressoes(frame, req, i, f"depois do código do item {i + 1}", vistos)
 
             definir_qtd(frame, i, item, etapa)
 
             # centro de custo de veículo já preenche a placa no item
             if item.placa and norm_placa(ler_itens(frame)[i].get("Placa (F9)", "")) != item.placa:
                 placa = preencher_celula(frame, i, "Placa (F9)", item.placa)
+                pausar(frame)
                 sair_do_campo(frame, placa, f"{etapa} placa")
+                pausar(frame)
                 frame.page.keyboard.press("Escape")  # sai do hodômetro "Atual" sem alterar
+                pausar(frame)
         except ErroSCPI:
             raise
         except Exception as e:
             raise ErroSCPI(f"{etapa}: {resumo_erro(e)}") from e
 
         conferir_item(frame, i, item, req, etapa)
+        registrar_regressoes(frame, req, i + 1, f"depois de conferir o item {i + 1}", vistos)
+        registrar_servidor(frame, req, f"depois de conferir o item {i + 1}")
 
     # confere que o grid tem exatamente os itens esperados antes de salvar
     linhas_grid = [r for r in ler_itens(frame) if RE_CADPRO.match(r.get("Código", ""))]
@@ -909,11 +1061,7 @@ class NavegadorSCPI(Sessao):
         self.reabrir_modulo()
 
     def encerrar_simulacao(self) -> None:
-        log(
-            f"  [DRY-RUN] formulário preenchido e conferido — NÃO clicado em Salvar "
-            f"(aguardando {PAUSA_DRY_RUN_MS // 1000}s para conferência visual)"
-        )
-        self.frame.page.wait_for_timeout(PAUSA_DRY_RUN_MS)
+        log("  [DRY-RUN] formulário preenchido e conferido — NÃO clicado em Salvar")
         self.limpar()
 
     def descartar(self, lote: str) -> None:
