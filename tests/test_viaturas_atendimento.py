@@ -102,3 +102,23 @@ def test_o_detalhe_mostra_o_nome_do_scpi_e_nao_o_do_formulario(client, pedido, u
     html = client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
     assert f"<strong>{nome_scpi}</strong>" in html
     assert "Nome só do formulário" not in html
+
+
+def test_a_edicao_mostra_o_nome_do_scpi_do_material_acrescentado(client, pedido, usuario):
+    from catalogo.models import Material
+
+    r = confirmar_atendimento(
+        pedido.id,
+        uuid.uuid4(),
+        saida(centro_custo=EQUIPE),
+        {FITA: "2", BOTINA: "0", ISOLANTE: "1"},
+        nao_lancar=False,
+        usuario=usuario,
+        hoje=HOJE,
+        adicionados=[Adicionado(ISOLANTE, BOTINA)],
+    )
+    assert r.ok, [e.texto for e in r.erros]
+    Material.objects.filter(codigo=ISOLANTE).update(nome="NOME NOVO NO SCPI")
+    client.force_login(usuario)
+    html = client.get(reverse("pedidos:editar", args=[pedido.numero])).text
+    assert "NOME NOVO NO SCPI" in html
