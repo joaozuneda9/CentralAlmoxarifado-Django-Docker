@@ -107,6 +107,7 @@ FLUXOS: dict[str, Fluxo] = {
         exemplo_busca="Ex.: detergente, café",
         exemplo_inicio="Ex.: café, copo descartável, água sanitária, caneta",
         icone="caixa",
+        exemplo_destino="Setor ou posto de trabalho",
         centros=partial(centros_do_formulario, LIMPEZA),
     ),
     "viaturas": Fluxo(

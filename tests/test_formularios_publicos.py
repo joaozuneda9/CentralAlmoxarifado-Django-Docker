@@ -204,7 +204,7 @@ def test_destino_digitado_e_gravado_como_esta_no_cadastro(client):
 
 
 def test_destino_fica_junto_do_nome_com_a_orientacao(client):
-    for fluxo in ("limpeza", "ab"):
+    for fluxo, dica in (("limpeza", "Setor ou posto de trabalho"), ("ab", "Setor, posto ou placa")):
         r = client.get(reverse("pedidos:formulario", args=[fluxo]))
         passo1 = r.text[r.text.index("<h2>Seus dados</h2>") : r.text.index("<h2>Materiais</h2>")]
         assert 'name="solicitante"' in passo1 and 'name="destino"' in passo1
@@ -212,7 +212,7 @@ def test_destino_fica_junto_do_nome_com_a_orientacao(client):
         assert "O que pôr aqui?" not in passo1 and "<details" not in passo1
         # A orientação é a dica dentro do próprio campo (placeholder), sem parágrafo embaixo.
         campo = re.search(r'<input id="destino"[^>]*>', passo1).group(0)
-        assert 'placeholder="Setor, posto ou placa"' in campo
+        assert f'placeholder="{dica}"' in campo
         assert "destino-dica" not in passo1
         assert 'name="destino"' not in r.text[r.text.index('<h2 id="obs-titulo">') :]
         for opcao in ("ETA I", "ETA II", "PICKUP 01 — ABC1D23"):
