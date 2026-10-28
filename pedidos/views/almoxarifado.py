@@ -21,6 +21,7 @@ from pedidos.consultas import (
     filtrar_situacao,
     lotes_pendentes,
     lotes_travados,
+    nomes_scpi,
     pedidos_do_painel,
     unidades_scpi,
 )
@@ -169,6 +170,7 @@ def _contexto_detalhe(pedido, **extra) -> dict:
         "atendivel": False,
         "autorizacao": autorizacao,
         "unidades_scpi": unidades_scpi([pedido]),
+        "nomes_scpi": nomes_scpi([pedido]),
         **_contexto_edicao(pedido),
     }
     # O pedido de EPI só abre o atendimento depois de autorizado (spec 008).

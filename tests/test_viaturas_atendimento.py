@@ -89,3 +89,16 @@ def test_atender_trocar_acrescentar_lancar_editar_e_imprimir(client, pedido, usu
     recibo = texto(client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text)
     assert "Pedido pelo solicitante" in recibo and "Adicionado pelo almoxarifado" in recibo
     assert "Nº da ocorrência 77" in recibo
+
+
+def test_o_detalhe_mostra_o_nome_do_scpi_e_nao_o_do_formulario(client, pedido, usuario):
+    from catalogo.models import Material
+
+    item = pedido.itens.get(codigo=FITA)
+    item.material = "Nome só do formulário"
+    item.save()
+    nome_scpi = Material.objects.get(codigo=FITA).nome
+    client.force_login(usuario)
+    html = client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
+    assert f"<strong>{nome_scpi}</strong>" in html
+    assert "Nome só do formulário" not in html
