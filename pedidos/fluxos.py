@@ -219,10 +219,10 @@ def _texto_busca(fluxo: Fluxo, item: ItemCatalogo) -> str:
 
 def buscar(fluxo: Fluxo, catalogo, q: str, filtro: str) -> tuple[list[ItemCatalogo], int]:
     """Itens cujo nome contém todas as palavras de `q` (sem acento): os que podem ser pedidos
-    primeiro e os bloqueados (sem estoque, duplicados) no fim, cada grupo na ordem do catálogo; os
-    primeiros `LIMITE_RESULTADOS` e o total. A ordenação vem antes do corte, para nenhum material
-    que pode ser pedido ficar de fora. Só a saída avulsa (equipe) busca também pelo código; os
-    formulários públicos procuram só pelo nome."""
+    primeiro e os bloqueados (sem estoque, duplicados) no fim, cada grupo na ordem do catálogo
+    (nas viaturas, por nome); os primeiros `LIMITE_RESULTADOS` e o total. A ordenação vem antes
+    do corte, para nenhum material que pode ser pedido ficar de fora. Só a saída avulsa (equipe)
+    busca também pelo código; os formulários públicos procuram só pelo nome."""
     from pedidos.carrinho import motivo_bloqueio
 
     palavras = normalizar_busca(q).split()
@@ -232,6 +232,9 @@ def buscar(fluxo: Fluxo, catalogo, q: str, filtro: str) -> tuple[list[ItemCatalo
         if _passa(fluxo, i, filtro)
         and all(p in normalizar_busca(_texto_busca(fluxo, i)) for p in palavras)
     ]
+    if fluxo.folha is not None:
+        # A ordem da lista de peças (a folha em papel) vale só para a folha; na busca, é por nome.
+        achados.sort(key=lambda i: (normalizar_busca(i.nome), i.codigo))
     achados.sort(key=lambda i: bool(motivo_bloqueio(fluxo, i)))  # estável: mantém a ordem
     return achados[:LIMITE_RESULTADOS], len(achados)
 

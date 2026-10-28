@@ -105,3 +105,15 @@ def test_centros_de_equipe_sao_os_habilitados_sem_placa():
     criar_centro("EQUIPE NORTE", "51", "AAA1A11")
     criar_centro("EQUIPE NORTE", "51", "BBB2B22", formularios=[VIATURAS])
     assert centros_do_formulario(VIATURAS) == [Centro("EQUIPE NORTE", "51"), Centro("ETA I", "12")]
+
+
+def test_a_busca_ordena_por_nome_e_a_ordem_da_lista_vale_so_para_a_folha(lista):
+    from pedidos.fluxos import FLUXOS, buscar
+    from pedidos.regras import normalizar_busca
+
+    itens = formulario_viaturas()
+    achados, _ = buscar(FLUXOS["viaturas"], itens, "", "")
+    nomes = [normalizar_busca(i.nome) for i in achados if i.estoque and i.estoque > 0]
+    assert len(nomes) > 3
+    assert nomes == sorted(nomes)
+    assert codigos(itens)[:3] == [FITA, TEE, CAFE]  # o catálogo (e a folha) seguem a lista
