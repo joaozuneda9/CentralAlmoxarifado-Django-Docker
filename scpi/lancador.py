@@ -120,8 +120,11 @@ JS_RECARREGAR_GRADE = """
         && g.getColumns().some(c => (c.text || '').includes('Descrição do Produto/Serviço')));
     if (!grade) return resolve(false);
     const fim = setTimeout(() => resolve(false), 8000);
-    grade.store.on('load', () => { clearTimeout(fim); resolve(true); }, null, {single: true});
-    grade.store.load();
+    // o evento `load` também dispara quando a carga falha: vale o `successful` do callback
+    grade.store.load({callback: (registros, operacao, sucesso) => {
+        clearTimeout(fim);
+        resolve(Boolean(sucesso));
+    }});
 })
 """
 
