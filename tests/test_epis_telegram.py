@@ -2,12 +2,16 @@
 Trabalho é avisada ao registrar; o almoxarifado, só depois de autorizado."""
 
 import json
+import time
 from urllib.error import URLError
 
 import pytest
 
-from pedidos.models import Pedido
-from tests.epis_cenario import LUVA, enviar, montar_epis
+from pedidos.models import AutorizacaoPedido, Pedido
+from pedidos.protecao import emitir
+from pedidos.servicos import decidir_autorizacao
+from tests.config_cenario import enviar_formulario
+from tests.epis_cenario import LUVA, enviar, montar_epis, registrar, usuarios
 
 pytestmark = pytest.mark.django_db
 
@@ -81,10 +85,6 @@ def test_falha_do_envio_nao_desfaz_o_pedido(
 
 
 def test_reenvio_igual_nao_reavisa(client, telegram, django_capture_on_commit_callbacks):
-    import time
-
-    from pedidos.protecao import emitir
-
     token = emitir(aberto_em=time.time() - 60)
     with django_capture_on_commit_callbacks(execute=True):
         enviar(client, [(LUVA, "1")], token=token)
@@ -96,34 +96,14 @@ def test_reenvio_igual_nao_reavisa(client, telegram, django_capture_on_commit_ca
 def test_o_pedido_de_outro_formulario_continua_avisando_o_almoxarifado(
     client, telegram, django_capture_on_commit_callbacks
 ):
-    import time
-
-    from django.urls import reverse
-
-    from pedidos.protecao import emitir
-
     with django_capture_on_commit_callbacks(execute=True):
-        client.post(
-            reverse("pedidos:formulario", args=["ab"]),
-            {
-                "token": emitir(aberto_em=time.time() - 60).token,
-                "solicitante": "Marcos Pereira",
-                "destino": "ETA I",
-                "obs": "",
-                "item_codigo": ["016.005.010"],
-                "item_qtd": ["1"],
-            },
-            HTTP_HX_REQUEST="true",
-        )
+        enviar_formulario(client, "ab", [("016.005.010", "1")], destino="ETA I")
     assert [chat for chat, _, _ in telegram] == ["almox"]
 
 
 def test_ao_autorizar_so_o_chat_do_almoxarifado_recebe_uma_vez(
     telegram, django_capture_on_commit_callbacks
 ):
-    from pedidos.servicos import decidir_autorizacao
-    from tests.epis_cenario import registrar, usuarios
-
     quem = usuarios()
     pedido = registrar()
     with django_capture_on_commit_callbacks(execute=True):
@@ -143,9 +123,6 @@ def test_ao_autorizar_so_o_chat_do_almoxarifado_recebe_uma_vez(
 
 
 def test_ao_recusar_nenhum_chat_recebe(telegram, django_capture_on_commit_callbacks):
-    from pedidos.servicos import decidir_autorizacao
-    from tests.epis_cenario import registrar, usuarios
-
     quem = usuarios()
     pedido = registrar()
     with django_capture_on_commit_callbacks(execute=True):
@@ -156,10 +133,6 @@ def test_ao_recusar_nenhum_chat_recebe(telegram, django_capture_on_commit_callba
 def test_autorizar_sem_o_chat_do_almoxarifado_nao_desfaz_a_decisao(
     telegram, settings, django_capture_on_commit_callbacks
 ):
-    from pedidos.models import AutorizacaoPedido
-    from pedidos.servicos import decidir_autorizacao
-    from tests.epis_cenario import registrar, usuarios
-
     settings.TELEGRAM_CHAT_ID = ""
     quem = usuarios()
     pedido = registrar()

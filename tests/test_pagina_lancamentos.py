@@ -2,7 +2,6 @@ import re
 from datetime import timedelta
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.db import connections
 from django.urls import reverse
 from django.utils import timezone
@@ -13,13 +12,6 @@ from tests.cenario import criar_pedido
 pytestmark = pytest.mark.django_db
 
 LANCAMENTOS = reverse("automacoes:pagina") + "?aba=lancamento"
-
-
-@pytest.fixture
-def usuario_logado(client):
-    usuario = get_user_model().objects.create_user(username="12345", password="x")
-    client.force_login(usuario)
-    return usuario
 
 
 def test_pagina_exige_login(client):

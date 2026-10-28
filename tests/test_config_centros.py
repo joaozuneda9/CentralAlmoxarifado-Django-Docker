@@ -17,7 +17,7 @@ from pedidos.regras import (
     resolver_destino,
 )
 from tests.cenario import montar_cenario
-from tests.config_cenario import criar_centro, enviar, habilitar, registrar
+from tests.config_cenario import criar_centro, enviar_formulario, habilitar, registrar
 
 pytestmark = pytest.mark.django_db
 
@@ -157,7 +157,7 @@ class TestBackend:
         assert not r.ok and not Pedido.objects.exists()
 
     def test_o_envio_pela_tela_tambem_recusa_e_mantem_o_pedido(self, client):
-        r = enviar(client, AB, [(self.FITA, "1")], destino="SETOR X")
+        r = enviar_formulario(client, AB, [(self.FITA, "1")], destino="SETOR X")
         assert "não está na lista de centros de custo" in r.text
         assert f'name="item_codigo" value="{self.FITA}"' in r.text
         assert not Pedido.objects.exists()

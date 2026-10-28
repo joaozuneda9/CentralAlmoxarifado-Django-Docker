@@ -10,7 +10,8 @@ from pedidos.consultas import FiltrosPainel, pedidos_do_painel
 from pedidos.models import Pedido
 from pedidos.servicos import decidir_autorizacao
 from tests.cenario import criar_pedido
-from tests.epis_cenario import montar_epis, registrar, usuarios
+from tests.epis_cenario import montar_epis, registrar
+from tests.paginas import texto
 
 pytestmark = pytest.mark.django_db
 
@@ -20,11 +21,6 @@ PAINEL = reverse("pedidos:painel")
 @pytest.fixture(autouse=True)
 def cenario():
     montar_epis()
-
-
-@pytest.fixture
-def quem():
-    return usuarios()
 
 
 @pytest.fixture
@@ -42,10 +38,6 @@ def tres(quem):
     decidir_autorizacao(autorizado.numero, "autorizar", "", quem["seguranca"])
     decidir_autorizacao(recusado.numero, "recusar", "Sem laudo", quem["seguranca"])
     return aguardando, autorizado, recusado
-
-
-def texto(html):
-    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 def numeros(client, **filtros):

@@ -6,7 +6,6 @@ contada, sem zeros à direita.
 """
 
 import re
-import time
 from decimal import Decimal
 
 import pytest
@@ -15,8 +14,8 @@ from django.utils.html import strip_tags
 
 from catalogo.models import Material
 from pedidos.models import Pedido
-from pedidos.protecao import emitir
 from tests.cenario import montar_cenario
+from tests.config_cenario import enviar_formulario
 
 pytestmark = pytest.mark.django_db
 
@@ -55,18 +54,8 @@ def entra(html, codigo):
 
 
 def enviar(client, fluxo, codigo, quantidade):
-    return client.post(
-        reverse("pedidos:formulario", args=[fluxo]),
-        {
-            "token": emitir(aberto_em=time.time() - 60).token,
-            "solicitante": "Ana",
-            "destino": "ETA II",
-            "obs": "",
-            "confirmacao_extra": "",
-            "item_codigo": [codigo],
-            "item_qtd": [quantidade],
-        },
-        HTTP_HX_REQUEST="true",
+    return enviar_formulario(
+        client, fluxo, [(codigo, quantidade)], destino="ETA II", solicitante="Ana"
     ).text
 
 

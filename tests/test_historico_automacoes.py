@@ -244,13 +244,6 @@ def test_paginas_seguintes_intercalam_certo():
 URL = reverse("automacoes:pagina")
 
 
-@pytest.fixture
-def usuario_logado(client):
-    usuario = get_user_model().objects.create_user(username="12345", password="x")
-    client.force_login(usuario)
-    return usuario
-
-
 def trecho_historico(html):
     inicio = html.index('<div id="historico"')
     return html[inicio : html.index("<!-- /historico -->", inicio)]

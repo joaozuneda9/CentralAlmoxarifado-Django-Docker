@@ -1,7 +1,6 @@
 """Formulário público de EPIs (spec 008, US1, FR-001 a FR-010): pedido sem login que nasce
 aguardando a autorização da Segurança do Trabalho."""
 
-import re
 import time
 
 import pytest
@@ -11,7 +10,9 @@ from django.urls import reverse
 from catalogo.models import ExcecaoMaterial, Opcao
 from pedidos.models import AutorizacaoPedido, Pedido
 from pedidos.protecao import emitir
+from tests.config_cenario import enviar_formulario
 from tests.epis_cenario import CAPACETE, DESTINO, FITA, LUVA, OCULOS, PROTETOR, enviar, montar_epis
+from tests.paginas import texto
 
 pytestmark = pytest.mark.django_db
 
@@ -23,10 +24,6 @@ INDISPONIVEL = "Este formulário está indisponível no momento. Avise o almoxar
 @pytest.fixture(autouse=True)
 def cenario():
     montar_epis()
-
-
-def texto(html):
-    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 def test_a_pagina_inicial_lista_o_formulario(client):
@@ -81,18 +78,7 @@ def test_a_tela_de_sucesso_diz_que_aguarda_e_nao_promete_entrega(client):
 
 
 def test_os_outros_formularios_nao_ganham_autorizacao(client):
-    r = client.post(
-        reverse("pedidos:formulario", args=["ab"]),
-        {
-            "token": emitir(aberto_em=time.time() - 60).token,
-            "solicitante": "Marcos Pereira",
-            "destino": DESTINO,
-            "obs": "",
-            "item_codigo": [FITA],
-            "item_qtd": ["1"],
-        },
-        HTTP_HX_REQUEST="true",
-    )
+    r = enviar_formulario(client, "ab", [(FITA, "1")], destino=DESTINO)
     assert "Pedido registrado" in r.text
     pedido = Pedido.objects.get()
     assert pedido.origem == "AB" and pedido.autorizacao_ou_none is None

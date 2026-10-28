@@ -38,6 +38,7 @@ from tests.cenario import (
     montar_cenario,
     registrar,
     saida,
+    textos,
 )
 
 pytestmark = pytest.mark.django_db
@@ -125,10 +126,6 @@ def editar(pedido, usuario, versao=None, dados=None, qtds=None, adicionados=(), 
 
 def ids_das_linhas():
     return set(LinhaSaida.objects.values_list("id", flat=True))
-
-
-def textos(r):
-    return [e.texto for e in r.erros]
 
 
 def test_edicao_grava_entregas_recria_linhas_e_registra(atendido, usuario):
@@ -573,7 +570,7 @@ def url_editar(pedido):
     return reverse("pedidos:editar", args=[pedido.numero])
 
 
-def post_edicao(pedido, versao=0, **campos):
+def post_edicao(versao=0, **campos):
     dados = {
         "versao": str(versao),
         "data": "2026-10-09",
@@ -637,7 +634,7 @@ def test_editar_marca_nao_lancar_vindo_de_automacoes(client, logado, atendido):
 
 
 def test_post_editar_salva_e_volta_ao_detalhe(client, logado, atendido):
-    r = client.post(url_editar(atendido), post_edicao(atendido, recebedor="Ana"), follow=True)
+    r = client.post(url_editar(atendido), post_edicao(recebedor="Ana"), follow=True)
     assert r.redirect_chain[-1][0] == reverse("pedidos:detalhe", args=[atendido.numero])
     assert "Alterações salvas no pedido P-000001." in r.text
     assert "Recebedor: João → Ana" in r.text
@@ -646,19 +643,19 @@ def test_post_editar_salva_e_volta_ao_detalhe(client, logado, atendido):
 
 def test_post_com_recibo_impresso_avisa_que_voltou(client, logado, atendido):
     Atendimento.objects.update(recibo_impresso_em=timezone.now())
-    r = client.post(url_editar(atendido), post_edicao(atendido, recebedor="Ana"), follow=True)
+    r = client.post(url_editar(atendido), post_edicao(recebedor="Ana"), follow=True)
     assert "O recibo voltou para impressão." in r.text
 
 
 def test_post_erro_de_validacao_volta_ao_formulario(client, logado, atendido):
-    r = client.post(url_editar(atendido), post_edicao(atendido, recebedor=""))
+    r = client.post(url_editar(atendido), post_edicao(recebedor=""))
     assert r.status_code == 200
     assert "Informe quem recebeu o material." in r.text and "data-editando" in r.text
 
 
 def test_post_em_lancamento_mostra_alteracoes_nao_gravadas_sem_salvar(client, logado, atendido):
     LinhaSaida.objects.update(status="EM_LANCAMENTO")
-    r = client.post(url_editar(atendido), post_edicao(atendido, recebedor="Ana"))
+    r = client.post(url_editar(atendido), post_edicao(recebedor="Ana"))
     assert r.status_code == 200
     assert "Suas alterações não foram gravadas." in r.text
     assert "Recebedor: João → Ana" in r.text and "data-copiar-resumo" in r.text
@@ -667,7 +664,7 @@ def test_post_em_lancamento_mostra_alteracoes_nao_gravadas_sem_salvar(client, lo
 
 def test_post_versao_antiga_oferece_editar_de_novo(client, logado, atendido, usuario):
     assert editar(atendido, usuario, dados=saida(recebedor="Ana")).ok
-    r = client.post(url_editar(atendido), post_edicao(atendido, versao=0, recebedor="Bruno"))
+    r = client.post(url_editar(atendido), post_edicao(versao=0, recebedor="Bruno"))
     assert r.status_code == 200
     assert "Ana salvou alterações neste pedido" in r.text
     assert "Recebedor: Ana → Bruno" in r.text
@@ -826,7 +823,7 @@ def test_edicao_mantem_o_tipo_gravado_do_atendimento(client, logado, atendido):
     # Atendimento importado das planilhas pode ter outro tipo que não o BALCÃO do formulário.
     Atendimento.objects.update(tipo_saida="ENTREGA")
     assert 'value="ENTREGA" selected' in client.get(url_editar(atendido)).text
-    client.post(url_editar(atendido), post_edicao(atendido, recebedor="Ana"))
+    client.post(url_editar(atendido), post_edicao(recebedor="Ana"))
     assert Atendimento.objects.get().tipo_saida == "ENTREGA"
     assert AlteracaoPedido.objects.get().diferencas == [
         {"campo": "Recebedor", "antes": "João", "depois": "Ana"}

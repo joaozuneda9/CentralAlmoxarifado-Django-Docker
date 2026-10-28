@@ -3,7 +3,7 @@ from datetime import date
 import pytest
 from django.db import InterfaceError, OperationalError, connection, connections
 
-from catalogo.models import Importacao, Material
+from catalogo.models import Importacao, Material, trava_importacao
 from scpi.execucao import ImportacaoEmAndamento, Resultado, executar, trava
 from scpi.leitura import ErroImportacao
 
@@ -54,17 +54,12 @@ def test_falha_ao_baixar_tambem_e_registrada():
     assert imp.erro == "Falha inesperada: Nenhum CSV interceptado"
 
 
-def test_segunda_importacao_do_mesmo_tipo_e_recusada():
-    outra = connections.create_connection("default")
-    with outra.cursor() as c:
-        c.execute("SELECT GET_LOCK('almoxarifado:importar:ESTOQUE', 0)")
-    try:
-        with pytest.raises(ImportacaoEmAndamento):
-            executar("ESTOQUE", lambda: pytest.fail("não deveria baixar"), nada)
-        assert not Importacao.objects.exists()
-        assert executar("CADASTRO", lambda: b"x", nada).situacao == "SUCESSO"
-    finally:
-        outra.close()
+def test_segunda_importacao_do_mesmo_tipo_e_recusada(trava_importacao_ocupada):
+    trava_importacao_ocupada("ESTOQUE")
+    with pytest.raises(ImportacaoEmAndamento):
+        executar("ESTOQUE", lambda: pytest.fail("não deveria baixar"), nada)
+    assert not Importacao.objects.exists()
+    assert executar("CADASTRO", lambda: b"x", nada).situacao == "SUCESSO"
 
 
 def test_trava_e_liberada_ao_terminar():
@@ -72,7 +67,7 @@ def test_trava_e_liberada_ao_terminar():
     outra = connections.create_connection("default")
     try:
         with outra.cursor() as c:
-            c.execute("SELECT GET_LOCK('almoxarifado:importar:ESTOQUE', 0)")
+            c.execute("SELECT GET_LOCK(%s, 0)", [trava_importacao("ESTOQUE")])
             assert c.fetchone()[0] == 1
     finally:
         outra.close()

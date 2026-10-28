@@ -5,6 +5,7 @@ import pytest
 
 from catalogo.catalogos import catalogo_epis, formulario_epis, grupos_epis
 from catalogo.models import ExcecaoMaterial, Formulario, Material, Opcao
+from tests.config_cenario import excecao
 from tests.epis_cenario import CAPACETE, FITA, LUVA, OCULOS, PROTETOR, montar_epis
 
 pytestmark = pytest.mark.django_db
@@ -43,16 +44,12 @@ def test_o_catalogo_antigo_de_epi_do_cenario_nao_entra_sem_ser_escolhido():
 
 
 def test_avulso_que_tambem_e_do_grupo_aparece_uma_vez():
-    ExcecaoMaterial.objects.create(
-        material=Material.objects.get(codigo=LUVA), formulario=Formulario.EPIS, habilitado=True
-    )
+    excecao(Formulario.EPIS, Material.objects.get(codigo=LUVA), True)
     assert codigos().count(LUVA) == 1
 
 
 def test_retirar_o_avulso_nao_tira_o_material_do_grupo():
-    ExcecaoMaterial.objects.create(
-        material=Material.objects.get(codigo=LUVA), formulario=Formulario.EPIS, habilitado=True
-    )
+    excecao(Formulario.EPIS, Material.objects.get(codigo=LUVA), True)
     ExcecaoMaterial.objects.filter(formulario=Formulario.EPIS, material__codigo=LUVA).delete()
     assert LUVA in codigos()
 

@@ -27,13 +27,6 @@ FIXTURES = Path(__file__).parent / "fixtures" / "scpi"
 
 
 @pytest.fixture
-def usuario_logado(client):
-    usuario = get_user_model().objects.create_user(username="12345", password="x")
-    client.force_login(usuario)
-    return usuario
-
-
-@pytest.fixture
 def processos(monkeypatch, settings, tmp_path):
     """Troca o Popen por um registro dos argumentos e manda o log para uma pasta temporária."""
     settings.LOG_DIR = tmp_path

@@ -1,6 +1,5 @@
 """Regra de quantidade por unidade do material (spec 005, US1): regras puras e fluxos."""
 
-import time
 from decimal import Decimal
 
 import pytest
@@ -8,7 +7,6 @@ from django.urls import reverse
 
 from catalogo.models import ItemLimpeza, Material, Opcao
 from pedidos.models import Pedido
-from pedidos.protecao import emitir
 from pedidos.regras import (
     CAUSA_ACIMA_DO_MAXIMO,
     CAUSA_FRACAO_EM_CONTAVEL,
@@ -22,6 +20,7 @@ from pedidos.regras import (
     truncar_qtd,
 )
 from tests.cenario import montar_cenario
+from tests.config_cenario import enviar_formulario
 
 D = Decimal
 
@@ -183,18 +182,8 @@ def no_pedido(html, codigo):
 
 
 def enviar(client, fluxo, codigo, quantidade):
-    return client.post(
-        reverse("pedidos:formulario", args=[fluxo]),
-        {
-            "token": emitir(aberto_em=time.time() - 60).token,
-            "solicitante": "Ana",
-            "destino": "ETA II",
-            "obs": "",
-            "confirmacao_extra": "",
-            "item_codigo": [codigo],
-            "item_qtd": [quantidade],
-        },
-        HTTP_HX_REQUEST="true",
+    return enviar_formulario(
+        client, fluxo, [(codigo, quantidade)], destino="ETA II", solicitante="Ana"
     ).text
 
 

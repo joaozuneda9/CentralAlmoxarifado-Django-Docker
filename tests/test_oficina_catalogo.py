@@ -5,6 +5,7 @@ import pytest
 
 from catalogo.catalogos import catalogo_oficina, formulario_oficina, grupos_oficina
 from catalogo.models import ExcecaoMaterial, Formulario, Material, Opcao
+from tests.config_cenario import excecao
 from tests.oficina_cenario import FILTRO, FITA, OLEO, PNEU, montar_oficina
 
 pytestmark = pytest.mark.django_db
@@ -35,16 +36,12 @@ def test_outro_grupo_fica_de_fora():
 
 
 def test_avulso_que_tambem_e_do_grupo_aparece_uma_vez():
-    ExcecaoMaterial.objects.create(
-        material=Material.objects.get(codigo=FILTRO), formulario=Formulario.OFICINA, habilitado=True
-    )
+    excecao(Formulario.OFICINA, Material.objects.get(codigo=FILTRO), True)
     assert codigos().count(FILTRO) == 1
 
 
 def test_retirar_o_avulso_nao_tira_o_material_do_grupo():
-    ExcecaoMaterial.objects.create(
-        material=Material.objects.get(codigo=FILTRO), formulario=Formulario.OFICINA, habilitado=True
-    )
+    excecao(Formulario.OFICINA, Material.objects.get(codigo=FILTRO), True)
     ExcecaoMaterial.objects.filter(formulario=Formulario.OFICINA, material__codigo=FILTRO).delete()
     assert FILTRO in codigos()
 

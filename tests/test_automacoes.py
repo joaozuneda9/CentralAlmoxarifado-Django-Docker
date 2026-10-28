@@ -1,20 +1,14 @@
 import re
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.urls import NoReverseMatch, reverse
+
+from tests.paginas import item_atual
 
 pytestmark = pytest.mark.django_db
 
 URL = reverse("automacoes:pagina")
 ABAS = ["visao-geral", "lancamento", "cadastro", "estoque", "saidas"]
-
-
-@pytest.fixture
-def usuario_logado(client):
-    usuario = get_user_model().objects.create_user(username="12345", password="x")
-    client.force_login(usuario)
-    return usuario
 
 
 def aba_ativa(html):
@@ -115,15 +109,6 @@ def test_nomes_antigos_nao_existem(nome, args):
 
 def test_curva_continua(client, usuario_logado):
     assert client.get(reverse("catalogo:curva")).status_code == 200
-
-
-def item_atual(html, url, rotulo):
-    return re.search(
-        rf'<a class="app-menu-item" href="{re.escape(url)}" aria-current="page">'
-        rf'<svg class="icone".*?</svg><span>{rotulo}</span></a>',
-        html,
-        re.S,
-    )
 
 
 def test_menu_tem_automacoes_entre_saida_avulsa_e_curva(admin_client):

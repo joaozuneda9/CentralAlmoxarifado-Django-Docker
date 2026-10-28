@@ -6,12 +6,8 @@ from django.core.management import CommandError, call_command
 from pedidos.models import ExecucaoRobo, LinhaSaida
 from scpi.management.commands.simular_repeticoes import RE_QTD_DO_SERVIDOR, medir
 
-pytestmark = pytest.mark.django_db
-
-
-@pytest.fixture(autouse=True)
-def _journal_temporario(journal):
-    """Nenhum teste grava o journal no `logs/` do repositório."""
+# Nenhum teste grava o journal no `logs/` do repositório.
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("journal")]
 
 
 def rodar(*argumentos):

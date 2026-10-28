@@ -3,6 +3,7 @@ import time
 from urllib.error import URLError
 
 import pytest
+from django.contrib.staticfiles import finders
 from django.urls import reverse
 
 from catalogo.models import CentroCusto
@@ -272,7 +273,6 @@ def test_inicio_mostra_o_formulario_geral_a_parte_e_por_ultimo(client):
 
 
 def test_filtro_por_grupo_e_subgrupo_igual_nos_dois_formularios(client):
-
     seletores = []
 
     for fluxo in ("limpeza", "ab"):
@@ -378,8 +378,6 @@ def test_resultados_em_painel_preso_a_busca(client):
 
 
 def test_pedido_em_secao_propria_ao_lado_dos_passos_no_desktop(client):
-    from django.contrib.staticfiles import finders
-
     r = client.get(reverse("pedidos:formulario", args=["limpeza"]))
     assert '<body class="ritmo-publico pagina-larga">' in r.text
     html = r.text
@@ -463,8 +461,6 @@ def test_mensagem_sem_lista_fica_so_no_resumo(client):
 
 
 def test_pedidos_js_foca_o_resumo_e_limpa_o_erro_ao_corrigir():
-    from django.contrib.staticfiles import finders
-
     js = open(finders.find("pedidos/js/pedidos.js"), encoding="utf-8").read()
     assert "[data-resumo-erros]" in js and "preventScroll" in js
     assert 'removeAttribute("aria-invalid")' in js and "campo-com-erro" in js
@@ -520,8 +516,6 @@ def test_sucesso_diz_o_que_lembrar_no_aparelho(client, django_capture_on_commit_
 
 
 def test_pedidos_js_lembra_so_no_aparelho_e_com_cuidado():
-    from django.contrib.staticfiles import finders
-
     js = open(finders.find("pedidos/js/pedidos.js"), encoding="utf-8").read()
     assert '"almoxarifado.solicitante"' in js
     assert "[data-lembrar-solicitante]" in js and "[data-limpar-campo]" in js
@@ -537,7 +531,6 @@ def test_pedidos_js_lembra_so_no_aparelho_e_com_cuidado():
 
 def test_pedidos_js_pergunta_antes_de_sair_com_pedido_em_montagem(client):
     from django.contrib.auth import get_user_model
-    from django.contrib.staticfiles import finders
 
     js = open(finders.find("pedidos/js/pedidos.js"), encoding="utf-8").read()
     assert '"beforeunload"' in js
@@ -581,7 +574,6 @@ def test_sucesso_lista_o_destino_e_os_materiais(client, django_capture_on_commit
 def test_botao_do_fim_so_aparece_sem_javascript(client):
     # No celular o envio é pela gaveta; o botão do fim continua na página (a gaveta envia por
     # ele, e sem JavaScript é o único envio), escondido pelo CSS quando há JavaScript.
-    from django.contrib.staticfiles import finders
 
     r = client.get(reverse("pedidos:formulario", args=["ab"])).text
     final = r[r.index('<div class="acoes acoes-final">') :]
@@ -593,7 +585,6 @@ def test_botao_do_fim_so_aparece_sem_javascript(client):
 def test_pedidos_js_so_cancela_a_alteracao_aberta_com_hx_post_de_botao():
     # O próprio <form hx-post> é ancestral de todo clique dentro do pedido: sem excluí-lo, o −, o +
     # e o "Confirmar" da quantidade aberta a cancelariam (e restaurariam o valor) antes de agirem.
-    from django.contrib.staticfiles import finders
 
     js = open(finders.find("pedidos/js/pedidos.js"), encoding="utf-8").read()
     trecho = js[js.index('closest("[hx-post]")') :]
@@ -757,8 +748,6 @@ def test_pagina_traz_o_aviso_de_javascript_dentro_de_noscript(client, fluxo):
 
 
 def test_css_esconde_o_formulario_publico_sem_a_classe_js():
-    from django.contrib.staticfiles import finders
-
     css = open(finders.find("pedidos/css/pedidos.css"), encoding="utf-8").read()
     assert "html:not(.js) .formulario-pedido { display: none; }" in css
 

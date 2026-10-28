@@ -1,7 +1,6 @@
 """O atendimento só aceita o pedido de EPI autorizado (spec 008, US3, FR-023 a FR-025, SC-002):
 nenhum atendimento nem linha de saída para o robô antes da autorização, nem para o recusado."""
 
-import re
 import uuid
 from datetime import date
 
@@ -13,7 +12,8 @@ from pedidos.models import Atendimento, LinhaSaida
 from pedidos.regras import edicao_permitida
 from pedidos.servicos import confirmar_atendimento, decidir_autorizacao
 from tests.cenario import saida
-from tests.epis_cenario import LUVA, montar_epis, registrar, usuarios
+from tests.epis_cenario import LUVA, montar_epis, registrar
+from tests.paginas import texto
 
 pytestmark = pytest.mark.django_db
 
@@ -25,15 +25,6 @@ RECUSADO = "foi recusado pela Segurança do Trabalho e está encerrado"
 @pytest.fixture(autouse=True)
 def cenario():
     montar_epis()
-
-
-@pytest.fixture
-def quem():
-    return usuarios()
-
-
-def texto(html):
-    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 def atender(pedido, usuario, qtds=None):

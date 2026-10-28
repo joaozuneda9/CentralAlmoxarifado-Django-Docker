@@ -14,7 +14,7 @@ from pedidos.fluxos import FLUXOS
 from pedidos.models import Pedido
 from pedidos.regras import LIMPEZA, EnvioSaida
 from pedidos.servicos import catalogo_de, registrar_saida_avulsa
-from tests.cenario import envio_limpeza, itens, montar_cenario, registrar, saida
+from tests.cenario import envio_limpeza, itens, montar_cenario, registrar, saida, textos
 from tests.test_carrinho import item
 
 pytestmark = pytest.mark.django_db
@@ -35,10 +35,6 @@ def saldo(codigo, estoque):
 
 def pedir(*pares):
     return registrar(LIMPEZA, envio_limpeza(itens=itens(*pares)))
-
-
-def textos(r):
-    return [e.texto for e in r.erros]
 
 
 # --- O envio ---------------------------------------------------------------------------------

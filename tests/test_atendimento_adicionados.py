@@ -23,6 +23,7 @@ from tests.cenario import (
     montar_cenario,
     registrar,
     saida,
+    textos,
 )
 from tests.test_atendimento import dados_post
 
@@ -61,10 +62,6 @@ def atender(pedido, usuario, qtds, adicionados=(), atendimento_id=None):
         hoje=HOJE,
         adicionados=adicionados,
     )
-
-
-def textos(r):
-    return [e.texto for e in r.erros]
 
 
 def trocar(pedido, usuario, **kw):
