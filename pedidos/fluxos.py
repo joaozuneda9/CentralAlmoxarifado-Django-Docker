@@ -155,6 +155,7 @@ FLUXOS: dict[str, Fluxo] = {
         exemplo_busca="Ex.: luva, capacete, óculos",
         exemplo_inicio="Ex.: luva, botina, capacete, protetor auricular",
         icone="escudo",
+        exemplo_destino="Setor ou posto de trabalho",
         centros=partial(centros_do_formulario, EPIS),
         exige_autorizacao=True,
     ),
