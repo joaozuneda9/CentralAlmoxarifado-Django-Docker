@@ -651,7 +651,7 @@ def _validar_atendimento(
     # por material vêm de `_erros_dos_adicionados`.
     codigos_unicos = {a.codigo for a in unicos}
     v = validar(
-        [ItemSaida(i.codigo, parsed[i.codigo], i.qtd_pedida) for i in itens]
+        [ItemSaida(i.codigo, parsed[i.codigo]) for i in itens]
         + [ItemSaida(a.codigo, qtds_adicionadas[a.codigo]) for a in unicos]
     )
     erros = (

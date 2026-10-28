@@ -238,11 +238,11 @@
   function confirmarEntrega(bloco) {
     if (!bloco) return false;
     var campo = bloco.querySelector(".entrega-campo");
-    // Inválido ou acima do pedido não se confirma: o servidor recusaria. Nem o acrescentado com 0
+    // Inválido não se confirma: o servidor recusaria (acima do pedido é aviso, como o parcial). Nem o acrescentado com 0
     // (acrescentar sem entregar não tem sentido; para desistir dele, "Remover" ou "Desfazer troca").
     var estado = bloco.getAttribute("data-estado");
     var adicionadoZero = estado === "zero" && bloco.closest("tr[data-adicionado]");
-    if (estado === "invalido" || estado === "acima" || adicionadoZero) {
+    if (estado === "invalido" || adicionadoZero) {
       campo.focus();
       return false;
     }
@@ -1593,7 +1593,7 @@
     // Quantidades gravadas já valem: abrem confirmadas (as trocadas o `iniciarTrocas` confirmou).
     document.querySelectorAll(".entrega[data-pode-confirmar]:not([data-confirmado])").forEach(function (bloco) {
       var estado = bloco.getAttribute("data-estado");
-      if (estado === "invalido" || estado === "acima") return;
+      if (estado === "invalido") return;
       if (estado === "zero" && bloco.closest("tr[data-adicionado]")) return;
       confirmarEntrega(bloco);
     });
