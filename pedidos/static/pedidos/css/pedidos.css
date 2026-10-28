@@ -562,7 +562,7 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 /* Formulário do lançamento: a barra com a contagem e os dois botões, e a fila com a coluna de marcar. */
 .fila-form { display: grid; gap: var(--esp-2); }
 .fila-barra {
-  position: sticky; top: 0; z-index: 2;
+  position: sticky; top: var(--fila-topo, 0px); z-index: 2;
   display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-1) var(--esp-2);
   padding: var(--esp-1) 0 var(--esp-2); background: var(--fundo); border-bottom: 1px solid var(--borda);
 }

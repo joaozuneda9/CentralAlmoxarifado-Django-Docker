@@ -53,8 +53,25 @@
     }
   }
 
+  // Até 1286px a barra lateral vira um cabeçalho fixo (layouts.css) que cobriria a barra da fila
+  // ao rolar: a barra da fila gruda logo abaixo dele (`--fila-topo`, pedidos.css).
+  var CABECALHO_FIXO = window.matchMedia("(max-width: 1286px)");
+
+  function ajustarTopo() {
+    var cabecalho = document.querySelector(".app-lateral");
+    var altura = cabecalho && CABECALHO_FIXO.matches ? cabecalho.getBoundingClientRect().height : 0;
+    document.documentElement.style.setProperty("--fila-topo", altura + "px");
+  }
+
   function preparar() {
     document.querySelectorAll("form[data-fila-robo]").forEach(sincronizar);
+    ajustarTopo();
+  }
+
+  window.addEventListener("resize", ajustarTopo);
+  if (window.ResizeObserver) {
+    var observado = document.querySelector(".app-lateral");
+    if (observado) new ResizeObserver(ajustarTopo).observe(observado);
   }
 
   document.addEventListener("DOMContentLoaded", preparar);

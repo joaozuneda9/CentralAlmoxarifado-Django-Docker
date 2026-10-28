@@ -504,6 +504,7 @@ def test_reconciliar_itens_corrige_a_qtd_devolvida_ao_padrao(monkeypatch):
         ]
     )
     refeitos = []
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: True)
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
     monkeypatch.setattr(lancador, "ler_itens", lambda frame: next(grids))
     monkeypatch.setattr(lancador, "definir_qtd", lambda frame, i, item, etapa: refeitos.append(i))
@@ -519,6 +520,7 @@ def test_reconciliar_itens_recusa_o_lote_se_a_divergencia_persiste(monkeypatch):
     from scpi.requisicoes import ErroSCPI
 
     itens = [_item_n("001.000.001", "3"), _item_n("001.000.002", "5")]
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: True)
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
     monkeypatch.setattr(
         lancador,
@@ -553,6 +555,7 @@ def test_reconciliar_itens_recusa_o_lote_se_o_grid_nao_estabiliza(monkeypatch):
     from scpi import lancador
     from scpi.requisicoes import ErroSCPI
 
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: True)
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: False)
     # mesmo com a leitura igual ao pedido, o grid instável não autoriza o salvamento
     monkeypatch.setattr(lancador, "ler_itens", lambda frame: [_linha_n("001.000.001", "3")])
@@ -588,6 +591,7 @@ def test_reconciliar_itens_recusa_o_grid_com_linha_a_mais(monkeypatch):
     from scpi.requisicoes import ErroSCPI
 
     itens = [_item_n("001.000.001", "3")]
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: True)
     monkeypatch.setattr(lancador, "aguardar_grid_estavel", lambda frame: True)
     # o item esperado é um prefixo válido, mas há uma linha codificada a mais
     monkeypatch.setattr(
@@ -768,7 +772,9 @@ def test_reconciliar_recarrega_a_grade_do_servidor_antes_de_cada_conferencia(mon
     from scpi.requisicoes import Requisicao
 
     eventos = []
-    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: eventos.append("recarregar"))
+    monkeypatch.setattr(
+        lancador, "recarregar_grade", lambda frame: eventos.append("recarregar") or True
+    )
     monkeypatch.setattr(
         lancador, "aguardar_grid_estavel", lambda frame: eventos.append("estavel") or True
     )
@@ -833,3 +839,21 @@ def test_definir_qtd_digita_a_quantidade(monkeypatch):
 
     lancador.definir_qtd(_Quadro(), 0, _item("5"), "item 1/1")
     assert chamadas == [{"digitando": True}]
+
+
+def test_reconciliar_recusa_o_lote_se_a_grade_do_servidor_nao_recarrega(monkeypatch):
+    import pytest
+
+    from scpi import lancador
+    from scpi.requisicoes import ErroSCPI, Requisicao
+
+    monkeypatch.setattr(lancador, "recarregar_grade", lambda frame: False)
+    monkeypatch.setattr(
+        lancador,
+        "aguardar_grid_estavel",
+        lambda frame: pytest.fail("não deveria conferir sem a leitura do servidor"),
+    )
+    req = Requisicao(lote="AV-1", linhas=[], itens=[_item("5")])
+
+    with pytest.raises(ErroSCPI, match="não foi possível recarregar a grade do servidor"):
+        lancador.reconciliar_itens(_Quadro(), req)

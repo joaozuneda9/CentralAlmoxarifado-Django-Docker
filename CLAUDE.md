@@ -548,15 +548,6 @@ transações precisam se comportar como no servidor.
   num "Detalhe técnico" recolhido, e, no lançamento real, o atalho para as travas (não há
   "Simular de novo": a nova simulação é escolhida na fila). As execuções anteriores ficam no histórico de Automações. A aba atualiza
   a cada 3 s só enquanto há execução em andamento e resolve os lotes travados com
-  Na navegação (`scpi/lancador.py`): `pausar` espera `PAUSA_ENTRE_ACOES_MS` (100 ms) entre as
-  ações do preenchimento dos itens; a QTD é digitada tecla a tecla (`preencher_celula(...,
-  digitando=True)`); o "Novo Item" faz o SCPI recarregar a grade do servidor e, sem a pausa, o
-  servidor às vezes devolvia a QTD de uma linha ao padrão (1), então antes de cada rodada da
-  conferência final (`RODADAS_RECONCILIACAO`, 5) o robô pede essa recarga (`recarregar_grade`) e a
-  tela passa a mostrar o que o servidor tem; o log traz o diagnóstico (`registrar_regressoes`,
-  `registrar_servidor`). `simular_repeticoes --lote <n> --vezes <k>` (só para testes do robô)
-  simula a mesma requisição várias vezes numa sessão só do SCPI e resume os resets. A trava do
-  lançamento é um `GET_LOCK` do servidor de banco: a suíte não roda junto de uma simulação real.
   `servicos.resolver_lote` (informar a requisição, liberar para relançar, o que apaga o número
   e a data de lançamento, ou marcar para não lançar; liberar um lote
   `VERIFICAR`/`EM_LANCAMENTO` exige marcar "Conferi no SCPI"; recusada com execução em
@@ -569,6 +560,15 @@ transações precisam se comportar como no servidor.
   alimentam o cartão do painel e a aba Lançamento no SCPI. O robô é o único lugar fora de `servicos.py` que grava em `pedidos`, e só
   mexe em `status`, `requisicao_scpi`, `lancado_em` e `mensagem` das `LinhaSaida` (o superusuário
   também edita esses quatro no admin).
+  Na navegação (`scpi/lancador.py`): `pausar` espera `PAUSA_ENTRE_ACOES_MS` (100 ms) entre as
+  ações do preenchimento dos itens; a QTD é digitada tecla a tecla (`preencher_celula(...,
+  digitando=True)`); o "Novo Item" faz o SCPI recarregar a grade do servidor e, sem a pausa, o
+  servidor às vezes devolvia a QTD de uma linha ao padrão (1), então antes de cada rodada da
+  conferência final (`RODADAS_RECONCILIACAO`, 5) o robô pede essa recarga (`recarregar_grade`) e a
+  tela passa a mostrar o que o servidor tem (se a recarga falha, a conferência final recusa o lote em vez de aceitar a tela); o log traz o diagnóstico (`registrar_regressoes`,
+  `registrar_servidor`). `simular_repeticoes --lote <n> --vezes <k>` (só para testes do robô)
+  simula a mesma requisição várias vezes numa sessão só do SCPI e resume os resets. A trava do
+  lançamento é um `GET_LOCK` do servidor de banco: a suíte não roda junto de uma simulação real.
 - `LANCAMENTO_REAL` (`.env`, padrão desligado) bloqueia o lançamento real no SCPI em todo
   ambiente que não é o que lança de verdade (a produção): uma cópia de desenvolvimento ou de
   teste com as mesmas saídas pendentes lançaria em dobro. Bloqueado, o comando

@@ -650,14 +650,15 @@ def registrar_servidor(frame: Frame, req: Requisicao, quando: str) -> None:
 def recarregar_grade(frame: Frame) -> bool:
     """Faz a grade mostrar o que o SERVIDOR tem. A tela só se atualiza a partir do servidor no
     "Novo Item": uma QTD que o servidor perdeu na última linha continuaria certa na tela, e a
-    conferência final a deixaria passar. Se não recarregar, segue com o que a tela mostra."""
+    conferência final a deixaria passar. Devolve False se não recarregou (quem chama recusa o
+    lote)."""
     try:
         recarregou = bool(frame.evaluate(JS_RECARREGAR_GRADE))
     except Exception as e:
         log(f"  ⚠ não consegui recarregar a grade do servidor ({type(e).__name__})")
         return False
     if not recarregou:
-        log("  ⚠ a grade não recarregou do servidor; conferindo o que a tela mostra")
+        log("  ⚠ a grade não recarregou do servidor")
     return recarregou
 
 
@@ -668,7 +669,12 @@ def reconciliar_itens(frame: Frame, req: Requisicao) -> None:
     nada é salvo: o `conferir_item` de cada linha acontece cedo demais para pegar isso."""
     total = len(req.itens)
     for rodada in range(1, RODADAS_RECONCILIACAO + 1):
-        recarregar_grade(frame)
+        if not recarregar_grade(frame):
+            # sem a leitura do servidor, a tela pode mostrar uma QTD que ele não tem
+            raise ErroSCPI(
+                f"conferência final: não foi possível recarregar a grade do servidor "
+                f"({rodada}/{RODADAS_RECONCILIACAO})"
+            )
         if not aguardar_grid_estavel(frame):
             # uma leitura que coincide com o pedido não vale com o SCPI ainda mexendo no grid
             raise ErroSCPI(
