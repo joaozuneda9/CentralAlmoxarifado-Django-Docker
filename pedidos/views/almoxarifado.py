@@ -48,6 +48,7 @@ from pedidos.servicos import (
     marcar_recibos_impressos,
     recibos_alterados,
     registrar_saida_avulsa,
+    tetos_de_entrega,
     tipos_saida,
 )
 from pedidos.views.materiais import _carrinho, _materiais, contexto_busca, urls_do_fluxo
@@ -187,6 +188,7 @@ def _contexto_detalhe(pedido, **extra) -> dict:
             entregues={
                 i.codigo: _formatar_qtd(pedido, i.qtd_pedida) for i in _itens_pedidos(pedido)
             },
+            tetos=tetos_de_entrega(_itens_pedidos(pedido)),
             tipo_fixo=TIPO_ATENDIMENTO if TIPO_ATENDIMENTO in opcoes["tipos"] else "",
             **opcoes,
         )
@@ -287,6 +289,7 @@ def _contexto_edicao_atendimento(pedido, **extra) -> dict:
         "entregues": {
             i.codigo: _formatar_qtd(pedido, i.qtd_entregue) for i in _itens_pedidos(pedido)
         },
+        "tetos": tetos_de_entrega(_itens_pedidos(pedido)),
         "adicionados": [
             _linha_gravada(pedido, i, nomes)
             for i in pedido.itens.all()

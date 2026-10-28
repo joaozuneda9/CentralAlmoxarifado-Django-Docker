@@ -87,9 +87,6 @@ def test_data_tipo_codigo_entrega_e_inteira():
     assert textos(saida(), [ItemSaida("23.1.2", 1)]) == [
         "Código '23.1.2' fora do padrão 000.000.000."
     ]
-    assert textos(saida(), [ItemSaida("023.001.002", 3, 2)]) == [
-        "Entrega de 023.001.002 maior que a quantidade pedida."
-    ]
     assert textos(saida(), [ItemSaida("023.001.002", 0)]) == [
         "Informe ao menos um material com quantidade maior que zero."
     ]

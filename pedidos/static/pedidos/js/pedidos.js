@@ -151,10 +151,15 @@
 
   // Quantidade entregue na tabela do atendimento (_recibo.html): o estado (total, parcial, não
   // entregue, acima do pedido) é só aviso na tela; quem decide é o servidor. Números em pt-BR:
-  // vírgula decimal, sem separador de milhar.
+  // vírgula decimal, até 3 casas (o limite do servidor), sem separador de milhar.
   function lerQtd(texto) {
     var t = (texto || "").trim();
-    return /^\d+(,\d+)?$/.test(t) ? parseFloat(t.replace(",", ".")) : NaN;
+    return /^\d+(,\d{1,3})?$/.test(t) ? parseFloat(t.replace(",", ".")) : NaN;
+  }
+
+  // Compara em milésimos inteiros (o servidor usa Decimal de 3 casas): sem o ruído do float.
+  function milesimos(n) {
+    return Math.round(n * 1000);
   }
 
   function formatarQtd(n) {
@@ -188,12 +193,15 @@
     // Acrescentado pelo almoxarifado: não tem quantidade pedida, então não há parcial nem acima
     // ("ok" não mostra texto de estado).
     else if (bloco.closest("tr[data-adicionado]")) estado = "ok";
-    else if (valor > pedido) estado = "acima";
-    else if (valor < pedido) estado = "parcial";
+    else if (milesimos(valor) > milesimos(lerQtd(campo.getAttribute("data-maximo")))) estado = "maximo";
+    else if (milesimos(valor) > milesimos(pedido)) estado = "acima";
+    else if (milesimos(valor) < milesimos(pedido)) estado = "parcial";
     else estado = "total";
     bloco.setAttribute("data-estado", estado);
     var faltam = bloco.querySelector("[data-faltam]");
     if (faltam && estado === "parcial") faltam.textContent = formatarQtd(pedido - valor);
+    var maximo = bloco.querySelector("[data-maximo-valor]");
+    if (maximo && estado === "maximo") maximo.textContent = campo.getAttribute("data-maximo");
   }
 
   document.addEventListener("input", function (e) {
@@ -238,11 +246,11 @@
   function confirmarEntrega(bloco) {
     if (!bloco) return false;
     var campo = bloco.querySelector(".entrega-campo");
-    // Inválido ou acima do pedido não se confirma: o servidor recusaria. Nem o acrescentado com 0
+    // Inválido ou acima do máximo (o maior entre pedido e estoque, `data-maximo`) não se confirma: o servidor recusaria (acima do pedido é só aviso, como o parcial). Nem o acrescentado com 0
     // (acrescentar sem entregar não tem sentido; para desistir dele, "Remover" ou "Desfazer troca").
     var estado = bloco.getAttribute("data-estado");
     var adicionadoZero = estado === "zero" && bloco.closest("tr[data-adicionado]");
-    if (estado === "invalido" || estado === "acima" || adicionadoZero) {
+    if (estado === "invalido" || estado === "maximo" || adicionadoZero) {
       campo.focus();
       return false;
     }
@@ -1593,7 +1601,7 @@
     // Quantidades gravadas já valem: abrem confirmadas (as trocadas o `iniciarTrocas` confirmou).
     document.querySelectorAll(".entrega[data-pode-confirmar]:not([data-confirmado])").forEach(function (bloco) {
       var estado = bloco.getAttribute("data-estado");
-      if (estado === "invalido" || estado === "acima") return;
+      if (estado === "invalido" || estado === "maximo") return;
       if (estado === "zero" && bloco.closest("tr[data-adicionado]")) return;
       confirmarEntrega(bloco);
     });
