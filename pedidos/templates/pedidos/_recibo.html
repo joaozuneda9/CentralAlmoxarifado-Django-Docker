@@ -49,6 +49,8 @@ Nunca mostra quem registrou nem quem atendeu.
       <h2 class="recibo-subtitulo"{% if atendivel %} data-contagem-materiais{% endif %}>{% with n_adicionados=adicionados|length %}Materiais ({{ itens|length|add:n_adicionados }}){% endwith %}</h2>
       {% if atendivel %}<button type="button" class="botao-suave nao-imprimir" data-entregar-tudo>{% include "interface/_icone.html" with nome="check-duplo" %}<span>Entregar tudo o que foi pedido</span></button>{% endif %}
     </div>
+    {# Logo abaixo do título e do "Entregar tudo", onde a pessoa está olhando ao tentar registrar. #}
+    {% if atendivel %}<div class="aviso aviso-erro nao-imprimir" role="alert" data-entrega-pendentes hidden></div>{% endif %}
     {% if atendivel %}{% include "pedidos/_entrega_formas.html" %}{% endif %}
     <div class="tabela-rolagem">
       <table class="tabela recibo-itens">
@@ -117,7 +119,6 @@ Nunca mostra quem registrou nem quem atendeu.
     </form>
     {% endif %}
     {% if atendivel %}<div id="adicionar-erro" class="aviso aviso-erro nao-imprimir" role="alert"></div>{% endif %}
-    {% if atendivel %}<div class="aviso aviso-erro nao-imprimir" role="alert" data-entrega-pendentes hidden></div>{% endif %}
   </div>
   {% endwith %}{% endwith %}
 
