@@ -55,7 +55,7 @@ class Fluxo:
     exemplo_busca: str  # o exemplo no campo de busca
     exemplo_inicio: str = ""  # o exemplo no cartão da página inicial
     icone: str = "caixa"  # o ícone do cartão da página inicial
-    exemplo_destino: str = "Posto de trabalho, placa do veículo ou setor"  # no campo de destino
+    exemplo_destino: str = "Setor, posto ou placa"  # no campo de destino
     rotulo_destino: str = "Destino dos materiais"  # o rótulo do campo de destino
     publico: bool = True
     # Quem pede segue a unidade do material (`por_unidade`); a equipe aceita fração em qualquer

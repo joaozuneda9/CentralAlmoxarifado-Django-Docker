@@ -212,7 +212,7 @@ def test_destino_fica_junto_do_nome_com_a_orientacao(client):
         assert "O que pôr aqui?" not in passo1 and "<details" not in passo1
         # A orientação é a dica dentro do próprio campo (placeholder), sem parágrafo embaixo.
         campo = re.search(r'<input id="destino"[^>]*>', passo1).group(0)
-        assert 'placeholder="Posto de trabalho, placa do veículo ou setor"' in campo
+        assert 'placeholder="Setor, posto ou placa"' in campo
         assert "destino-dica" not in passo1
         assert 'name="destino"' not in r.text[r.text.index('<h2 id="obs-titulo">') :]
         for opcao in ("ETA I", "ETA II", "PICKUP 01 — ABC1D23"):
@@ -406,7 +406,7 @@ def test_envio_recusado_agrupa_os_erros_por_campo(client):
     r = postar(client, "limpeza", token(), solicitante="", destino="", itens=LIMPEZA_ITENS)
     assert r.context["erros_por_campo"] == {
         "solicitante": ["Informe o nome completo."],
-        "destino": ["Escolha o destino dos materiais na lista de centros de custo."],
+        "destino": ["Escolha o destino na lista."],
     }
     assert client.get(reverse("pedidos:formulario", args=["ab"])).context["erros_por_campo"] == {}
 
@@ -423,13 +423,10 @@ def test_envio_recusado_mostra_resumo_com_links_e_o_erro_em_cada_campo(client):
     assert "Faltam 2 coisas para enviar" in resumo
     assert "Corrija os itens abaixo e envie de novo." in resumo
     assert '<a href="#solicitante">Informe o nome completo.</a>' in resumo
-    assert (
-        '<a href="#destino">Escolha o destino dos materiais na lista de centros de custo.</a>'
-        in resumo
-    )
+    assert '<a href="#destino">Escolha o destino na lista.</a>' in resumo
     for nome, texto in (
         ("solicitante", "Informe o nome completo."),
-        ("destino", "Escolha o destino dos materiais na lista de centros de custo."),
+        ("destino", "Escolha o destino na lista."),
     ):
         campo = re.search(rf'<input id="{nome}"[^>]*>', r).group(0)
         assert 'aria-invalid="true"' in campo and f"{nome}-erro" in campo

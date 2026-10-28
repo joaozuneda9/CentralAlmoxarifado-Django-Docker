@@ -329,7 +329,7 @@ def _erro_destino(envio: EnvioPedido, centros) -> str:
     quem chama o serviço com outra grafia recebe o erro, e a tela já manda o texto certo."""
     destino = texto(envio.destino)
     if not destino:
-        return "Escolha o destino dos materiais na lista de centros de custo."
+        return "Escolha o destino na lista."
     if resolver_destino(destino, centros) != destino:
         return f'Destino "{destino}" não está na lista de centros de custo.'
     return ""
