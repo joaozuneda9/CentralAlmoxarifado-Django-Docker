@@ -73,7 +73,7 @@ almoxarifado atende → as saídas viram linhas que um robô (Playwright) lança
   (`docs/superpowers/specs/2026-10-15-docker-design.md`), no lugar do NSSM e do Agendador do
   Windows da spec principal; o ambiente confirmado é Windows 10 com Docker Desktop compartilhado
   (`deploy/INSTALACAO.md`, `deploy/AMBIENTES.md`). Do 4 ainda falta a
-  simulação contra o SCPI real (João roda `lancar_saidas --dry-run --limite 1`).
+  simulação contra o SCPI real (João roda `lancar_saidas --dry-run --lote <número>`).
 - Origens fora deste repositório, só para consulta histórica: o Apps Script
   (`../CentralAlmoxarifado`, com `Regras.gs`, `Catalogo.gs` e os testes em Node; nomes como
   `normU_` nas docstrings apontam para ele), o WMS-Almoxarifado
@@ -97,8 +97,9 @@ uv run playwright install chromium              # uma vez, para os robôs do SCP
 uv run python manage.py importar_estoque --arquivo tests/fixtures/scpi/estoque.csv
 ```
 
-`uv run python manage.py lancar_saidas --dry-run --limite 1` abre o SCPI, preenche a primeira
-requisição pendente e a descarta sem salvar; **sem `--dry-run` lança de verdade no SCPI**, e só
+`uv run python manage.py lancar_saidas --dry-run --lote P-0123` abre o SCPI, preenche essa
+requisição pendente e a descarta sem salvar (`--lote` é obrigatório e se repete: o comando nunca
+lança a fila inteira sem escolha); **sem `--dry-run` lança de verdade no SCPI**, e só
 com `LANCAMENTO_REAL=1` no `.env` (sem ele, o comando recusa).
 
 Comandos da implantação (app `implantacao`): `backup_banco` faz o dump
@@ -527,21 +528,35 @@ transações precisam se comportar como no servidor.
   conferem a estrutura (implementa o protocolo, não importa o Playwright no topo), sem testes
   da navegação: só a simulação no SCPI real a exercita. `pedidos.ExecucaoRobo` registra cada execução (situação, resumo, log acumulado
   durante o laço, erro); o `--dry-run` preenche e descarta sem tocar em nenhuma linha. A aba
-  Lançamento no SCPI de Automações (`pedidos/_lancamentos.html`) tem um formulário só: os botões
-  "Simular" e "Lançar no SCPI" mandam o modo (`name="modo"`) e o limite "Só as primeiras [N]
-  requisições" vale para o botão clicado (`pedidos/forms.py`; `--limite` no comando). A ação em
+  Lançamento no SCPI de Automações (`pedidos/_lancamentos.html`) tem um formulário só, com a fila:
+  cada requisição tem uma caixa de marcar (`name="lotes"`, "marcar todas" no cabeçalho, contagem
+  no `aria-live` e botões desabilitados sem marcação, `pedidos/static/pedidos/js/fila-robo.js`) e
+  os botões "Simular" e "Lançar no SCPI" mandam o modo (`name="modo"`); só as marcadas são
+  processadas (`pedidos/forms.py` valida os `lotes` contra a fila de agora e recusa o que já saiu
+  dela; `--lote` repetido no comando; `lancamento.lancar(lotes=...)`, que só valida e marca `ERRO`
+  nos lotes escolhidos). Com o lançamento real liberado, o "Lançar no SCPI" abre antes a
+  confirmação (`#dialogo-lancar`, fora do formulário, com `form="fila-form"`). A ação em
   destaque é a que dá para executar: com o lançamento real bloqueado, "Simular", e o "Lançar no
   SCPI" fica `aria-disabled` com cadeado e a dica do motivo, como no cartão do painel. O robô roda
   em processo separado (`scpi/disparo.py`, saída em `logs/lancar_saidas.log`). Logo abaixo dos
-  botões fica a fila do robô (`consultas.fila_do_robo`: até 20 requisições e o total, em SQL que
+  botões fica a fila do robô (`consultas.fila_do_robo`: todas as requisições, sem corte, em SQL que
   repete `requisicoes.agrupar`, a regra única do que está na fila; `tests/test_consultas_fila.py`
   confere que concordam). A última execução vira uma frase, com quem iniciou, a duração e só os
   contadores diferentes de zero (`pedidos/andamento.py`, puro); a falha é explicada em português
   (`explicar_falha`: erro conhecido como vem, "Falha inesperada:" vira erro do sistema ou demora
   do SCPI, processo que não subiu vira "não chegou a iniciar"), com o texto técnico e o registro
-  num "Detalhe técnico" recolhido, "Simular de novo" só na simulação e, no lançamento real, o
-  atalho para as travas. As execuções anteriores ficam no histórico de Automações. A aba atualiza
+  num "Detalhe técnico" recolhido, e, no lançamento real, o atalho para as travas (não há
+  "Simular de novo": a nova simulação é escolhida na fila). As execuções anteriores ficam no histórico de Automações. A aba atualiza
   a cada 3 s só enquanto há execução em andamento e resolve os lotes travados com
+  Na navegação (`scpi/lancador.py`): `pausar` espera `PAUSA_ENTRE_ACOES_MS` (100 ms) entre as
+  ações do preenchimento dos itens; a QTD é digitada tecla a tecla (`preencher_celula(...,
+  digitando=True)`); o "Novo Item" faz o SCPI recarregar a grade do servidor e, sem a pausa, o
+  servidor às vezes devolvia a QTD de uma linha ao padrão (1), então antes de cada rodada da
+  conferência final (`RODADAS_RECONCILIACAO`, 5) o robô pede essa recarga (`recarregar_grade`) e a
+  tela passa a mostrar o que o servidor tem; o log traz o diagnóstico (`registrar_regressoes`,
+  `registrar_servidor`). `simular_repeticoes --lote <n> --vezes <k>` (só para testes do robô)
+  simula a mesma requisição várias vezes numa sessão só do SCPI e resume os resets. A trava do
+  lançamento é um `GET_LOCK` do servidor de banco: a suíte não roda junto de uma simulação real.
   `servicos.resolver_lote` (informar a requisição, liberar para relançar, o que apaga o número
   e a data de lançamento, ou marcar para não lançar; liberar um lote
   `VERIFICAR`/`EM_LANCAMENTO` exige marcar "Conferi no SCPI"; recusada com execução em
