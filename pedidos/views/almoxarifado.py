@@ -21,6 +21,7 @@ from pedidos.consultas import (
     filtrar_situacao,
     lotes_pendentes,
     lotes_travados,
+    nomes_scpi,
     pedidos_do_painel,
     unidades_scpi,
 )
@@ -169,6 +170,7 @@ def _contexto_detalhe(pedido, **extra) -> dict:
         "atendivel": False,
         "autorizacao": autorizacao,
         "unidades_scpi": unidades_scpi([pedido]),
+        "nomes_scpi": nomes_scpi([pedido]),
         **_contexto_edicao(pedido),
     }
     # O pedido de EPI só abre o atendimento depois de autorizado (spec 008).
@@ -241,18 +243,19 @@ def atender(request, numero):
     return render(request, "pedidos/detalhe.html", contexto)
 
 
-def _linha_gravada(pedido, item: ItemPedido) -> dict:
-    """Material acrescentado já gravado, no formato de `_linha_adicionada` (nome e unidade do
-    próprio item: ele pode ter saído do catálogo)."""
+def _linha_gravada(pedido, item: ItemPedido, nomes: dict[str, str]) -> dict:
+    """Material acrescentado já gravado, no formato de `_linha_adicionada`: o nome é o do SCPI
+    (`nomes`, como na tabela do detalhe) e, se o código saiu do cadastro, o do próprio item; a
+    unidade é a do item."""
     trocado = item.no_lugar_de
     return {
         "item": None,
         "codigo": item.codigo,
-        "nome": item.material,
+        "nome": nomes.get(item.codigo) or item.material,
         "unidade": item.unidade,
         "qtd": _formatar_qtd(pedido, item.qtd_entregue),
         "no_lugar_de": trocado.codigo if trocado else "",
-        "no_lugar_de_nome": trocado.material if trocado else "",
+        "no_lugar_de_nome": (nomes.get(trocado.codigo) or trocado.material) if trocado else "",
     }
 
 
@@ -260,6 +263,7 @@ def _contexto_edicao_atendimento(pedido, **extra) -> dict:
     """O detalhe com o formulário do atendimento preenchido com o que está gravado."""
     atendimento = pedido.atendimento
     opcoes = opcoes_saida()
+    nomes = nomes_scpi([pedido])
     linhas = [linha for linha in pedido.linhas]
     # "Não lançar" marcado em Automações muda as linhas, não o atendimento: o formulário o
     # mostra marcado, e salvar o grava no atendimento (a recriação das linhas não o desfaz).
@@ -284,7 +288,7 @@ def _contexto_edicao_atendimento(pedido, **extra) -> dict:
             i.codigo: _formatar_qtd(pedido, i.qtd_entregue) for i in _itens_pedidos(pedido)
         },
         "adicionados": [
-            _linha_gravada(pedido, i)
+            _linha_gravada(pedido, i, nomes)
             for i in pedido.itens.all()
             if i.origem == ItemPedido.Origem.ALMOXARIFADO
         ],

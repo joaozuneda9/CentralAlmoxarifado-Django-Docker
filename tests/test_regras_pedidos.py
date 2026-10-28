@@ -182,7 +182,7 @@ def test_ab_campos_vazios_geram_tres_erros():
     r = validar_pedido(EnvioPedido(solicitante=" ", destino=""), CATALOGO_AB, CENTROS)
     assert textos(r) == [
         "Informe o nome completo.",
-        "Escolha o destino dos materiais na lista de centros de custo.",
+        "Escolha o destino na lista.",
         "Adicione ao menos um material ao pedido.",
     ]
 
@@ -232,7 +232,7 @@ def test_destino_tem_de_ser_um_centro_de_custo_nos_dois_formularios():
         ("Lua", 'Destino "Lua" não está na lista de centros de custo.'),
         ("eta ii", 'Destino "eta ii" não está na lista de centros de custo.'),
         ("Outro", 'Destino "Outro" não está na lista de centros de custo.'),
-        ("", "Escolha o destino dos materiais na lista de centros de custo."),
+        ("", "Escolha o destino na lista."),
     ):
         assert textos(valida_limpeza(par, destino=destino)) == [erro]
         assert erro in textos(valida_ab(("001.000.010", "1"), destino=destino))
@@ -308,7 +308,7 @@ def test_erros_de_nome_e_destino_dizem_o_campo_nos_dois_formularios():
     for r in (valida_limpeza(**vazio), valida_ab(**vazio)):
         assert [(e.texto, e.campo) for e in r.erros] == [
             ("Informe o nome completo.", "solicitante"),
-            ("Escolha o destino dos materiais na lista de centros de custo.", "destino"),
+            ("Escolha o destino na lista.", "destino"),
             ("Adicione ao menos um material ao pedido.", None),
         ]
     fora = valida_limpeza(("023.001.002", "1"), destino="Lua")

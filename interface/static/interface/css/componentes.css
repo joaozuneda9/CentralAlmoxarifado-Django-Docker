@@ -531,6 +531,9 @@ html:not(.js) .filtros-alternar { display: none; }
   padding: 12px var(--esp-2) calc(12px + env(safe-area-inset-bottom));
   background: var(--fundo); border-top: 1px solid var(--destaque); box-shadow: var(--sombra-elevada);
 }
+/* Com o teclado aberto (campo de texto em foco), a barra sai: fixa no rodapé, ela subiria junto com o
+   teclado e comeria a tela; volta ao sair do campo. */
+.js[data-gaveta] body:has(textarea:focus, select:focus, input:not([type="checkbox"], [type="radio"], [type="button"], [type="submit"]):focus) .carrinho-barra { display: none; }
 .js[data-gaveta] body:has([data-carrinho]) { padding-bottom: 88px; }
 .js[data-gaveta] .carrinho-gaveta:not([open]) { display: none; }
 .js[data-gaveta] .carrinho-gaveta[open] {

@@ -427,6 +427,9 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
   .entrega-passo, .entrega-estado { display: none; }
   .entrega-caixa, .entrega[data-confirmado] .entrega-caixa { width: auto; height: auto; border: 0; background: none; }
   .entrega-forma { display: none; }
+  /* Quantidade entregue ainda não confirmada (o pedidos.js marca `data-pode-confirmar`; sem ele o
+     campo imprime como está): sai em branco no papel, com a unidade, para não valer como entregue. */
+  .entrega[data-pode-confirmar]:not([data-confirmado]) .entrega-campo { visibility: hidden; }
   .recibo-itens th { padding: 2px 6px; font-size: 9px; }
   .recibo-itens td { padding: 1px 6px; line-height: 1.3; }
   .recibo-itens th:first-child, .recibo-itens td:first-child { padding-left: 0; }
@@ -547,15 +550,18 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
   /* No cartão, os dois selos voltam a ficar lado a lado, quebrando linha se faltar largura. */
   .situacao-selos { flex-direction: row; flex-wrap: wrap; gap: 6px var(--esp-1); }
 }
-/* No tablet, cabe tudo na primeira linha: o Nº com os selos ao lado e a data à direita; embaixo,
-   quem pediu e o destino. No celular, os selos ficam embaixo, como acima. */
+/* No tablet, o Nº com os selos ao lado na primeira linha; embaixo, quem pediu e o destino, com a data
+   no canto inferior direito (solta do fluxo, para os selos, que quebram linha, não a empurrarem).
+   No celular, os selos ficam embaixo, como acima. */
 @container (min-width: 481px) and (max-width: 720px) {
   .tabela-pedidos .col-numero { flex: none; margin-right: var(--esp-meio); }
   .tabela-pedidos .col-origem { order: 2; }
   .tabela-pedidos .col-situacao { order: 3; }
-  .tabela-pedidos .col-data { order: 4; margin-left: auto; }
+  .tabela-pedidos .col-data { position: absolute; right: var(--esp-1); bottom: 14px; white-space: nowrap; }
   .tabela-pedidos .col-pessoa { order: 5; margin-top: 2px; }
   .tabela-pedidos .col-destino { order: 6; }
+  /* A última linha de texto deixa o canto da data livre. */
+  .tabela-pedidos .col-destino, .tabela-pedidos .col-extra { padding-right: 9rem; }
 }
 .botao-suave[disabled] { opacity: 0.5; cursor: not-allowed; transform: none; }
 
@@ -603,12 +609,18 @@ html:not(.js) #dialogo-lancar { display: none; }
 .formulario-pedido .campo-com-erro .campo-entrada:focus { box-shadow: 0 0 0 3px var(--erro-superficie); }
 
 /* "Não é você? Limpar" (nome e destino lembrados), discreto e com área de toque de 44px. */
-/* "Limpar" dentro do campo (nome e destino): no destino, à esquerda da seta do dropdown. */
+/* "Limpar" dentro do campo (nome e destino). No destino, com o botão à mostra, a seta do dropdown sai
+   e o botão ocupa o lugar dela: assim não cobre o texto digitado. */
 .acao-limpar { right: 10px; }
-.com-acao:has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 96px; text-overflow: ellipsis; }
-.com-acao:has(.dropdown) .acao-limpar { right: 40px; }
-/* O wrapper do dropdown já reserva os 44px da seta: o campo só cobre o resto até o botão. */
-.com-acao:has(.dropdown):has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 84px; }
+.com-acao:has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 104px; text-overflow: ellipsis; }
+.com-acao:has(.acao-limpar:not([hidden])) .dropdown-seta-campo { display: none; }
+/* No celular o rótulo sai e fica só o ✕ (o aria-label segue dizendo "Limpar o ..."): o texto do campo
+   ganha ~50px e não é cortado antes do botão. */
+@media (max-width: 480px) {
+  .acao-limpar { width: 36px; padding: 0; justify-content: center; }
+  .acao-limpar span { display: none; }
+  .com-acao:has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 56px; }
+}
 
 /* "Adicionado" no lugar do "Adicionar" por 2 s. */
 .botao-adicionado { color: var(--ok-texto); background: var(--ok-superficie); border-color: transparent; }

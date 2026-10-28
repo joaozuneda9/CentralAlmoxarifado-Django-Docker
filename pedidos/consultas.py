@@ -299,6 +299,15 @@ def lotes_travados() -> list[LoteTravado]:
     return list(lotes.values())
 
 
+def nomes_scpi(pedidos) -> dict[str, str]:
+    """Nome do cadastro do SCPI de cada código dos pedidos, numa consulta. A área interna mostra o
+    material pelo nome do SCPI; o do item (`ItemPedido.material`) é o do formulário, que nas
+    listas de limpeza e das viaturas pode ser um nome exibido, e só vale quando o código saiu do
+    cadastro."""
+    codigos = {i.codigo for p in pedidos for i in p.itens.all()}
+    return dict(Material.objects.filter(codigo__in=codigos).values_list("codigo", "nome"))
+
+
 def unidades_scpi(pedidos) -> dict[str, str]:
     """Unidade do cadastro do SCPI de cada código dos pedidos, numa consulta. A área interna mostra
     a unidade como está no SCPI; a do item (`ItemPedido.unidade`) é a do formulário, que na limpeza
