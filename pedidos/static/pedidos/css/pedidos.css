@@ -608,6 +608,13 @@ html:not(.js) #dialogo-lancar { display: none; }
 .acao-limpar { right: 10px; }
 .com-acao:has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 104px; text-overflow: ellipsis; }
 .com-acao:has(.acao-limpar:not([hidden])) .dropdown-seta-campo { display: none; }
+/* No celular o rótulo sai e fica só o ✕ (o aria-label segue dizendo "Limpar o ..."): o texto do campo
+   ganha ~50px e não é cortado antes do botão. */
+@media (max-width: 480px) {
+  .acao-limpar { width: 36px; padding: 0; justify-content: center; }
+  .acao-limpar span { display: none; }
+  .com-acao:has(.acao-limpar:not([hidden])) .campo-entrada { padding-right: 56px; }
+}
 
 /* "Adicionado" no lugar do "Adicionar" por 2 s. */
 .botao-adicionado { color: var(--ok-texto); background: var(--ok-superficie); border-color: transparent; }
