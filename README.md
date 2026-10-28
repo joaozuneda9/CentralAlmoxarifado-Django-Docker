@@ -69,8 +69,8 @@ Pré-requisitos: Python 3.13, [uv](https://docs.astral.sh/uv/) e um MySQL 8 ou M
 6. Lançamento das saídas no SCPI (mesmos requisitos do item anterior):
 
    ```bash
-   uv run python manage.py lancar_saidas --dry-run --limite 1   # só simula
-   uv run python manage.py lancar_saidas                        # lança de verdade
+   uv run python manage.py lancar_saidas --dry-run --lote P-0123   # só simula essa requisição
+   uv run python manage.py lancar_saidas --lote P-0123             # lança de verdade
    ```
 
    **Atenção:** `lancar_saidas` sem `--dry-run` lança de verdade no SCPI, uma requisição por

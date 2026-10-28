@@ -323,8 +323,8 @@ def lancar(request):
             messages.error(request, " ".join(erros))
         return redirect(destino)
     simulacao = form.cleaned_data["modo"] == "simular"
-    limite = form.cleaned_data["limite"]
-    if iniciar_lancamento(request.user, simulacao=simulacao, limite=limite) is None:
+    lotes = form.cleaned_data["lotes"]
+    if iniciar_lancamento(request.user, simulacao=simulacao, lotes=lotes) is None:
         messages.warning(request, "Já há um lançamento em andamento. Aguarde terminar.")
     else:
         texto = (
@@ -332,8 +332,7 @@ def lancar(request):
             if simulacao
             else "Lançamento iniciado. Acompanhe o andamento abaixo."
         )
-        if limite:
-            texto += f" Limite: {limite} {'requisição' if limite == 1 else 'requisições'}."
+        texto += f" {', '.join(lotes)}."
         messages.success(request, texto)
     return redirect(destino)
 

@@ -26,10 +26,11 @@ def usuario():
 
 
 def test_comando_usa_a_execucao_do_botao(monkeypatch, dois_lotes):
+    p, av = dois_lotes
     scpi = SCPISimulado()
     monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
     e = ExecucaoRobo.objects.create()
-    call_command("lancar_saidas", "--execucao", str(e.pk))
+    call_command("lancar_saidas", "--execucao", str(e.pk), "--lote", p, "--lote", av)
     e.refresh_from_db()
     assert e.situacao == "SUCESSO" and e.resumo["lancadas"] == 2
 
@@ -38,14 +39,14 @@ def test_dry_run_vence_uma_execucao_real(monkeypatch, dois_lotes):
     scpi = SCPISimulado()
     monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
     e = ExecucaoRobo.objects.create(simulacao=False)
-    call_command("lancar_saidas", "--execucao", str(e.pk), "--dry-run")
+    call_command("lancar_saidas", "--execucao", str(e.pk), "--dry-run", "--lote", dois_lotes[0])
     e.refresh_from_db()
     assert e.simulacao and not any(c[0] == "salvar" for c in scpi.chamadas)
 
 
 def test_sem_execucao_cria_registro_de_linha_de_comando(monkeypatch, dois_lotes):
     monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", SCPISimulado().abrir)
-    call_command("lancar_saidas", "--limite", "1")
+    call_command("lancar_saidas", "--lote", dois_lotes[0])
     e = ExecucaoRobo.objects.get()
     assert e.iniciada_por is None and e.resumo["lancadas"] == 1
 
@@ -53,7 +54,7 @@ def test_sem_execucao_cria_registro_de_linha_de_comando(monkeypatch, dois_lotes)
 def test_execucao_encerrada_e_recusada():
     e = ExecucaoRobo.objects.create(situacao="SUCESSO")
     with pytest.raises(CommandError, match="não encontrada ou já encerrada"):
-        call_command("lancar_saidas", "--execucao", str(e.pk))
+        call_command("lancar_saidas", "--execucao", str(e.pk), "--lote", "P-0001")
 
 
 def test_falhas_viram_codigo_de_saida(monkeypatch, dois_lotes):
@@ -61,13 +62,13 @@ def test_falhas_viram_codigo_de_saida(monkeypatch, dois_lotes):
     scpi.falhas_preencher[dois_lotes[0]] = ErroSCPI("x")
     monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
     with pytest.raises(CommandError, match="erros ou linhas a verificar"):
-        call_command("lancar_saidas")
+        call_command("lancar_saidas", "--lote", dois_lotes[0])
 
 
 def test_disparo_cria_execucao_e_inicia_processo(monkeypatch, usuario):
     chamadas = []
     monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: chamadas.append(args))
-    e = iniciar_lancamento(usuario, simulacao=True)
+    e = iniciar_lancamento(usuario, simulacao=True, lotes=["P-0001", "AV-0002"])
     assert e.iniciada_por == usuario and e.simulacao and e.situacao == "ANDAMENTO"
     assert chamadas[0][1:] == [
         str(settings.BASE_DIR / "manage.py"),
@@ -75,21 +76,27 @@ def test_disparo_cria_execucao_e_inicia_processo(monkeypatch, usuario):
         "--execucao",
         str(e.pk),
         "--dry-run",
+        "--lote",
+        "P-0001",
+        "--lote",
+        "AV-0002",
     ]
 
 
 def test_disparo_recusa_com_execucao_em_andamento_mas_nao_interrompida(monkeypatch, usuario):
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: None)
     ExecucaoRobo.objects.create()
-    assert iniciar_lancamento(usuario, simulacao=False) is None
+    assert iniciar_lancamento(usuario, simulacao=False, lotes=["P-0001"]) is None
     ExecucaoRobo.objects.update(inicio=timezone.now() - timedelta(minutes=2))
-    assert iniciar_lancamento(usuario, simulacao=False) is not None
+    assert iniciar_lancamento(usuario, simulacao=False, lotes=["P-0001"]) is not None
 
 
-@pytest.mark.parametrize("limite", ["0", "-1", "x"])
-def test_limite_precisa_ser_inteiro_positivo(limite):
-    with pytest.raises(CommandError, match="--limite"):
-        call_command("lancar_saidas", "--limite", limite)
+def test_comando_exige_ao_menos_um_lote(dois_lotes):
+    """Nada lança a fila inteira sem escolha: sem `--lote` o comando recusa, sem criar execução."""
+    with pytest.raises(CommandError, match="--lote"):
+        call_command("lancar_saidas")
+    with pytest.raises(CommandError, match="--lote"):
+        call_command("lancar_saidas", "--dry-run", "--lote", "  ")
     assert not ExecucaoRobo.objects.exists()
 
 
@@ -99,7 +106,7 @@ def test_disparo_que_nao_inicia_o_processo_encerra_a_execucao_como_falha(monkeyp
 
     monkeypatch.setattr(subprocess, "Popen", quebrar)
     with pytest.raises(OSError):
-        iniciar_lancamento(usuario, simulacao=False)
+        iniciar_lancamento(usuario, simulacao=False, lotes=["P-0001"])
     e = ExecucaoRobo.objects.get()
     assert (e.situacao, e.erro) == ("FALHA", "python.exe não encontrado") and e.fim is not None
     assert not ExecucaoRobo.em_andamento().exists()

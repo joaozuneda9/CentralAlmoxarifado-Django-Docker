@@ -55,8 +55,8 @@ def painel_lancamento(html):
 
 
 def form_de_acao(html):
-    """O formulário único do lançamento (botões e limite)."""
-    achado = re.search(r"<form[^>]*data-acao-lancamento.*?</form>", html, re.S)
+    """O formulário único do lançamento (a fila com as caixas de marcar e os botões)."""
+    achado = re.search(r"<form[^>]*data-fila-robo.*?</form>", html, re.S)
     assert achado, html
     return achado.group(0)
 
@@ -100,25 +100,28 @@ def test_liberado_lancar_e_a_acao_principal(client, usuario_logado, settings):
     assert "dica-lancamento-real" not in form
 
 
-def test_um_formulario_so_com_limite_e_sem_executar_com_opcoes(client, usuario_logado):
-    criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+def test_um_formulario_so_com_a_fila_marcavel_e_sem_limite(client, usuario_logado):
+    p = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
     html = painel_lancamento(client.get(LANCAMENTOS).text)
     assert "Executar com opções" not in html and 'type="radio"' not in html
+    assert 'name="limite"' not in html and "Só as primeiras" not in html
     assert html.count(f'action="{reverse("automacoes:lancar")}"') == 1
     form = form_de_acao(html)
-    limite = re.search(r"<input[^>]*name=\"limite\"[^>]*>", form).group(0)
-    assert 'min="1"' in limite and 'max="10000"' in limite and " disabled" not in limite
+    caixa = re.search(r"<input[^>]*name=\"lotes\"[^>]*>", form).group(0)
+    assert f'value="{p.numero}"' in caixa and " disabled" not in caixa
+    assert "data-fila-todas" in form and "Marcar todas as requisições" in form
     simular = abertura(botao(form, "Simular"))
     assert 'name="modo"' in simular and 'value="simular"' in simular
+    assert "data-requer-selecao" in simular
 
 
-def test_em_andamento_desabilita_botoes_e_limite_e_diz_o_motivo(client, usuario_logado):
+def test_em_andamento_desabilita_botoes_e_caixas_e_diz_o_motivo(client, usuario_logado):
     criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
     ExecucaoRobo.objects.create()
     form = form_de_acao(client.get(LANCAMENTOS).text)
     assert " disabled" in abertura(botao(form, "Simular"))
     assert " disabled" in abertura(botao(form, "Lançar no SCPI"))
-    assert re.search(r"<input[^>]*name=\"limite\"[^>]*disabled", form)
+    assert re.search(r"<input[^>]*name=\"lotes\"[^>]*disabled", form)
     assert "botao-primario" not in form and "Há uma execução em andamento." in form
 
 
@@ -126,24 +129,63 @@ def test_fila_vazia_desabilita_botoes_e_diz_o_motivo(client, usuario_logado):
     html = client.get(LANCAMENTOS).text
     form = form_de_acao(html)
     assert " disabled" in abertura(botao(form, "Simular"))
-    assert re.search(r"<input[^>]*name=\"limite\"[^>]*disabled", form)
+    assert 'name="lotes"' not in form
     assert "botao-primario" not in form and "Nada aguardando o robô." in fila_da_pagina(html)
 
 
-def test_limite_vale_para_o_botao_escolhido(client, usuario_logado, monkeypatch):
+def test_lotes_marcados_valem_para_o_botao_escolhido(client, usuario_logado, monkeypatch):
+    a = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+    b = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
     chamadas = []
     monkeypatch.setattr(
         "automacoes.views.iniciar_lancamento",
         lambda u, **k: chamadas.append(k) or object(),
     )
-    client.post(reverse("automacoes:lancar"), {"modo": "simular", "limite": "2"})
-    assert chamadas == [{"simulacao": True, "limite": 2}]
-    r = client.post(reverse("automacoes:lancar"), {"modo": "simular", "limite": "0"}, follow=True)
-    assert len(chamadas) == 1 and "maior ou igual a 1" in r.text
+    url = reverse("automacoes:lancar")
+    client.post(url, {"modo": "simular", "lotes": [b.numero]})
+    assert chamadas == [{"simulacao": True, "lotes": [b.numero]}]
+    client.post(url, {"modo": "simular", "lotes": [a.numero, b.numero]})
+    assert chamadas[1]["lotes"] == [a.numero, b.numero]
+
+
+def test_sem_lote_marcado_o_envio_e_recusado(client, usuario_logado, monkeypatch):
+    criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+    monkeypatch.setattr(
+        "automacoes.views.iniciar_lancamento", lambda *a, **k: pytest.fail("não deveria iniciar")
+    )
+    r = client.post(reverse("automacoes:lancar"), {"modo": "simular"}, follow=True)
+    assert "Marque ao menos uma requisição da fila." in r.text
+
+
+def test_lote_que_saiu_da_fila_e_recusado(client, usuario_logado, monkeypatch):
+    p = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+    LinhaSaida.objects.filter(lote=p.numero).update(status="LANCADA", requisicao_scpi="000001/26")
+    monkeypatch.setattr(
+        "automacoes.views.iniciar_lancamento", lambda *a, **k: pytest.fail("não deveria iniciar")
+    )
+    r = client.post(
+        reverse("automacoes:lancar"), {"modo": "simular", "lotes": [p.numero]}, follow=True
+    )
+    assert f"A requisição {p.numero} não está mais na fila do robô." in r.text
+
+
+def test_lancamento_real_liberado_tem_confirmacao_que_envia_o_mesmo_formulario(
+    client, usuario_logado, settings
+):
+    criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+    settings.LANCAMENTO_REAL = True
+    html = client.get(LANCAMENTOS).text
+    assert "data-confirmar-lancamento" in form_de_acao(html)
+    dialogo = re.search(r'<dialog[^>]*id="dialogo-lancar".*?</dialog>', html, re.S).group(0)
+    assert 'form="fila-form"' in dialogo and 'value="lancar"' in dialogo
+    assert 'id="fila-form"' in form_de_acao(html)
+    settings.LANCAMENTO_REAL = False
+    assert 'id="dialogo-lancar"' not in client.get(LANCAMENTOS).text
 
 
 def fila_da_pagina(html):
-    achado = re.search(r'<div[^>]*id="fila".*?</div>\s*<!-- /fila -->', html, re.S)
+    """A região da fila: a barra com a contagem e a tabela, até o marcador `/fila`."""
+    achado = re.search(r"<form[^>]*data-fila-robo.*?<!-- /fila -->", html, re.S)
     assert achado, html
     return achado.group(0)
 
@@ -159,18 +201,19 @@ def test_fila_lista_as_requisicoes_que_o_robo_lancaria(client, usuario_logado):
         link = f'<a class="mono" href="{reverse("pedidos:detalhe", args=[pedido.numero])}">'
         assert link + pedido.numero + "</a>" in fila
     assert travado.numero not in fila and travado.numero in html
-    linha_a = re.search(rf"<tr>(?:(?!</tr>).)*{a.numero}.*?</tr>", fila, re.S).group(0)
+    linha_a = re.search(rf"<tr[^>]*>(?:(?!</tr>).)*{a.numero}.*?</tr>", fila, re.S).group(0)
     hoje = timezone.localdate().strftime("%d/%m/%Y")
     for dado in (hoje, "Bia", "ETA II", ">2<"):
         assert dado in linha_a, dado
 
 
-def test_fila_mostra_20_e_quantas_ficaram_de_fora(client, usuario_logado):
+def test_fila_mostra_todas_as_requisicoes(client, usuario_logado):
     for _ in range(21):
         criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
     fila = fila_da_pagina(client.get(LANCAMENTOS).text)
     assert "21 requisições aguardando o robô" in fila
-    assert fila.count('<a class="mono"') == 20 and "e mais 1 requisição" in fila
+    assert fila.count('<a class="mono"') == 21 and "e mais" not in fila
+    assert fila.count('name="lotes"') == 21
 
 
 def test_fila_vazia_nao_tem_tabela(client, usuario_logado):
@@ -184,21 +227,23 @@ def test_htmx_recebe_so_o_trecho(client, usuario_logado):
 
 
 def test_lancar_inicia_e_avisa(client, usuario_logado, monkeypatch):
+    p = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
     chamadas = []
     monkeypatch.setattr(
         "automacoes.views.iniciar_lancamento",
-        lambda u, simulacao, limite=None: chamadas.append((u, simulacao)) or object(),
+        lambda u, simulacao, lotes: chamadas.append((u, simulacao)) or object(),
     )
-    r = client.post(reverse("automacoes:lancar"), {"simulacao": "1"}, follow=True)
+    r = client.post(
+        reverse("automacoes:lancar"), {"simulacao": "1", "lotes": [p.numero]}, follow=True
+    )
     assert chamadas == [(usuario_logado, True)]
     assert "Simulação iniciada" in r.text
 
 
 def test_lancar_recusa_em_andamento(client, usuario_logado, monkeypatch):
-    monkeypatch.setattr(
-        "automacoes.views.iniciar_lancamento", lambda u, simulacao, limite=None: None
-    )
-    r = client.post(reverse("automacoes:lancar"), follow=True)
+    p = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+    monkeypatch.setattr("automacoes.views.iniciar_lancamento", lambda u, simulacao, lotes: None)
+    r = client.post(reverse("automacoes:lancar"), {"lotes": [p.numero]}, follow=True)
     assert "Já há um lançamento em andamento" in r.text
 
 
@@ -341,9 +386,7 @@ def test_falha_de_simulacao_explicada_com_detalhe_e_simular_de_novo(client, usua
     assert detalhe and " open>" not in detalhe.group(0)
     assert "You cannot call this from an async context" in detalhe.group(0)
     assert "→ (1/3) P-000001" in detalhe.group(0)
-    de_novo = re.search(r"<form[^>]*>(?:(?!</form>).)*Simular de novo.*?</form>", andamento, re.S)
-    assert de_novo and f'action="{reverse("automacoes:lancar")}"' in de_novo.group(0)
-    assert 'name="modo" value="simular"' in de_novo.group(0)
+    assert "<form" not in andamento and "Simular de novo" not in andamento
 
 
 def test_falha_de_lancamento_real_nao_tem_atalho_para_relancar(client, usuario_logado):
@@ -432,12 +475,15 @@ def test_pagina_vazia_sem_cartoes_vazios(client, usuario_logado):
         assert f">{titulo}</h2>" not in html, titulo
 
 
-@pytest.mark.parametrize(
-    "limite, texto", [("1", "Limite: 1 requisição."), ("2", "Limite: 2 requisições.")]
-)
-def test_mensagem_do_limite_com_plural(client, usuario_logado, monkeypatch, limite, texto):
+@pytest.mark.parametrize("quantas", [1, 2])
+def test_mensagem_diz_quais_requisicoes_foram_escolhidas(
+    client, usuario_logado, monkeypatch, quantas
+):
+    numeros = [
+        criar_pedido(atendido=True, linhas=[("PENDENTE", "")]).numero for _ in range(quantas)
+    ]
     monkeypatch.setattr("automacoes.views.iniciar_lancamento", lambda u, **k: object())
     r = client.post(
-        reverse("automacoes:lancar"), {"modo": "simular", "limite": limite}, follow=True
+        reverse("automacoes:lancar"), {"modo": "simular", "lotes": numeros}, follow=True
     )
-    assert texto in r.text
+    assert f"{', '.join(numeros)}." in r.text

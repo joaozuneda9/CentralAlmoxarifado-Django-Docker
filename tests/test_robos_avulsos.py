@@ -18,6 +18,7 @@ from catalogo.forms import RoboCadastroForm, RoboEstoqueForm, RoboSaidasForm
 from catalogo.models import Importacao, Material
 from pedidos.forms import LancamentoForm
 from scpi.disparo import guardar_csv_enviado, iniciar_importacao, iniciar_lancamento
+from tests.cenario import criar_pedido
 
 pytestmark = pytest.mark.django_db
 
@@ -93,20 +94,23 @@ def test_periodo_inicial_das_saidas_e_o_padrao_do_comando():
     assert form.initial["ate"] == timezone.localdate()
 
 
-def test_limite_do_lancamento_precisa_ser_positivo():
-    assert LancamentoForm({"modo": "lancar", "limite": "0"}).errors["limite"]
-    assert LancamentoForm({"modo": "lancar", "limite": "-2"}).errors["limite"]
-    ok = LancamentoForm({"modo": "simular", "limite": "3"})
-    assert ok.is_valid() and ok.cleaned_data["limite"] == 3
-    sem_limite = LancamentoForm({"modo": "lancar"})
-    assert sem_limite.is_valid() and sem_limite.cleaned_data["limite"] is None
-    assert LancamentoForm({"modo": "outro"}).errors["modo"]
+def test_lancamento_exige_lotes_da_fila_atual():
+    p = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+    assert LancamentoForm({"modo": "simular"}).errors["lotes"]
+    assert (
+        "não está mais na fila"
+        in LancamentoForm({"modo": "simular", "lotes": ["P-9"]}).errors["lotes"][0]
+    )
+    ok = LancamentoForm({"modo": "simular", "lotes": [p.numero]})
+    assert ok.is_valid() and ok.cleaned_data["lotes"] == [p.numero]
+    assert LancamentoForm({"modo": "outro", "lotes": [p.numero]}).errors["modo"]
 
 
 def test_formulario_do_lancamento_aceita_o_formato_antigo_dos_botoes():
-    antigo = LancamentoForm.da_requisicao({"simulacao": "1"})
+    p = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+    antigo = LancamentoForm.da_requisicao({"simulacao": "1", "lotes": [p.numero]})
     assert antigo.is_valid() and antigo.cleaned_data["modo"] == "simular"
-    padrao = LancamentoForm.da_requisicao({})
+    padrao = LancamentoForm.da_requisicao({"lotes": [p.numero]})
     assert padrao.is_valid() and padrao.cleaned_data["modo"] == "lancar"
 
 
@@ -166,15 +170,10 @@ def test_csv_enviado_fica_na_pasta_de_uploads(settings, tmp_path):
     assert caminho.read_bytes() == b"a;b\n1;2\n"
 
 
-def test_lancamento_com_limite_passa_o_limite_ao_robo(processos):
+def test_lancamento_passa_cada_lote_ao_robo(processos):
     usuario = get_user_model().objects.create_user(username="99")
-    iniciar_lancamento(usuario, simulacao=True, limite=3)
-    assert argumentos(processos[0])[-3:] == ["--dry-run", "--limite", "3"]
-
-
-def test_lancamento_sem_limite_nao_leva_o_argumento(processos):
-    usuario = get_user_model().objects.create_user(username="99")
-    iniciar_lancamento(usuario, simulacao=False)
+    iniciar_lancamento(usuario, simulacao=True, lotes=["P-0001", "AV-0002"])
+    assert argumentos(processos[0])[-5:] == ["--dry-run", "--lote", "P-0001", "--lote", "AV-0002"]
     assert "--limite" not in processos[0]
 
 
@@ -318,31 +317,35 @@ def test_botoes_dos_robos_ficam_desabilitados_com_importacao_em_andamento(client
     assert 'data-em-andamento="1"' in texto
 
 
-def test_pagina_de_lancamentos_tem_o_modo_nos_botoes_e_o_limite(client, usuario_logado):
+def test_pagina_de_lancamentos_tem_o_modo_nos_botoes_e_as_caixas_de_marcar(client, usuario_logado):
+    criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
     texto = client.get(LANCAMENTOS).text
     assert "Executar com opções" not in texto
-    assert 'name="modo" value="simular"' in texto and 'name="limite"' in texto
+    assert 'name="modo" value="simular"' in texto and 'name="lotes"' in texto
+    assert 'name="limite"' not in texto
 
 
-def test_lancar_com_modo_e_limite(client, usuario_logado, monkeypatch):
+def test_lancar_com_modo_e_lotes(client, usuario_logado, monkeypatch):
+    p = criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
     chamadas = []
     monkeypatch.setattr(
         "automacoes.views.iniciar_lancamento",
-        lambda u, simulacao, limite=None: chamadas.append((simulacao, limite)) or object(),
+        lambda u, simulacao, lotes: chamadas.append((simulacao, lotes)) or object(),
     )
-    r = client.post(reverse("automacoes:lancar"), {"modo": "simular", "limite": "2"}, follow=True)
-    assert chamadas == [(True, 2)] and "Limite: 2 requisições." in r.text
-    client.post(reverse("automacoes:lancar"), {"modo": "lancar"})
-    assert chamadas[-1] == (False, None)
+    r = client.post(
+        reverse("automacoes:lancar"), {"modo": "simular", "lotes": [p.numero]}, follow=True
+    )
+    assert chamadas == [(True, [p.numero])] and f"{p.numero}." in r.text
 
 
-def test_lancar_com_limite_invalido_nao_inicia(client, usuario_logado, monkeypatch):
+def test_lancar_sem_lotes_nao_inicia(client, usuario_logado, monkeypatch):
+    criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
     monkeypatch.setattr(
         "automacoes.views.iniciar_lancamento",
         lambda *a, **k: pytest.fail("não deveria iniciar"),
     )
-    r = client.post(reverse("automacoes:lancar"), {"modo": "lancar", "limite": "0"}, follow=True)
-    assert r.status_code == 200 and "Lançamento iniciado" not in r.text
+    r = client.post(reverse("automacoes:lancar"), {"modo": "simular"}, follow=True)
+    assert r.status_code == 200 and "Simulação iniciada" not in r.text
 
 
 # ---- cadastro por período ----------------------------------------------------------------------

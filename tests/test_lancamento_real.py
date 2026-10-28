@@ -28,7 +28,7 @@ def usuario_logado(client):
 def test_comando_recusa_lancamento_real_sem_criar_execucao(monkeypatch, dois_lotes, scpi):
     monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
     with pytest.raises(CommandError, match="bloqueado"):
-        call_command("lancar_saidas")
+        call_command("lancar_saidas", "--lote", dois_lotes[0])
     assert ExecucaoRobo.objects.count() == 0 and scpi.chamadas == []
     assert set(LinhaSaida.objects.values_list("status", flat=True)) == {"PENDENTE"}
 
@@ -37,7 +37,7 @@ def test_execucao_real_do_botao_termina_em_falha(monkeypatch, dois_lotes, scpi):
     monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
     e = ExecucaoRobo.objects.create(simulacao=False)
     with pytest.raises(CommandError, match="bloqueado"):
-        call_command("lancar_saidas", "--execucao", str(e.pk))
+        call_command("lancar_saidas", "--execucao", str(e.pk), "--lote", dois_lotes[0])
     e.refresh_from_db()
     assert e.situacao == "FALHA" and "bloqueado" in e.erro and e.fim is not None
     assert scpi.chamadas == []
@@ -45,7 +45,7 @@ def test_execucao_real_do_botao_termina_em_falha(monkeypatch, dois_lotes, scpi):
 
 def test_simulacao_roda_com_o_bloqueio(monkeypatch, dois_lotes, scpi):
     monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
-    call_command("lancar_saidas", "--dry-run")
+    call_command("lancar_saidas", "--dry-run", "--lote", dois_lotes[0], "--lote", dois_lotes[1])
     assert ExecucaoRobo.objects.get().resumo["simuladas"] == 2
 
 
@@ -60,14 +60,14 @@ def test_botao_lancar_recusado_com_mensagem(client, usuario_logado, monkeypatch,
     assert LANCAMENTO_BLOQUEADO in r.content.decode()
 
 
-def test_simulacao_pelo_botao_continua(client, usuario_logado, monkeypatch):
+def test_simulacao_pelo_botao_continua(client, usuario_logado, dois_lotes, monkeypatch):
     chamadas = []
     monkeypatch.setattr(
         "automacoes.views.iniciar_lancamento",
         lambda usuario, **k: chamadas.append(k) or ExecucaoRobo(pk=1),
     )
-    client.post(reverse("automacoes:lancar"), {"simulacao": "1"})
-    assert chamadas == [{"simulacao": True, "limite": None}]
+    client.post(reverse("automacoes:lancar"), {"simulacao": "1", "lotes": [dois_lotes[0]]})
+    assert chamadas == [{"simulacao": True, "lotes": [dois_lotes[0]]}]
 
 
 @pytest.mark.parametrize("rota", ["automacoes:pagina", "pedidos:painel"])
