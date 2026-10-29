@@ -15,10 +15,9 @@ from django.contrib.auth import get_user_model
 from django.urls import reverse
 
 from pedidos.models import LinhaSaida
-from pedidos.regras import AB
+from pedidos.regras import AB, qtd_br
 from pedidos.servicos import confirmar_atendimento
 from pedidos.telegram import texto_aviso
-from pedidos.views.almoxarifado import _formatar_qtd
 from tests.cenario import criar_pedido, envio_ab, montar_cenario, registrar, saida
 
 pytestmark = pytest.mark.django_db
@@ -44,9 +43,8 @@ def test_telegram_mostra_a_fracao_do_pedido_ab():
 
 
 def test_campo_de_entrega_mostra_a_fracao_do_pedido_ab():
-    pedido = criar_pedido(origem=AB, itens=(("016.005.010", "2,5"),))
-    assert _formatar_qtd(pedido, Decimal("2.5")) == "2,5"
-    assert _formatar_qtd(pedido, Decimal("3.000")) == "3"
+    assert qtd_br(Decimal("2.5")) == "2,5"
+    assert qtd_br(Decimal("3.000")) == "3"
 
 
 def test_atendimento_aceita_entrega_fracionada_em_pedido_ab(pedido_ab, usuario):

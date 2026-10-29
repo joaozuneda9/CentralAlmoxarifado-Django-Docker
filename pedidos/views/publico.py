@@ -125,6 +125,8 @@ def formulario(request, fluxo):
         url_painel=request.build_absolute_uri(
             reverse("pedidos:autorizacoes" if fluxo.exige_autorizacao else "pedidos:painel")
         ),
+        # O mesmo que a tela usa na volta com erro: o envio monta o catálogo uma vez só.
+        catalogo=catalogo,
     )
     if resposta.ok:
         # `_sucesso.html` lista só o que o funcionário pediu (filtro por segurança).

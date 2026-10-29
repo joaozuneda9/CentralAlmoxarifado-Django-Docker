@@ -24,11 +24,6 @@ def _esc(valor) -> str:
     return escape("" if valor is None else str(valor), quote=False)
 
 
-def _quantidade(qtd) -> str:
-    """A quantidade exata, em pt-BR e sem zeros à direita, em qualquer origem."""
-    return qtd_br(qtd)
-
-
 def _corpo_do_aviso(pedido) -> str:
     """O que os avisos têm em comum: quem pediu, o destino, os materiais e a observação."""
     # Só o que o funcionário pediu (o aviso sai antes do atendimento; o filtro é por segurança).
@@ -37,7 +32,7 @@ def _corpo_do_aviso(pedido) -> str:
     for i in itens[:MAX_ITENS_AVISO]:
         unidade = f" {_esc(i.unidade)}" if i.unidade else ""
         linhas.append(
-            f"• {_esc(i.material)} ({_esc(i.codigo)}) — <b>{_quantidade(i.qtd_pedida)}{unidade}</b>"
+            f"• {_esc(i.material)} ({_esc(i.codigo)}) — <b>{qtd_br(i.qtd_pedida)}{unidade}</b>"
         )
     if len(itens) > MAX_ITENS_AVISO:
         linhas.append(f"<i>e mais {len(itens) - MAX_ITENS_AVISO} itens</i>")

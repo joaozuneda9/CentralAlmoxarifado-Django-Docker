@@ -13,14 +13,14 @@ from django.utils.cache import patch_vary_headers
 from django.utils.http import url_has_allowed_host_and_scheme
 from django.views.decorators.http import require_POST
 
-from catalogo.models import CentroCusto, Opcao
+from catalogo.models import Opcao
 from catalogo.saude import saude_do_catalogo
 from pedidos import carrinho as carrinho_mod
 from pedidos.consultas import (
     FiltrosPainel,
+    contar_lotes_travados,
     filtrar_situacao,
     lotes_pendentes,
-    lotes_travados,
     nomes_scpi,
     pedidos_do_painel,
     unidades_scpi,
@@ -30,16 +30,19 @@ from pedidos.models import Atendimento, ExecucaoRobo, ItemPedido, Pedido
 from pedidos.regras import (
     AVULSA,
     ERRO,
-    NAO_LANCAR,
     Adicionado,
     DadosSaida,
     EnvioSaida,
     edicao_permitida,
     frase_diferenca,
+    lote_todo_sem_lancar,
     qtd_br,
 )
 from pedidos.servicos import (
+    catalogo_avulsa_por_codigo,
     catalogo_de,
+    centros,
+    centros_ativos,
     confirmar_atendimento,
     editar_atendimento,
     editar_saida_avulsa,
@@ -78,7 +81,7 @@ def painel(request):
     ).count()
     contexto["pedidos_aguardando"] = filtrar_situacao(Pedido.objects.all(), "aguardando").count()
     contexto["lancamento_pendentes"] = lotes_pendentes()
-    contexto["lancamento_travados"] = len(lotes_travados())
+    contexto["lancamento_travados"] = contar_lotes_travados()
     contexto["lancamento_em_andamento"] = ExecucaoRobo.em_andamento().exists()
     contexto["lancamento_real"] = settings.LANCAMENTO_REAL
     resposta = render(request, "pedidos/painel.html", contexto)
@@ -90,8 +93,7 @@ def opcoes_saida(*, so_ativos: bool = False) -> dict:
     """Listas dos campos de uma saída: funcionários, centros, placas e tipos. Com `so_ativos` (a
     saída avulsa nova), o centro inativo não é oferecido; o atendimento e a edição listam todos
     (spec 009)."""
-    consulta = CentroCusto.objects.filter(ativo=True) if so_ativos else CentroCusto.objects.all()
-    linhas = list(consulta)
+    linhas = centros_ativos() if so_ativos else centros()
     return {
         "funcionarios": Opcao.valores(Opcao.Lista.FUNCIONARIO),
         "centros": list(dict.fromkeys((c.descricao, c.codigo) for c in linhas)),
@@ -113,14 +115,51 @@ def dados_saida(post) -> tuple[DadosSaida, bool]:
     return dados, "nao_lancar" in post
 
 
-def _dados_do_atendimento(post) -> tuple[DadosSaida, bool]:
-    """Dados da saída do atendimento. O tipo é sempre BALCÃO quando ele existe nas opções: o
-    formulário o trava, e o servidor não confia no `tipo` enviado. Sem BALCÃO nas opções, o
-    formulário libera a escolha (`tipo_fixo` vazio) e vale o que veio."""
+def _tipo_fixo(tipos: list[str], atendimento=None) -> str:
+    """O tipo que o formulário do atendimento trava: BALCÃO, ou na edição o gravado (o importado
+    das planilhas pode não ser BALCÃO). Sem BALCÃO nas opções, "" (o formulário libera a
+    escolha)."""
+    if TIPO_ATENDIMENTO not in tipos:
+        return ""
+    return atendimento.tipo_saida if atendimento is not None else TIPO_ATENDIMENTO
+
+
+def _dados_do_atendimento(post, atendimento=None) -> tuple[DadosSaida, bool]:
+    """Dados da saída do atendimento. O tipo é o travado (`_tipo_fixo`): o servidor não confia
+    no `tipo` enviado. Sem tipo travado, vale o que veio."""
     dados, nao_lancar = dados_saida(post)
-    if TIPO_ATENDIMENTO in tipos_saida():
-        dados = replace(dados, tipo=TIPO_ATENDIMENTO)
+    tipos = tipos_saida()
+    if TIPO_ATENDIMENTO in tipos:
+        dados = replace(dados, tipo=_tipo_fixo(tipos, atendimento))
     return dados, nao_lancar
+
+
+def _entregas_enviadas(pedido, post) -> tuple[dict[str, str], list[Adicionado]]:
+    """As quantidades entregues (itens pedidos e acrescentados) e os acrescentados do POST."""
+    qtds = {i.codigo: post.get(f"entregue-{i.codigo}", "") for i in pedido.itens.all()}
+    adicionados = _adicionados_enviados(post)
+    qtds.update({a.codigo: post.get(f"entregue-{a.codigo}", "") for a in adicionados})
+    return qtds, adicionados
+
+
+def _lote_com_erro(linhas) -> bool:
+    return any(linha.status == ERRO for linha in linhas)
+
+
+def _campos_gravados(atendimento, linhas) -> tuple[dict, bool]:
+    """Os dados gravados da saída, para preencher o formulário de edição. "Não lançar" marcado em
+    Automações muda as linhas, não o atendimento: o formulário o mostra marcado, e salvar o grava
+    no atendimento (a recriação das linhas não o desfaz)."""
+    campos = {
+        "data": atendimento.data_efetiva.isoformat(),
+        "recebedor": atendimento.recebedor,
+        "centro_custo": atendimento.centro_custo,
+        "tipo": atendimento.tipo_saida,
+        "placa": atendimento.placa,
+        "obs": atendimento.obs,
+    }
+    nao_lancar = atendimento.nao_lancar or lote_todo_sem_lancar(linha.status for linha in linhas)
+    return campos, nao_lancar
 
 
 def _pedido(numero):
@@ -145,12 +184,6 @@ def _saida_do_destino(destino: str, opcoes: dict) -> dict:
     return {}
 
 
-def _formatar_qtd(pedido, q) -> str:
-    """Quantidade no campo da entrega: pt-BR exata, sem zeros à direita, em qualquer origem (a
-    equipe aceita fração em qualquer unidade, também nos pedidos do AB)."""
-    return qtd_br(q)
-
-
 def _contexto_edicao(pedido) -> dict:
     """Se o atendimento ainda pode ser editado (botão, avisos) e o histórico das edições."""
     atendimento = pedido.atendimento_ou_none
@@ -159,7 +192,7 @@ def _contexto_edicao(pedido) -> dict:
     linhas = pedido.linhas
     return {
         "edicao": edicao_permitida(True, linhas),
-        "lote_com_erro": any(linha.status == ERRO for linha in linhas),
+        "lote_com_erro": _lote_com_erro(linhas),
         "alteracoes": list(pedido.alteracoes.select_related("usuario")),
     }
 
@@ -175,8 +208,11 @@ def _contexto_detalhe(pedido, **extra) -> dict:
         **_contexto_edicao(pedido),
     }
     # O pedido de EPI só abre o atendimento depois de autorizado (spec 008).
-    sem_bloqueio = autorizacao is None or autorizacao.situacao == "AUTORIZADO"
-    if pedido.origem != AVULSA and pedido.atendimento_ou_none is None and sem_bloqueio:
+    if (
+        pedido.origem != AVULSA
+        and pedido.atendimento_ou_none is None
+        and pedido.atendimento_liberado
+    ):
         opcoes = opcoes_saida()
         contexto.update(
             atendivel=True,
@@ -185,11 +221,9 @@ def _contexto_detalhe(pedido, **extra) -> dict:
                 "data": timezone.localdate().isoformat(),
                 **_saida_do_destino(pedido.destino, opcoes),
             },
-            entregues={
-                i.codigo: _formatar_qtd(pedido, i.qtd_pedida) for i in _itens_pedidos(pedido)
-            },
+            entregues={i.codigo: qtd_br(i.qtd_pedida) for i in _itens_pedidos(pedido)},
             tetos=tetos_de_entrega(_itens_pedidos(pedido)),
-            tipo_fixo=TIPO_ATENDIMENTO if TIPO_ATENDIMENTO in opcoes["tipos"] else "",
+            tipo_fixo=_tipo_fixo(opcoes["tipos"]),
             **opcoes,
         )
     contexto.update(extra)
@@ -212,9 +246,7 @@ def atender(request, numero):
         messages.error(request, "Identificador do atendimento inválido. Recarregue a página.")
         return redirect("pedidos:detalhe", numero=numero)
     dados, nao_lancar = _dados_do_atendimento(request.POST)
-    qtds = {i.codigo: request.POST.get(f"entregue-{i.codigo}", "") for i in pedido.itens.all()}
-    adicionados = _adicionados_enviados(request.POST)
-    qtds.update({a.codigo: request.POST.get(f"entregue-{a.codigo}", "") for a in adicionados})
+    qtds, adicionados = _entregas_enviadas(pedido, request.POST)
     resposta = confirmar_atendimento(
         pedido.id,
         atendimento_id,
@@ -245,17 +277,17 @@ def atender(request, numero):
     return render(request, "pedidos/detalhe.html", contexto)
 
 
-def _linha_gravada(pedido, item: ItemPedido, nomes: dict[str, str]) -> dict:
+def _linha_gravada(item: ItemPedido, nomes: dict[str, str], por_id: dict) -> dict:
     """Material acrescentado já gravado, no formato de `_linha_adicionada`: o nome é o do SCPI
     (`nomes`, como na tabela do detalhe) e, se o código saiu do cadastro, o do próprio item; a
-    unidade é a do item."""
-    trocado = item.no_lugar_de
+    unidade é a do item. O trocado vem dos itens já lidos (`por_id`), sem outra consulta."""
+    trocado = por_id.get(item.no_lugar_de_id)
     return {
         "item": None,
         "codigo": item.codigo,
         "nome": nomes.get(item.codigo) or item.material,
         "unidade": item.unidade,
-        "qtd": _formatar_qtd(pedido, item.qtd_entregue),
+        "qtd": qtd_br(item.qtd_entregue),
         "no_lugar_de": trocado.codigo if trocado else "",
         "no_lugar_de_nome": (nomes.get(trocado.codigo) or trocado.material) if trocado else "",
     }
@@ -266,37 +298,24 @@ def _contexto_edicao_atendimento(pedido, **extra) -> dict:
     atendimento = pedido.atendimento
     opcoes = opcoes_saida()
     nomes = nomes_scpi([pedido])
-    linhas = [linha for linha in pedido.linhas]
-    # "Não lançar" marcado em Automações muda as linhas, não o atendimento: o formulário o
-    # mostra marcado, e salvar o grava no atendimento (a recriação das linhas não o desfaz).
-    nao_lancar = atendimento.nao_lancar or bool(
-        linhas and all(linha.status == NAO_LANCAR for linha in linhas)
-    )
+    campos, nao_lancar = _campos_gravados(atendimento, pedido.linhas)
+    itens = list(pedido.itens.all())
+    por_id = {i.id: i for i in itens}
     contexto = {
         "atendivel": True,
         "editando": True,
         "acompanhar_robo": _acompanhar_robo(),
         "versao": pedido.versao,
-        "campos": {
-            "data": atendimento.data_efetiva.isoformat(),
-            "recebedor": atendimento.recebedor,
-            "centro_custo": atendimento.centro_custo,
-            "tipo": atendimento.tipo_saida,
-            "placa": atendimento.placa,
-            "obs": atendimento.obs,
-        },
+        "campos": campos,
         "nao_lancar": nao_lancar,
-        "entregues": {
-            i.codigo: _formatar_qtd(pedido, i.qtd_entregue) for i in _itens_pedidos(pedido)
-        },
+        "entregues": {i.codigo: qtd_br(i.qtd_entregue) for i in _itens_pedidos(pedido)},
         "tetos": tetos_de_entrega(_itens_pedidos(pedido)),
         "adicionados": [
-            _linha_gravada(pedido, i, nomes)
-            for i in pedido.itens.all()
+            _linha_gravada(i, nomes, por_id)
+            for i in itens
             if i.origem == ItemPedido.Origem.ALMOXARIFADO
         ],
-        # O tipo fica o gravado (o importado das planilhas pode não ser BALCÃO).
-        "tipo_fixo": atendimento.tipo_saida if TIPO_ATENDIMENTO in opcoes["tipos"] else "",
+        "tipo_fixo": _tipo_fixo(opcoes["tipos"], atendimento),
         **opcoes,
     }
     contexto.update(extra)
@@ -340,7 +359,7 @@ def _faixa(request, pedido, edicao):
         "edicao": edicao,
         "edicao_encerrada": not edicao.permitida,
         "acompanhar_robo": edicao.permitida and _acompanhar_robo(),
-        "lote_com_erro": any(linha.status == ERRO for linha in pedido.linhas),
+        "lote_com_erro": _lote_com_erro(pedido.linhas),
     }
     resposta = render(request, "pedidos/_edicao_faixa.html", contexto)
     patch_vary_headers(resposta, ["HX-Request", "HX-Target"])
@@ -375,12 +394,8 @@ def editar(request, numero):
         messages.error(request, "Versão do pedido inválida. Abra a edição de novo.")
         return redirect("pedidos:detalhe", numero=numero)
     recibo_estava_impresso = bool(atendimento and atendimento.recibo_impresso_em)
-    dados, nao_lancar = _dados_do_atendimento(request.POST)
-    if atendimento is not None and TIPO_ATENDIMENTO in tipos_saida():
-        dados = replace(dados, tipo=atendimento.tipo_saida)
-    qtds = {i.codigo: request.POST.get(f"entregue-{i.codigo}", "") for i in pedido.itens.all()}
-    adicionados = _adicionados_enviados(request.POST)
-    qtds.update({a.codigo: request.POST.get(f"entregue-{a.codigo}", "") for a in adicionados})
+    dados, nao_lancar = _dados_do_atendimento(request.POST, atendimento)
+    qtds, adicionados = _entregas_enviadas(pedido, request.POST)
     resposta = editar_atendimento(
         pedido.id,
         versao,
@@ -416,47 +431,48 @@ def editar(request, numero):
 
 def _editar_avulsa(request, pedido):
     """Modo de edição da saída avulsa: o formulário da saída avulsa, com o carrinho e os dados
-    da saída gravados."""
+    da saída gravados. A tela só é montada quando é mostrada (o salvar que dá certo não a paga), e
+    o catálogo vai pronto para o serviço."""
     fluxo = FLUXOS["avulsa"]
     catalogo = catalogo_de(fluxo.origem)
-    por_codigo = {i.codigo: i for i in catalogo or []}
     atendimento = pedido.atendimento
-    linhas = pedido.linhas
-    contexto = {
-        "fluxo": fluxo,
-        "indisponivel": catalogo is None,
-        "editando": True,
-        "acompanhar_robo": _acompanhar_robo(),
-        "pedido": pedido,
-        "versao": pedido.versao,
-        "lote_com_erro": any(linha.status == ERRO for linha in linhas),
-        "campos": {
-            "data": atendimento.data_efetiva.isoformat(),
-            "recebedor": atendimento.recebedor,
-            "centro_custo": atendimento.centro_custo,
-            "tipo": atendimento.tipo_saida,
-            "placa": atendimento.placa,
-            "obs": atendimento.obs,
-        },
-        "nao_lancar": atendimento.nao_lancar
-        or bool(linhas and all(linha.status == NAO_LANCAR for linha in linhas)),
-        # Material já na saída aparece mesmo que tenha saído do catálogo.
-        "carrinho": carrinho_mod.Carrinho(
-            [
-                carrinho_mod.LinhaCarrinho(
-                    i.codigo, i.qtd_entregue, por_codigo.get(i.codigo) or item_catalogo_gravado(i)
-                )
-                for i in pedido.itens.all()
-            ]
-        ),
-        "codigos_erro": set(),
-        "filtros": [],
-        **contexto_busca(fluxo, catalogo or []),
-        **urls_do_fluxo(fluxo),
-        **opcoes_saida(),
-    }
-    if request.method != "POST":
+
+    def tela(**extra):
+        por_codigo = {i.codigo: i for i in catalogo or []}
+        linhas = pedido.linhas
+        campos, nao_lancar = _campos_gravados(atendimento, linhas)
+        contexto = {
+            "fluxo": fluxo,
+            "indisponivel": catalogo is None,
+            "editando": True,
+            "acompanhar_robo": _acompanhar_robo(),
+            "pedido": pedido,
+            "versao": pedido.versao,
+            "lote_com_erro": _lote_com_erro(linhas),
+            "campos": campos,
+            "nao_lancar": nao_lancar,
+            # Material já na saída aparece mesmo que tenha saído do catálogo.
+            "carrinho": carrinho_mod.Carrinho(
+                [
+                    carrinho_mod.LinhaCarrinho(
+                        i.codigo,
+                        i.qtd_entregue,
+                        por_codigo.get(i.codigo) or item_catalogo_gravado(i),
+                    )
+                    for i in pedido.itens.all()
+                ]
+            ),
+            "codigos_erro": set(),
+            "filtros": [],
+            **contexto_busca(fluxo, catalogo or []),
+            **urls_do_fluxo(fluxo),
+            **opcoes_saida(),
+            **extra,
+        }
         return render(request, "pedidos/avulsa.html", contexto)
+
+    if request.method != "POST":
+        return tela()
 
     try:
         versao = int(request.POST.get("versao", ""))
@@ -466,7 +482,9 @@ def _editar_avulsa(request, pedido):
     recibo_estava_impresso = bool(atendimento.recibo_impresso_em)
     dados, nao_lancar = dados_saida(request.POST)
     envio = EnvioSaida(dados, carrinho_mod.itens_enviados(request.POST), nao_lancar)
-    resposta = editar_saida_avulsa(pedido.id, versao, envio, usuario=request.user)
+    resposta = editar_saida_avulsa(
+        pedido.id, versao, envio, usuario=request.user, catalogo=catalogo
+    )
     if resposta.ok:
         _avisar_salvo(request, resposta, recibo_estava_impresso)
         return redirect("pedidos:detalhe", numero=pedido.numero)
@@ -476,7 +494,7 @@ def _editar_avulsa(request, pedido):
     if not resposta.erros:
         messages.error(request, resposta.mensagem)
         return redirect("pedidos:detalhe", numero=pedido.numero)
-    contexto.update(
+    return tela(
         versao=versao,
         campos=request.POST,
         nao_lancar=nao_lancar,
@@ -485,17 +503,12 @@ def _editar_avulsa(request, pedido):
         erros=resposta.erros,
         codigos_erro={e.codigo for e in resposta.erros if e.codigo},
     )
-    return render(request, "pedidos/avulsa.html", contexto)
 
 
 def _adicionados_enviados(post) -> list[Adicionado]:
     """Os materiais acrescentados na página (`adicionado` repetido, na ordem em que entraram)
     e o item pedido que cada um substitui (`no-lugar-de-<codigo>`, vazio sem troca)."""
     return [Adicionado(c, post.get(f"no-lugar-de-{c}", "")) for c in post.getlist("adicionado")]
-
-
-def _catalogo_avulsa() -> dict:
-    return {i.codigo: i for i in catalogo_de(AVULSA) or []}
 
 
 def _itens_pedidos(pedido) -> list[ItemPedido]:
@@ -521,7 +534,7 @@ def _linha_adicionada(pedido, a: Adicionado, qtd: str, catalogo: dict) -> dict:
 
 
 def _linhas_adicionadas(pedido, adicionados, qtds) -> list[dict]:
-    catalogo = _catalogo_avulsa() if adicionados else {}
+    catalogo = catalogo_avulsa_por_codigo() if adicionados else {}
     return [_linha_adicionada(pedido, a, qtds.get(a.codigo, ""), catalogo) for a in adicionados]
 
 
@@ -530,12 +543,11 @@ def _pedido_com_atendimento_aberto(numero):
     acrescenta ou troca material."""
     pedido = _pedido(numero)
     atendido = pedido.atendimento_ou_none is not None
-    autorizacao = pedido.autorizacao_ou_none
     if (
         pedido.origem == AVULSA
         or (atendido and not edicao_permitida(True, pedido.linhas).permitida)
         # Pedido de EPI aguardando ou recusado não tem atendimento aberto (spec 008).
-        or (autorizacao is not None and autorizacao.situacao != "AUTORIZADO")
+        or not pedido.atendimento_liberado
     ):
         raise Http404("Pedido sem atendimento aberto.")
     return pedido
@@ -572,7 +584,7 @@ def atendimento_materiais(request, numero):
         ),
     }
     if trocado is not None:
-        contexto["qtd_inicial"] = _formatar_qtd(pedido, trocado.qtd_pedida)
+        contexto["qtd_inicial"] = qtd_br(trocado.qtd_pedida)
         # Na troca, a ação dos resultados é "Trocar" (primária), não "Adicionar".
         contexto["acao_rotulo"] = "Trocar"
         contexto["acao_aria"] = f"Trocar {trocado.material} por"
@@ -588,16 +600,12 @@ def atendimento_adicionar(request, numero):
     a mensagem, com status 200 (o `htmx-config` não troca respostas 4xx) e o alvo trocado para
     `#adicionar-erro`."""
     pedido = _pedido_com_atendimento_aberto(numero)
-    catalogo = _catalogo_avulsa()
+    catalogo = catalogo_avulsa_por_codigo()
     codigo = request.POST.get("adicionar", "").strip()
     novo = Adicionado(codigo, request.POST.get("no_lugar_de", "").strip())
     item = catalogo.get(codigo)
-    erro = ""
-    if item is None:
-        erro = "Material não encontrado no catálogo."
-    elif motivo := carrinho_mod.motivo_bloqueio(FLUXOS["avulsa"], item):
-        erro = f"{item.nome} ({item.codigo}): {motivo} — não pode ser adicionado."
-    else:
+    erro = carrinho_mod.recusa_do_material(FLUXOS["avulsa"], item)
+    if not erro:
         # Os casos de repetição e troca da confirmação, contra os pedidos e os acrescentados
         # que já estão na página: só os erros que o novo (o último da lista) acrescenta.
         existentes = _adicionados_enviados(request.POST)
@@ -618,7 +626,7 @@ def atendimento_adicionar(request, numero):
         resposta["HX-Retarget"] = "#adicionar-erro"
         resposta["HX-Reswap"] = "innerHTML"
         return resposta
-    linha = _linha_adicionada(pedido, novo, _formatar_qtd(pedido, qtd), catalogo)
+    linha = _linha_adicionada(pedido, novo, qtd_br(qtd), catalogo)
     return render(request, "pedidos/_adicionado.html", {"pedido": pedido, "a": linha})
 
 
@@ -635,37 +643,42 @@ def avulsa_carrinho(request):
 
 @login_required
 def avulsa(request):
-    """Saída registrada direto pelo almoxarifado, sem pedido anterior."""
+    """Saída registrada direto pelo almoxarifado, sem pedido anterior. A tela só é montada quando
+    é mostrada (o registro que dá certo não a paga), e o catálogo vai pronto para o serviço."""
     fluxo = FLUXOS["avulsa"]
     catalogo = catalogo_de(fluxo.origem)
-    contexto = {
-        "fluxo": fluxo,
-        "indisponivel": catalogo is None,
-        "envio_id": uuid.uuid4(),
-        "campos": {"data": timezone.localdate().isoformat()},
-        "carrinho": carrinho_mod.Carrinho(),
-        "codigos_erro": set(),
-        "filtros": [],
-        **contexto_busca(fluxo, catalogo or []),
-        **urls_do_fluxo(fluxo),
-        **opcoes_saida(so_ativos=True),
-    }
-    if request.method != "POST":
+
+    def tela(**extra):
+        contexto = {
+            "fluxo": fluxo,
+            "indisponivel": catalogo is None,
+            "envio_id": uuid.uuid4(),
+            "campos": {"data": timezone.localdate().isoformat()},
+            "carrinho": carrinho_mod.Carrinho(),
+            "codigos_erro": set(),
+            "filtros": [],
+            **contexto_busca(fluxo, catalogo or []),
+            **urls_do_fluxo(fluxo),
+            **opcoes_saida(so_ativos=True),
+            **extra,
+        }
         return render(request, "pedidos/avulsa.html", contexto)
 
+    if request.method != "POST":
+        return tela()
+
     dados, nao_lancar = dados_saida(request.POST)
-    contexto.update(
-        campos=request.POST,
-        nao_lancar=nao_lancar,
-        carrinho=carrinho_mod.Carrinho(carrinho_mod.ler(request.POST, fluxo, catalogo)),
-    )
+    enviado = {
+        "campos": request.POST,
+        "nao_lancar": nao_lancar,
+        "carrinho": carrinho_mod.Carrinho(carrinho_mod.ler(request.POST, fluxo, catalogo)),
+    }
     try:
         envio_id = uuid.UUID(request.POST.get("envio_id", ""))
     except ValueError:
-        contexto["mensagem"] = "Identificador do envio inválido. Recarregue a página."
-        return render(request, "pedidos/avulsa.html", contexto)
+        return tela(**enviado, mensagem="Identificador do envio inválido. Recarregue a página.")
     envio = EnvioSaida(dados, carrinho_mod.itens_enviados(request.POST), nao_lancar)
-    resposta = registrar_saida_avulsa(envio_id, envio, usuario=request.user)
+    resposta = registrar_saida_avulsa(envio_id, envio, usuario=request.user, catalogo=catalogo)
     if resposta.ok:
         if resposta.reenvio:
             texto = f"Saída já registrada (reenvio confirmado): Nº {resposta.numero}."
@@ -673,14 +686,14 @@ def avulsa(request):
             texto = f"Saída avulsa registrada: Nº {resposta.numero}."
         messages.success(request, texto)
         return redirect("pedidos:detalhe", numero=resposta.numero)
-    contexto.update(
+    return tela(
+        **enviado,
         envio_id=uuid.uuid4() if resposta.divergente else envio_id,
         divergente=resposta.divergente,
         mensagem=resposta.mensagem,
         erros=resposta.erros,
         codigos_erro={e.codigo for e in resposta.erros if e.codigo},
     )
-    return render(request, "pedidos/avulsa.html", contexto)
 
 
 @login_required

@@ -44,12 +44,11 @@
     else cancelarAlteracao(alterar);
   });
 
-  // Quantidade de uma linha do pedido. Nos formulários públicos, ela só vai ao servidor no
-  // "Confirmar" (`hx-trigger="confirmar-quantidade"`): "Alterar" abre o − / +, e o ✕ ou o Esc voltam
-  // ao valor anterior. Na saída avulsa, cada mudança vai direto ("change").
+  // Quantidade de uma linha do pedido: ela só vai ao servidor no "Confirmar"
+  // (`hx-trigger="confirmar-quantidade"`), também na saída avulsa. "Alterar" abre o − / +, e o ✕ ou
+  // o Esc voltam ao valor anterior.
   function mandarAlteracao(campo) {
-    var publico = campo.closest("[data-alterar]");
-    var evento = new Event(publico ? "confirmar-quantidade" : "change", { bubbles: true });
+    var evento = new Event("confirmar-quantidade", { bubbles: true });
     campo.dispatchEvent(evento);
     return evento;
   }
@@ -145,7 +144,7 @@
       return;
     }
     campo.value = String(novo) + resto;
-    // No pedido, o campo manda a alteração ao servidor no "change" (hx-trigger).
+    // O "change" avisa quem acompanha o campo; no pedido, ao servidor só vai no "Confirmar".
     campo.dispatchEvent(new Event("change", { bubbles: true }));
   });
 
@@ -1144,7 +1143,7 @@
   });
 
   // "Atualizar": a quantidade vai para a linha do pedido, que já manda a alteração ao servidor
-  // ("change", que substitui em vez de somar). Na captura, antes de o HTMX mandar o "adicionar".
+  // (`mandarAlteracao`, que substitui em vez de somar). Na captura, antes de o HTMX mandar o "adicionar".
   document.addEventListener(
     "click",
     function (e) {

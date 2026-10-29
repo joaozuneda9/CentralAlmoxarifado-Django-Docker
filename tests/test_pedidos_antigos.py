@@ -12,9 +12,8 @@ import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
-from pedidos.regras import AB, LIMPEZA
+from pedidos.regras import AB, LIMPEZA, qtd_br
 from pedidos.telegram import texto_aviso
-from pedidos.views.almoxarifado import _formatar_qtd
 from tests.cenario import criar_pedido, montar_cenario
 
 pytestmark = pytest.mark.django_db
@@ -68,6 +67,4 @@ def test_pedido_atendido_antigo_mostra_o_entregue_igual(client, logado):
     ],
 )
 def test_formatador_da_equipe_nao_corta_nem_enche_de_zeros(valor, esperado):
-    for origem in (AB, LIMPEZA):
-        pedido = criar_pedido(origem=origem, itens=(("016.005.010", "1"),))
-        assert _formatar_qtd(pedido, valor) == esperado
+    assert qtd_br(valor) == esperado

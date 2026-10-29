@@ -69,6 +69,13 @@ class Pedido(models.Model):
             return None
 
     @property
+    def atendimento_liberado(self) -> bool:
+        """A autorização não impede o atendimento: o formulário não a exige, ou a Segurança do
+        Trabalho já autorizou (spec 008)."""
+        autorizacao = self.autorizacao_ou_none
+        return autorizacao is None or autorizacao.situacao == AutorizacaoPedido.Situacao.AUTORIZADO
+
+    @property
     def linhas(self) -> list:
         atendimento = self.atendimento_ou_none
         return list(atendimento.linhas.all()) if atendimento else []
