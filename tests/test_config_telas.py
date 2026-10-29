@@ -16,7 +16,8 @@ from catalogo.models import (
     ParDePara,
 )
 from tests.cenario import montar_cenario
-from tests.config_cenario import criar_centro, material, usuarios
+from tests.config_cenario import criar_centro, excecao, material, usuarios
+from tests.viaturas_cenario import EQUIPE, montar_viaturas
 
 pytestmark = pytest.mark.django_db
 
@@ -198,8 +199,6 @@ def test_a_busca_de_centros_filtra_por_descricao_codigo_ou_placa(admin):
 
 
 def test_nas_viaturas_a_escolha_e_pela_descricao_com_todas_as_linhas_juntas(admin):
-    from tests.viaturas_cenario import EQUIPE, montar_viaturas
-
     montar_viaturas()
     r = admin.get(PAGINA, {"formulario": "VIATURAS", "aba": "centros"})
     painel = r.text.split('id="painel-centros"')[1].split('id="painel-materiais"')[0]
@@ -353,9 +352,7 @@ def test_excecao_acrescentar_retirar_e_restaurar(admin):
     assert "Voltar à regra" not in linha
     admin.post(EXCECAO, {**corpo, "codigo": FITA, "acao": "acrescentar"})
     assert not ExcecaoMaterial.objects.exists()  # a regra já oferece: a exceção é apagada
-    ExcecaoMaterial.objects.create(
-        material=Material.objects.get(codigo=FITA), formulario="AB", habilitado=False
-    )
+    excecao("AB", Material.objects.get(codigo=FITA), False)
     r = admin.post(EXCECAO, {**corpo, "codigo": FITA, "acao": "restaurar"})
     assert not ExcecaoMaterial.objects.exists()
     assert "voltou à regra" in ultima_mensagem(r)
@@ -393,9 +390,7 @@ def test_a_excecao_vale_so_no_formulario_pedido(admin):
 
 
 def test_exceção_sem_efeito_e_marcada(admin):
-    ExcecaoMaterial.objects.create(
-        material=Material.objects.get(codigo=FITA), formulario="AB", habilitado=True
-    )
+    excecao("AB", Material.objects.get(codigo=FITA), True)
     linha = linhas_da_aba(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais", "q": "veda"}))
     # Sem efeito: restaurar a regra padrão do formulário é que a limpa, não um botão por linha.
     assert "Exceção sem efeito" in linha and "Voltar à regra" not in linha
@@ -549,8 +544,6 @@ def onde(codigo):
 
 
 def test_a_consulta_mostra_os_cinco_formularios_com_estado_e_origem(admin):
-    from tests.config_cenario import excecao
-
     excecao(Formulario.OFICINA, Material.objects.get(codigo=FITA), True)
     excecao(Formulario.EPIS, Material.objects.get(codigo=FITA), False)
     excecao(Formulario.AB, Material.objects.get(codigo=FITA), True)  # o AB já traz: sem efeito
@@ -577,8 +570,6 @@ def test_a_consulta_mostra_os_cinco_formularios_com_estado_e_origem(admin):
 
 
 def test_retirado_e_marcado_como_retirado(admin):
-    from tests.config_cenario import excecao
-
     excecao(Formulario.AB, Material.objects.get(codigo=FITA), False)
     linha = next(x for x in admin.get(onde(FITA)).text.split("<tr>") if 'data-formulario="AB"' in x)
     assert "Não disponível" in linha and "retirado pelo administrador" in linha
@@ -647,8 +638,6 @@ def test_a_aba_mostra_inativar_ou_ativar_conforme_o_estado(admin):
 
 
 def test_nas_viaturas_inativar_vale_para_todas_as_linhas_da_descricao(admin):
-    from tests.viaturas_cenario import EQUIPE, montar_viaturas
-
     montar_viaturas()
     ids = list(CentroCusto.objects.filter(descricao=EQUIPE).values_list("pk", flat=True))
     admin.post(ATIVO, {"formulario": "VIATURAS", "centro": ids, "ativo": "0"})
@@ -715,8 +704,6 @@ def test_o_centro_so_deste_formulario_nao_tem_a_linha_tambem_em(admin):
 
 
 def test_nas_viaturas_o_tambem_em_junta_as_linhas_da_descricao(admin):
-    from tests.viaturas_cenario import EQUIPE, montar_viaturas
-
     montar_viaturas()
     painel = admin.get(PAGINA, {"formulario": "VIATURAS", "aba": "centros", "qc": EQUIPE}).text
     linha = painel.split("<tbody>")[1].split("</tr>")[0]
@@ -739,8 +726,6 @@ def test_o_atalho_de_criar_e_editar_centro_aparece_a_quem_o_admin_permite(client
 
 
 def test_o_atalho_nas_viaturas_leva_a_lista_do_admin_filtrada_pela_descricao(admin):
-    from tests.viaturas_cenario import EQUIPE, montar_viaturas
-
     montar_viaturas()
     r = admin.get(PAGINA, {"formulario": "VIATURAS", "aba": "centros", "qc": EQUIPE})
     lista = reverse("admin:catalogo_centrocusto_changelist")
@@ -910,17 +895,15 @@ REGRA = reverse("catalogo:formularios_regra")
 
 
 def _duas_excecoes(formulario="AB"):
-    ExcecaoMaterial.objects.create(
-        material=Material.objects.get(codigo=FITA), formulario=formulario, habilitado=False
-    )
+    excecao(formulario, Material.objects.get(codigo=FITA), False)
     novo = material("900.000.002", "TESOURA", "ALMOX")
-    ExcecaoMaterial.objects.create(material=novo, formulario=formulario, habilitado=True)
+    excecao(formulario, novo, True)
 
 
 def test_restaurar_regra_padrao_apaga_so_as_excecoes_do_formulario(admin):
     _duas_excecoes("AB")
     outra = Material.objects.get(codigo=BOTINA)
-    ExcecaoMaterial.objects.create(material=outra, formulario="LIMPEZA", habilitado=True)
+    excecao("LIMPEZA", outra, True)
     r = admin.post(REGRA, {"formulario": "AB", "confirmado": "1"})
     assert volta(r) == {"formulario": "AB", "aba": "materiais"}
     assert not ExcecaoMaterial.objects.filter(formulario="AB").exists()
@@ -981,11 +964,9 @@ def test_texto_da_restauracao_concorda_no_plural(admin):
     # Dois acrescentados e dois retirados: "materiais", nunca "materialis".
     for i in range(2):
         novo = material(f"900.000.1{i}0", f"MATERIAL EXTRA {i}", "ALMOX")
-        ExcecaoMaterial.objects.create(material=novo, formulario="AB", habilitado=True)
+        excecao("AB", novo, True)
     for codigo in (FITA, BOTINA):
-        ExcecaoMaterial.objects.create(
-            material=Material.objects.get(codigo=codigo), formulario="AB", habilitado=False
-        )
+        excecao("AB", Material.objects.get(codigo=codigo), False)
     pagina = texto(admin.get(PAGINA, {"formulario": "AB", "aba": "materiais"}))
     assert "2 materiais acrescentados deixam de ser oferecidos" in pagina
     assert "2 retirados voltam a ser oferecidos" in pagina

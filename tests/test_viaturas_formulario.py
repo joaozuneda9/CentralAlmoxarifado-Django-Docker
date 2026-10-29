@@ -2,7 +2,6 @@
 inicial, folha, busca, envio, painel, detalhe, recibo e aviso."""
 
 import re
-import time
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -10,9 +9,10 @@ from django.test import override_settings
 from django.urls import reverse
 
 from pedidos.models import Pedido
-from pedidos.protecao import emitir
 from pedidos.regras import VIATURAS
 from pedidos.telegram import texto_aviso
+from tests.config_cenario import enviar_formulario
+from tests.paginas import texto
 from tests.viaturas_cenario import (
     BOTINA,
     EQUIPE,
@@ -33,10 +33,6 @@ CARRINHO = reverse("pedidos:carrinho", args=["viaturas"])
 @pytest.fixture(autouse=True)
 def cenario():
     montar_viaturas()
-
-
-def texto(html):
-    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 def no_carrinho(html):
@@ -209,18 +205,8 @@ def test_limite_por_nome_soma_viaturas_com_os_outros_formularios(client, setting
     settings.PEDIDOS_LIMITE_SOLICITANTE_DIA = 1
     settings.PEDIDOS_LIMITE_IP_10_MIN = 99
     settings.PEDIDOS_LIMITE_IP_DIA = 99
-    limpeza = client.post(
-        reverse("pedidos:formulario", args=["limpeza"]),
-        {
-            "token": emitir(aberto_em=time.time() - 60).token,
-            "solicitante": "Carlos",
-            "destino": "ETA II",
-            "obs": "",
-            "confirmacao_extra": "",
-            "item_codigo": ["023.001.002"],
-            "item_qtd": ["1"],
-        },
-        HTTP_HX_REQUEST="true",
+    limpeza = enviar_formulario(
+        client, "limpeza", [("023.001.002", "1")], destino="ETA II", solicitante="Carlos"
     )
     assert "Pedido registrado" in limpeza.text
     assert "Pedido registrado" not in enviar(client, [(FITA, "1")]).text

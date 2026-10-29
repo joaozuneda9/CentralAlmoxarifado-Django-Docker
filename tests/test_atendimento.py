@@ -20,6 +20,7 @@ from tests.cenario import (
     montar_cenario,
     registrar,
     saida,
+    textos,
 )
 
 pytestmark = pytest.mark.django_db
@@ -48,10 +49,6 @@ def atender(pedido, usuario, dados=None, qtds=None, atendimento_id=None, nao_lan
         usuario=usuario,
         hoje=HOJE,
     )
-
-
-def textos(r):
-    return [e.texto for e in r.erros]
 
 
 def test_atendimento_grava_as_linhas_no_contrato_do_robo(pedido, usuario):

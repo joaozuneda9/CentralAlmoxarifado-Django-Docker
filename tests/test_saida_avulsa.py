@@ -11,7 +11,7 @@ from catalogo.models import Material
 from pedidos.models import LinhaSaida, Pedido
 from pedidos.regras import AB, EnvioSaida
 from pedidos.servicos import registrar_saida_avulsa
-from tests.cenario import envio_ab, itens, montar_cenario, registrar, saida
+from tests.cenario import envio_ab, itens, montar_cenario, registrar, saida, textos
 
 pytestmark = pytest.mark.django_db
 HOJE = date(2026, 10, 9)
@@ -64,10 +64,6 @@ def test_divergente(usuario):
     r = avulsa(envio_id, EnvioSaida(saida(obs="outra"), itens(("000.000.900", "1"))), usuario)
     assert (r.ok, r.divergente) == (False, True)
     assert Pedido.objects.count() == 1
-
-
-def textos(r):
-    return [e.texto for e in r.erros]
 
 
 def test_recusas(usuario):

@@ -6,15 +6,11 @@ resto do cenário. Destinos: OFICINA MECÂNICA e as viaturas do cenário, PICKUP
 RETRO A (XYZ9K99).
 """
 
-import time
 from decimal import Decimal
 
-from django.urls import reverse
-
 from catalogo.models import Formulario, Material, Opcao
-from pedidos.protecao import emitir
 from tests.cenario import montar_cenario
-from tests.config_cenario import excecao
+from tests.config_cenario import enviar_formulario, excecao
 
 FILTRO = "006.002.001"
 PNEU = "006.000.001"
@@ -50,16 +46,6 @@ def montar_oficina() -> None:
 
 def enviar(client, itens, *, destino=OFICINA, solicitante="Marcos", token=None):
     """Envia o formulário da oficina como o navegador (HTMX), com o carrinho dado."""
-    return client.post(
-        reverse("pedidos:formulario", args=["oficina"]),
-        {
-            "token": (token or emitir(aberto_em=time.time() - 60)).token,
-            "solicitante": solicitante,
-            "destino": destino,
-            "obs": "",
-            "confirmacao_extra": "",
-            "item_codigo": [c for c, _ in itens],
-            "item_qtd": [q for _, q in itens],
-        },
-        HTTP_HX_REQUEST="true",
+    return enviar_formulario(
+        client, "oficina", itens, destino=destino, solicitante=solicitante, token=token
     )

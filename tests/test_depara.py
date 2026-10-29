@@ -11,6 +11,7 @@ from catalogo.depara import (
     resolver_canonicos,
     validar_par,
 )
+from catalogo.models import ParDePara
 
 # ---------------------------------------------------------------- validar_par (puro)
 
@@ -156,8 +157,6 @@ def test_admin_cria_par_com_origem_sistema_e_registra_no_historico(admin_client)
 
 @pytest.mark.django_db
 def test_admin_avisa_quando_o_novo_nao_tem_cadastro(admin_client):
-    from catalogo.models import ParDePara
-
     resposta = criar_pelo_admin(admin_client, "000.029.872", "016.001.021")
     assert ParDePara.objects.count() == 1
     assert "O código 016.001.021 ainda não está no cadastro do SCPI." in resposta.text
@@ -173,8 +172,6 @@ def test_admin_avisa_quando_o_novo_nao_tem_cadastro(admin_client):
     ],
 )
 def test_admin_recusa_par_invalido(admin_client, antigo, novo, fator, erro):
-    from catalogo.models import ParDePara
-
     resposta = criar_pelo_admin(admin_client, antigo, novo, fator)
     assert ParDePara.objects.count() == 0
     assert erro in resposta.text
@@ -182,8 +179,6 @@ def test_admin_recusa_par_invalido(admin_client, antigo, novo, fator, erro):
 
 @pytest.mark.django_db
 def test_admin_recusa_segundo_destino_para_o_mesmo_antigo(admin_client):
-    from catalogo.models import ParDePara
-
     ParDePara.objects.create(antigo="000.029.872", novo="016.001.021")
     resposta = criar_pelo_admin(admin_client, "000.029.872", "016.001.099")
     assert ParDePara.objects.count() == 1
@@ -195,8 +190,6 @@ def test_admin_recusa_segundo_destino_para_o_mesmo_antigo(admin_client):
 
 @pytest.mark.django_db
 def test_admin_recusa_ciclo(admin_client):
-    from catalogo.models import ParDePara
-
     ParDePara.objects.create(antigo="000.000.001", novo="000.000.002")
     resposta = criar_pelo_admin(admin_client, "000.000.002", "000.000.001")
     assert ParDePara.objects.count() == 1
@@ -206,8 +199,6 @@ def test_admin_recusa_ciclo(admin_client):
 @pytest.mark.django_db
 def test_admin_alterar_par_da_planilha_marca_origem_sistema(admin_client):
     from django.urls import reverse
-
-    from catalogo.models import ParDePara
 
     par = ParDePara.objects.create(antigo="000.000.001", novo="001.001.001", origem="PLANILHA")
     admin_client.post(

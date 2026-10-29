@@ -8,7 +8,6 @@ from catalogo.catalogos import ItemCatalogo
 from pedidos.regras import (
     Centro,
     EnvioPedido,
-    ItemEnviado,
     data_valida_iso,
     estoque_inteiro,
     normalizar_busca,
@@ -20,6 +19,7 @@ from pedidos.regras import (
     somar_por_codigo,
     validar_pedido,
 )
+from tests.cenario import itens, textos
 
 
 def material(codigo, estoque, **extra):
@@ -70,10 +70,6 @@ CENTROS = [
 ]
 
 
-def itens(*pares):
-    return tuple(ItemEnviado(c, q) for c, q in pares)
-
-
 def ab(*pares, **extra):
     campos = {"solicitante": "Maria", "destino": "ETA II", "itens": itens(*pares)}
     campos.update(extra)
@@ -84,10 +80,6 @@ def limpeza(*pares, **extra):
     campos = {"solicitante": "Ana", "destino": "ETA I", "itens": itens(*pares)}
     campos.update(extra)
     return EnvioPedido(**campos)
-
-
-def textos(r):
-    return [e.texto for e in r.erros]
 
 
 def valida_ab(*pares, **extra):

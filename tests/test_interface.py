@@ -46,9 +46,9 @@ def test_querystring_pagina_substitui_so_o_proprio_parametro():
 
 
 def test_querystring_pagina_preserva_parametros_de_outras_secoes_paginadas():
-    """Uma página com mais de uma seção paginada (ex.
-    `execucao_detalhe.html`, com `pagina_excecoes`/`pagina_divergencias`/
-    `pagina_alteracoes`) não pode zerar as demais ao avançar uma delas."""
+    """Uma página com mais de uma seção paginada (ex. `pagina_excecoes`/
+    `pagina_divergencias`/`pagina_alteracoes`) não pode zerar as demais ao
+    avançar uma delas."""
     request = _rf.get(
         "/qualquer/",
         {"pagina_excecoes": "1", "pagina_divergencias": "2", "pagina_alteracoes": "4"},
@@ -138,16 +138,16 @@ def test_intervalo_paginas_on_each_side_1_gera_lista_mais_estreita():
 # ---------------------------------------------------------------------------
 
 
-def test_separador_milhar_formata_milhar_com_ponto():
-    assert separador_milhar(3408) == "3.408"
-
-
-def test_separador_milhar_sem_milhar_nao_altera():
-    assert separador_milhar(69) == "69"
-
-
-def test_separador_milhar_valor_nao_numerico_e_devolvido_sem_alteracao():
-    assert separador_milhar("abc") == "abc"
+@pytest.mark.parametrize(
+    "valor, esperado",
+    [
+        (3408, "3.408"),  # milhar com ponto
+        (69, "69"),  # sem milhar, não altera
+        ("abc", "abc"),  # não numérico, devolvido sem alteração
+    ],
+)
+def test_separador_milhar(valor, esperado):
+    assert separador_milhar(valor) == esperado
 
 
 # ---------------------------------------------------------------------------
@@ -155,8 +155,8 @@ def test_separador_milhar_valor_nao_numerico_e_devolvido_sem_alteracao():
 # quantidade/diferença em pt-BR — milhar ".", decimal ",", só as casas
 # significativas (até 3, o `decimal_places` dos models). Antes, "32,500" ao
 # lado de "27000" lia como 32 mil. O filtro nunca vale para `value` de
-# `<input>`/hidden (ver `tests/test_estoque_views_entrada.py`): "1.500" de
-# exibição não é um formato de entrada aceito como 1500.
+# `<input>`/hidden: "1.500" de exibição não é um formato de entrada aceito
+# como 1500.
 # ---------------------------------------------------------------------------
 
 

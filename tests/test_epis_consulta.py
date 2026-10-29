@@ -1,7 +1,6 @@
 """Consulta pública do resultado do pedido de EPI pelo número (spec 008, US5, FR-031, FR-031a,
 FR-031b): só a situação e o motivo da recusa, resposta neutra e limite por origem."""
 
-import re
 import uuid
 
 import pytest
@@ -12,7 +11,8 @@ from django.urls import reverse
 from pedidos.regras import AB, normalizar_numero_pedido, texto_situacao_consulta
 from pedidos.servicos import decidir_autorizacao, registrar_pedido
 from tests.cenario import envio_ab
-from tests.epis_cenario import enviar, montar_epis, registrar, usuarios
+from tests.epis_cenario import enviar, montar_epis, registrar
+from tests.paginas import texto
 
 pytestmark = pytest.mark.django_db
 
@@ -25,15 +25,6 @@ LIMITE = "Muitas consultas desta rede em pouco tempo. Procure o almoxarifado."
 def cenario():
     cache.clear()  # o limite vive no cache: cada teste começa do zero
     montar_epis()
-
-
-@pytest.fixture
-def quem():
-    return usuarios()
-
-
-def texto(html):
-    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 def consultar(client, numero):

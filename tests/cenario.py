@@ -52,17 +52,25 @@ def montar_cenario(*, com_estoque: bool = True) -> None:
         # tabelas ao terminar: quem monta o cenário garante a lista (idempotente).
         Opcao.Lista.UNIDADE_FRACIONAVEL: list(UNIDADES_FRACIONAVEIS),
     }
-    for lista, valores in opcoes.items():
-        for ordem, valor in enumerate(valores):
-            Opcao.objects.update_or_create(
-                lista=lista, valor=valor, defaults={"ordem": ordem, "ativo": True}
-            )
+    _gravar(
+        Opcao,
+        Opcao.objects.filter(lista__in=opcoes),
+        lambda o: (o.lista, o.valor),
+        {
+            (lista, valor): {"lista": lista, "valor": valor, "ordem": ordem, "ativo": True}
+            for lista, valores in opcoes.items()
+            for ordem, valor in enumerate(valores)
+        },
+    )
     agora = timezone.now() if com_estoque else None
-    materiais = {}
-    for codigo, nome, grupo, estoque, oculto in MATERIAIS:
-        materiais[codigo], _ = Material.objects.update_or_create(
-            codigo=codigo,
-            defaults={
+    codigos = [codigo for codigo, *_ in MATERIAIS]
+    _gravar(
+        Material,
+        Material.objects.filter(codigo__in=codigos),
+        lambda m: m.codigo,
+        {
+            codigo: {
+                "codigo": codigo,
                 "nome": nome,
                 "unidade": UNIDADES.get(codigo, "UN"),
                 "grupo": grupo,
@@ -71,29 +79,46 @@ def montar_cenario(*, com_estoque: bool = True) -> None:
                 "duplicado": False,
                 "estoque": Decimal(estoque),
                 "estoque_em": agora,
-            },
-        )
+            }
+            for codigo, nome, grupo, estoque, oculto in MATERIAIS
+        },
+    )
+    materiais = {m.codigo: m for m in Material.objects.filter(codigo__in=codigos)}
     limpeza = [
         ("023.001.002", "Limpeza", ""),
         ("008.001.002", "Copa/cozinha", "Pacote 500 g"),
         ("023.004.001", "Limpeza", ""),
     ]
-    for ordem, (codigo, categoria, unidade) in enumerate(limpeza):
-        ItemLimpeza.objects.update_or_create(
-            material=materiais[codigo],
-            defaults={"categoria": categoria, "unidade_exibida": unidade, "ordem": ordem},
-        )
-    for codigo, vezes in SAIDAS.items():
-        for n in range(vezes):
-            SaidaSCPI.objects.update_or_create(
-                id_requi=f"T{n}-{codigo}",
-                cadpro=codigo,
-                defaults={
-                    "data": timezone.localdate(),
-                    "qtd": Decimal(1),
-                    "valor": Decimal(1),
-                },
-            )
+    _gravar(
+        ItemLimpeza,
+        ItemLimpeza.objects.filter(material__in=materiais.values()),
+        lambda i: i.material_id,
+        {
+            materiais[codigo].pk: {
+                "material": materiais[codigo],
+                "categoria": categoria,
+                "unidade_exibida": unidade,
+                "ordem": ordem,
+            }
+            for ordem, (codigo, categoria, unidade) in enumerate(limpeza)
+        },
+    )
+    _gravar(
+        SaidaSCPI,
+        SaidaSCPI.objects.filter(cadpro__in=SAIDAS),
+        lambda s: (s.id_requi, s.cadpro),
+        {
+            (f"T{n}-{codigo}", codigo): {
+                "id_requi": f"T{n}-{codigo}",
+                "cadpro": codigo,
+                "data": timezone.localdate(),
+                "qtd": Decimal(1),
+                "valor": Decimal(1),
+            }
+            for codigo, vezes in SAIDAS.items()
+            for n in range(vezes)
+        },
+    )
     centros = [
         ("ETA I", "12", None),
         ("ETA II", "14", None),
@@ -103,10 +128,28 @@ def montar_cenario(*, com_estoque: bool = True) -> None:
         ("RETRO A", "41", "XYZ9K99"),
     ]
     for descricao, codigo, placa in centros:
+        # Conferido no banco, pela collation (o centro não tem chave única que barre a cópia), e
+        # criado um a um: o `save` do centro normaliza a placa.
         if not CentroCusto.objects.filter(descricao=descricao, codigo=codigo).exists():
             CentroCusto.objects.create(descricao=descricao, codigo=codigo, placa=placa)
     # Os centros do cenário são destino onde as regras antigas os ofereciam (spec 009).
     habilitar_como_antes()
+
+
+def _gravar(modelo, existentes, chave, linhas: dict) -> None:
+    """`update_or_create` em lote: `linhas` vai da chave aos campos; as linhas que já existem
+    (o cenário montado de novo) são atualizadas e as que faltam, criadas num insert só."""
+    atuais = {chave(obj): obj for obj in existentes}
+    novos = []
+    for k, campos in linhas.items():
+        obj = atuais.get(k)
+        if obj is None:
+            novos.append(modelo(**campos))
+            continue
+        for campo, valor in campos.items():
+            setattr(obj, campo, valor)
+        obj.save()
+    modelo.objects.bulk_create(novos)
 
 
 def dar_saldo(*codigos: str, saldo: int = 10) -> None:
@@ -117,6 +160,11 @@ def dar_saldo(*codigos: str, saldo: int = 10) -> None:
 
 def itens(*pares) -> tuple[ItemEnviado, ...]:
     return tuple(ItemEnviado(c, q) for c, q in pares)
+
+
+def textos(resposta) -> list[str]:
+    """Os textos dos erros de uma `Resposta` (ou de um resultado de validação)."""
+    return [e.texto for e in resposta.erros]
 
 
 def envio_limpeza(**extra) -> EnvioPedido:

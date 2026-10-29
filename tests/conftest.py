@@ -10,6 +10,7 @@ from pedidos.models import TRAVA_LANCAMENTO
 from pedidos.regras import LIMPEZA, EnvioSaida
 from pedidos.servicos import confirmar_atendimento, registrar_saida_avulsa
 from tests.cenario import envio_limpeza, itens, montar_cenario, registrar, saida
+from tests.epis_cenario import usuarios as usuarios_epis
 from tests.scpi_simulado import SCPISimulado
 
 HOJE = date(2026, 10, 9)
@@ -43,6 +44,19 @@ def dois_lotes():
 
 
 @pytest.fixture
+def usuario_logado(client):
+    usuario = get_user_model().objects.create_user(username="12345", password="x")
+    client.force_login(usuario)
+    return usuario
+
+
+@pytest.fixture
+def quem():
+    """Os usuários do cenário dos EPIs (`tests/epis_cenario.py`)."""
+    return usuarios_epis()
+
+
+@pytest.fixture
 def journal(settings, tmp_path):
     """Aponta o `LOG_DIR` (onde fica o journal do lançamento) para uma pasta temporária."""
     settings.LOG_DIR = tmp_path
@@ -52,6 +66,13 @@ def journal(settings, tmp_path):
 @pytest.fixture
 def scpi():
     return SCPISimulado()
+
+
+@pytest.fixture
+def scpi_no_comando(monkeypatch, scpi):
+    """O comando `lancar_saidas` abre o SCPI simulado em vez do navegador."""
+    monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
+    return scpi
 
 
 @pytest.fixture

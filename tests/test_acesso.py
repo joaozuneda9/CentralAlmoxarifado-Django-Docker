@@ -1,22 +1,12 @@
-import re
-
 import pytest
 from django.contrib.auth import get_user_model
 from django.urls import reverse
 
 from tests.cenario import montar_cenario
+from tests.paginas import item_atual
 
 pytestmark = pytest.mark.django_db
 SENHA = "senha-de-teste-bem-comprida-123"
-
-
-def item_atual(html, url, rotulo):
-    return re.search(
-        rf'<a class="app-menu-item" href="{re.escape(url)}" aria-current="page">'
-        rf'<svg class="icone".*?</svg><span>{rotulo}</span></a>',
-        html,
-        re.S,
-    )
 
 
 @pytest.fixture

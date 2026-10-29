@@ -6,7 +6,6 @@ autopeças da oficina) seguem o mesmo caminho.
 """
 
 import re
-import time
 from dataclasses import replace
 from decimal import Decimal
 
@@ -18,10 +17,10 @@ from catalogo.catalogos import ItemCatalogo
 from pedidos import fluxos
 from pedidos.fluxos import Fluxo
 from pedidos.models import Pedido
-from pedidos.protecao import emitir
 from pedidos.regras import REGRA_LIVRE
 from pedidos.servicos import MENSAGEM_LIMITE_SOLICITANTE, catalogo_de
 from tests.cenario import montar_cenario
+from tests.config_cenario import enviar_formulario
 
 pytestmark = pytest.mark.django_db
 
@@ -90,19 +89,7 @@ def novo(monkeypatch):
 
 
 def enviar(client, itens, solicitante="Ana"):
-    return client.post(
-        reverse("pedidos:formulario", args=["reposicao"]),
-        {
-            "token": emitir(aberto_em=time.time() - 60).token,
-            "solicitante": solicitante,
-            "destino": "ETA II",
-            "obs": "",
-            "confirmacao_extra": "",
-            "item_codigo": [c for c, _ in itens],
-            "item_qtd": [q for _, q in itens],
-        },
-        HTTP_HX_REQUEST="true",
-    )
+    return enviar_formulario(client, "reposicao", itens, destino="ETA II", solicitante=solicitante)
 
 
 def test_o_formulario_novo_abre_com_os_seus_textos_e_o_seu_catalogo(client, novo):

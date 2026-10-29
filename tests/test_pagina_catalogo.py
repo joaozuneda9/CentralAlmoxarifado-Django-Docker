@@ -2,24 +2,15 @@ import re
 from datetime import date, timedelta
 
 import pytest
-from django.contrib.auth import get_user_model
 from django.urls import reverse
 from django.utils import timezone
 
 from catalogo.models import Importacao
+from tests.paginas import item_atual
 
 pytestmark = pytest.mark.django_db
 
 SITUACAO = "section#situacao-catalogo"
-
-
-def item_atual(html, url, rotulo):
-    return re.search(
-        rf'<a class="app-menu-item" href="{re.escape(url)}" aria-current="page">'
-        rf'<svg class="icone".*?</svg><span>{rotulo}</span></a>',
-        html,
-        re.S,
-    )
 
 
 def catalogo(resposta):
@@ -29,13 +20,6 @@ def catalogo(resposta):
         return html
     inicio = html.index('id="painel-lancamento"')
     return html[:inicio] + html[html.index('role="tabpanel"', inicio + 1) :]
-
-
-@pytest.fixture
-def usuario_logado(client):
-    usuario = get_user_model().objects.create_user(username="12345", password="x")
-    client.force_login(usuario)
-    return usuario
 
 
 def test_pagina_exige_login(client):

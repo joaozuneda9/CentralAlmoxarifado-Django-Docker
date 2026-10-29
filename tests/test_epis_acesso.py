@@ -2,15 +2,14 @@
 de autorização, a decisão e as páginas públicas; o resto é negado por padrão, inclusive rota nova.
 """
 
-import re
-
 import pytest
 from django.test import Client
 from django.urls import URLPattern, URLResolver, get_resolver, reverse
 
 from contas.acesso import ROTAS_SEGURANCA_TRABALHO, da_seguranca_trabalho
 from pedidos.models import AutorizacaoPedido
-from tests.epis_cenario import SENHA, montar_epis, registrar, usuarios
+from tests.epis_cenario import SENHA, montar_epis, registrar
+from tests.paginas import texto
 
 pytestmark = pytest.mark.django_db
 
@@ -33,15 +32,6 @@ PERMITIDAS = {
 @pytest.fixture(autouse=True)
 def cenario():
     montar_epis()
-
-
-@pytest.fixture
-def quem():
-    return usuarios()
-
-
-def texto(html):
-    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 def rotas_nomeadas():

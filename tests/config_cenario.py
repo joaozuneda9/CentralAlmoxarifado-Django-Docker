@@ -12,9 +12,8 @@ from django.contrib.auth.models import Group, Permission
 from django.urls import reverse
 from django.utils import timezone
 
-from catalogo.models import CentroCusto, CentroFormulario, ExcecaoMaterial, Formulario, Material
+from catalogo.models import CentroCusto, CentroFormulario, ExcecaoMaterial, Material
 from contas.acesso import GRUPO_SEGURANCA_TRABALHO
-from pedidos.models import Pedido
 from pedidos.protecao import emitir
 from pedidos.regras import (
     AB,
@@ -29,19 +28,27 @@ from pedidos.regras import (
 )
 from pedidos.servicos import registrar_pedido
 
-SENHA = "senha-de-teste-bem-comprida-123"
-FORMULARIOS = (LIMPEZA, AB, VIATURAS, OFICINA, EPIS)
-
 
 def habilitar(centros, *formularios, usuario=None) -> None:
-    """Habilita as linhas de centro nos formulários (idempotente)."""
+    """Habilita as linhas de centro nos formulários (idempotente; as que faltam, num insert só)."""
     if isinstance(centros, CentroCusto):
         centros = [centros]
+    centros = list(centros)
+    feitos = {
+        (centro_id, str(formulario))
+        for centro_id, formulario in CentroFormulario.objects.filter(
+            centro__in=centros, formulario__in=formularios
+        ).values_list("centro_id", "formulario")
+    }
+    novos = []
     for centro in centros:
         for formulario in formularios:
-            CentroFormulario.objects.get_or_create(
-                centro=centro, formulario=formulario, defaults={"alterado_por": usuario}
-            )
+            if (centro.pk, str(formulario)) not in feitos:
+                feitos.add((centro.pk, str(formulario)))
+                novos.append(
+                    CentroFormulario(centro=centro, formulario=formulario, alterado_por=usuario)
+                )
+    CentroFormulario.objects.bulk_create(novos)
 
 
 def criar_centro(descricao, codigo, placa=None, *, formularios=(), ativo=True) -> CentroCusto:
@@ -107,10 +114,7 @@ def usuarios() -> dict:
     modelo = get_user_model()
 
     def criar(matricula, **extra):
-        u, _ = modelo.objects.get_or_create(username=matricula, defaults=extra)
-        u.set_password(SENHA)
-        u.save()
-        return u
+        return modelo.objects.get_or_create(username=matricula, defaults=extra)[0]
 
     def permissao(usuario, codename):
         usuario.user_permissions.add(Permission.objects.get(codename=codename))
@@ -134,19 +138,23 @@ def usuarios() -> dict:
     }
 
 
-def enviar(client, formulario, itens, *, destino, solicitante="Marcos Pereira"):
-    """Envia o formulário público como o navegador (HTMX), com o carrinho dado."""
+def enviar_formulario(
+    client, formulario, itens, *, destino, solicitante="Marcos Pereira", token=None, **campos
+):
+    """Envia o formulário público como o navegador (HTMX), com o carrinho dado. `campos` troca ou
+    acrescenta campos do POST (`obs`, `ocorrencia`, `confirmacao_extra`)."""
+    dados = {
+        "token": (emitir(aberto_em=time.time() - 60) if token is None else token).token,
+        "solicitante": solicitante,
+        "destino": destino,
+        "obs": "",
+        "confirmacao_extra": "",
+        "item_codigo": [c for c, _ in itens],
+        "item_qtd": [q for _, q in itens],
+        **campos,
+    }
     return client.post(
-        reverse("pedidos:formulario", args=[formulario.lower()]),
-        {
-            "token": emitir(aberto_em=time.time() - 60).token,
-            "solicitante": solicitante,
-            "destino": destino,
-            "obs": "",
-            "item_codigo": [c for c, _ in itens],
-            "item_qtd": [q for _, q in itens],
-        },
-        HTTP_HX_REQUEST="true",
+        reverse("pedidos:formulario", args=[formulario.lower()]), dados, HTTP_HX_REQUEST="true"
     )
 
 
@@ -161,24 +169,3 @@ def registrar(origem, itens, *, destino, solicitante="Marcos Pereira"):
             itens=tuple(ItemEnviado(c, q) for c, q in itens),
         ),
     )
-
-
-def pedidos_gravados() -> int:
-    return Pedido.objects.count()
-
-
-__all__ = [
-    "FORMULARIOS",
-    "Formulario",
-    "SENHA",
-    "codigos",
-    "criar_centro",
-    "enviar",
-    "excecao",
-    "habilitar",
-    "habilitar_como_antes",
-    "material",
-    "pedidos_gravados",
-    "registrar",
-    "usuarios",
-]

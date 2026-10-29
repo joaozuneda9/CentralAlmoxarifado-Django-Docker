@@ -16,11 +16,6 @@ def cenario():
     montar_epis()
 
 
-@pytest.fixture
-def quem():
-    return usuarios()
-
-
 def recarregar(pedido):
     return AutorizacaoPedido.objects.get(pedido=pedido)
 

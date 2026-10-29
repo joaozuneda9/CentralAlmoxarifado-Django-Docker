@@ -1,6 +1,5 @@
 """Telas da Segurança do Trabalho (spec 008, US2, FR-011 a FR-014): fila, detalhe e decisão."""
 
-import re
 import uuid
 
 import pytest
@@ -10,7 +9,8 @@ from pedidos.models import AutorizacaoPedido, Pedido
 from pedidos.regras import AB
 from pedidos.servicos import registrar_pedido
 from tests.cenario import envio_ab
-from tests.epis_cenario import CAPACETE, LUVA, montar_epis, registrar, usuarios
+from tests.epis_cenario import CAPACETE, LUVA, montar_epis, registrar
+from tests.paginas import texto
 
 pytestmark = pytest.mark.django_db
 
@@ -23,18 +23,9 @@ def cenario():
 
 
 @pytest.fixture
-def quem():
-    return usuarios()
-
-
-@pytest.fixture
 def seguranca(client, quem):
     client.force_login(quem["seguranca"])
     return quem["seguranca"]
-
-
-def texto(html):
-    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 def detalhe(numero):

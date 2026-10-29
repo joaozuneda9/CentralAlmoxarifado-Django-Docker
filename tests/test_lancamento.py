@@ -6,14 +6,15 @@ from django.db import DatabaseError, InterfaceError, connection, connections
 from django.db.models.query import QuerySet
 
 from catalogo.models import CentroCusto
-from pedidos.models import ExecucaoRobo, LinhaSaida
+from pedidos.models import TRAVA_LANCAMENTO, ExecucaoRobo, LinhaSaida
 from scpi import lancamento
 from scpi.lancamento import LancamentoEmAndamento, executar_lancamento
 from scpi.leitura import ErroImportacao
 from scpi.requisicoes import ErroSCPI, FalhaCritica
 from tests.test_scpi_execucao import liberacao_quebrada
 
-pytestmark = pytest.mark.django_db
+# Nenhum teste grava o journal no `logs/` do repositório.
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("journal")]
 
 
 def lancar_todos(execucao, abrir):
@@ -21,11 +22,6 @@ def lancar_todos(execucao, abrir):
     return executar_lancamento(
         execucao, abrir, lotes=set(LinhaSaida.objects.values_list("lote", flat=True))
     )
-
-
-@pytest.fixture(autouse=True)
-def _journal_temporario(journal):
-    """Nenhum teste grava o journal no `logs/` do repositório."""
 
 
 def test_lanca_um_lote_por_requisicao_e_grava_o_numero(dois_lotes, scpi):
@@ -207,7 +203,7 @@ def test_banco_fora_ate_o_fim_ainda_levanta_falha_critica(dois_lotes, scpi, monk
                 lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
     finally:
         with connection.cursor() as c:
-            c.execute("SELECT RELEASE_LOCK('almoxarifado:lancar_saidas')")
+            c.execute("SELECT RELEASE_LOCK(%s)", [TRAVA_LANCAMENTO])
 
 
 def test_navegador_que_nao_abre_deixa_tudo_pendente(dois_lotes):
@@ -224,19 +220,13 @@ def test_navegador_que_nao_abre_deixa_tudo_pendente(dois_lotes):
     assert set(LinhaSaida.objects.values_list("status", flat=True)) == {"PENDENTE"}
 
 
-def test_trava_ocupada_recusa_sem_tocar_em_nada(dois_lotes, scpi):
-    outra = connections.create_connection("default")
-    with outra.cursor() as c:
-        c.execute("SELECT GET_LOCK('almoxarifado:lancar_saidas', 0)")
-    try:
-        e = ExecucaoRobo.objects.create()
-        with pytest.raises(LancamentoEmAndamento):
-            lancar_todos(e, scpi.abrir)
-        e.refresh_from_db()
-        assert (e.situacao, e.erro) == ("FALHA", "Outro lançamento já está em andamento.")
-        assert scpi.abertas == 0
-    finally:
-        outra.close()
+def test_trava_ocupada_recusa_sem_tocar_em_nada(dois_lotes, scpi, trava_ocupada):
+    e = ExecucaoRobo.objects.create()
+    with pytest.raises(LancamentoEmAndamento):
+        lancar_todos(e, scpi.abrir)
+    e.refresh_from_db()
+    assert (e.situacao, e.erro) == ("FALHA", "Outro lançamento já está em andamento.")
+    assert scpi.abertas == 0
 
 
 def test_pendente_com_numero_de_requisicao_nao_e_lancada_de_novo(dois_lotes, scpi):

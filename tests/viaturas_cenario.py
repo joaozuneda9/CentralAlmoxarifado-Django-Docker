@@ -5,16 +5,13 @@ Só no AB, fora da lista: ISOLANTE. Destino: "EQUIPE NORTE", com duas linhas (um
 só habilitada nas viaturas (spec 009).
 """
 
-import time
 from decimal import Decimal
 
-from django.urls import reverse
 from django.utils import timezone
 
 from catalogo.models import CentroCusto, Formulario, Material, PecaViatura, SaidaSCPI
-from pedidos.protecao import emitir
 from tests.cenario import montar_cenario
-from tests.config_cenario import habilitar
+from tests.config_cenario import enviar_formulario, habilitar
 
 TUBO = "016.020.001"
 FITA = "016.005.010"
@@ -71,17 +68,12 @@ def montar_viaturas() -> None:
 
 def enviar(client, itens, *, destino=EQUIPE, ocorrencia="", solicitante="Carlos", token=None):
     """Envia o formulário de viaturas como o navegador (HTMX), com o carrinho dado."""
-    return client.post(
-        reverse("pedidos:formulario", args=["viaturas"]),
-        {
-            "token": (token or emitir(aberto_em=time.time() - 60)).token,
-            "solicitante": solicitante,
-            "destino": destino,
-            "obs": "",
-            "ocorrencia": ocorrencia,
-            "confirmacao_extra": "",
-            "item_codigo": [c for c, _ in itens],
-            "item_qtd": [q for _, q in itens],
-        },
-        HTTP_HX_REQUEST="true",
+    return enviar_formulario(
+        client,
+        "viaturas",
+        itens,
+        destino=destino,
+        solicitante=solicitante,
+        token=token,
+        ocorrencia=ocorrencia,
     )

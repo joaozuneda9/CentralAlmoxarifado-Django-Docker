@@ -9,7 +9,8 @@ from pedidos.models import ExecucaoRobo, LinhaSaida
 from scpi.lancamento import LANCAMENTO_BLOQUEADO
 from tests.test_config import PRODUCAO, RAIZ, rodar
 
-pytestmark = pytest.mark.django_db
+# O comando abre o SCPI simulado.
+pytestmark = [pytest.mark.django_db, pytest.mark.usefixtures("scpi_no_comando")]
 
 
 @pytest.fixture(autouse=True)
@@ -25,16 +26,14 @@ def usuario_logado(client):
     return usuario
 
 
-def test_comando_recusa_lancamento_real_sem_criar_execucao(monkeypatch, dois_lotes, scpi):
-    monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
+def test_comando_recusa_lancamento_real_sem_criar_execucao(dois_lotes, scpi):
     with pytest.raises(CommandError, match="bloqueado"):
         call_command("lancar_saidas", "--lote", dois_lotes[0])
     assert ExecucaoRobo.objects.count() == 0 and scpi.chamadas == []
     assert set(LinhaSaida.objects.values_list("status", flat=True)) == {"PENDENTE"}
 
 
-def test_execucao_real_do_botao_termina_em_falha(monkeypatch, dois_lotes, scpi):
-    monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
+def test_execucao_real_do_botao_termina_em_falha(dois_lotes, scpi):
     e = ExecucaoRobo.objects.create(simulacao=False)
     with pytest.raises(CommandError, match="bloqueado"):
         call_command("lancar_saidas", "--execucao", str(e.pk), "--lote", dois_lotes[0])
@@ -43,8 +42,7 @@ def test_execucao_real_do_botao_termina_em_falha(monkeypatch, dois_lotes, scpi):
     assert scpi.chamadas == []
 
 
-def test_simulacao_roda_com_o_bloqueio(monkeypatch, dois_lotes, scpi):
-    monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
+def test_simulacao_roda_com_o_bloqueio(dois_lotes):
     call_command("lancar_saidas", "--dry-run", "--lote", dois_lotes[0], "--lote", dois_lotes[1])
     assert ExecucaoRobo.objects.get().resumo["simuladas"] == 2
 

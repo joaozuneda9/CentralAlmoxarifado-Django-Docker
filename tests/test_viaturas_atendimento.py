@@ -15,6 +15,7 @@ from pedidos.models import LinhaSaida, Pedido
 from pedidos.regras import VIATURAS, Adicionado
 from pedidos.servicos import confirmar_atendimento, editar_atendimento
 from tests.cenario import saida
+from tests.paginas import texto
 from tests.viaturas_cenario import BOTINA, EQUIPE, FITA, ISOLANTE, enviar, montar_viaturas
 
 pytestmark = pytest.mark.django_db
@@ -31,10 +32,6 @@ def pedido(client):
     montar_viaturas()
     assert "Pedido registrado" in enviar(client, [(FITA, "2"), (BOTINA, "1")], ocorrencia="77").text
     return Pedido.objects.get()
-
-
-def texto(html):
-    return " ".join(re.sub(r"<[^>]+>", " ", html).split())
 
 
 def test_o_atendimento_sugere_o_centro_da_equipe(client, pedido, usuario):

@@ -15,7 +15,6 @@ from pedidos.regras import (
     PENDENTE,
     VERIFICAR,
     Centro,
-    DadosSaida,
     EnvioPedido,
     EnvioSaida,
     ItemEnviado,
@@ -30,6 +29,7 @@ from pedidos.regras import (
     situacao_scpi,
     validar_saida,
 )
+from tests.cenario import saida
 
 CENTROS = [
     Centro("ETA II", "14", ""),
@@ -40,18 +40,6 @@ CENTROS = [
 ]
 HOJE = date(2026, 10, 9)
 UM = (ItemSaida("023.001.002", 1),)
-
-
-def saida(**extra):
-    campos = {
-        "data": "2026-10-09",
-        "recebedor": "João",
-        "centro_custo": "ETA II",
-        "tipo": "BALCÃO",
-        "placa": "",
-    }
-    campos.update(extra)
-    return DadosSaida(**campos)
 
 
 def textos(d, itens=UM, **ctx):

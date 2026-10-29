@@ -19,7 +19,7 @@ from pedidos.servicos import (
     editar_saida_avulsa,
     registrar_saida_avulsa,
 )
-from tests.cenario import criar_pedido, itens, montar_cenario, saida
+from tests.cenario import criar_pedido, itens, montar_cenario, saida, textos
 from tests.test_carrinho import item
 
 pytestmark = pytest.mark.django_db
@@ -47,10 +47,6 @@ def registrar(usuario, *pares):
     return registrar_saida_avulsa(
         uuid.uuid4(), EnvioSaida(saida(), itens(*pares)), usuario=usuario, hoje=HOJE
     )
-
-
-def textos(r):
-    return [e.texto for e in r.erros]
 
 
 # --- A lista ---------------------------------------------------------------------------------
