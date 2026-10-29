@@ -81,4 +81,5 @@ class LinhaSaidaAdmin(admin.ModelAdmin):
 @admin.register(ExecucaoRobo)
 class ExecucaoRoboAdmin(SoLeituraAdmin):
     list_display = ["inicio", "simulacao", "situacao", "iniciada_por", "fim"]
+    list_select_related = ["iniciada_por"]
     list_filter = ["simulacao", "situacao"]

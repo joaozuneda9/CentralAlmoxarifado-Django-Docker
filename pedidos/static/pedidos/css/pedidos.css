@@ -128,7 +128,6 @@ html:not(.js) .formulario-pedido { display: none; }
   max-height: var(--busca-limite, 26rem); overflow-y: auto;
 }
 .js .busca-painel .lista-materiais { border: 0; border-radius: 0; }
-.carrinho-qtd { white-space: nowrap; font-weight: 500; }
 .numero-pedido { white-space: nowrap; }
 
 .sucesso-pedido { display: grid; justify-items: center; gap: var(--esp-2); text-align: center; animation: subir 0.4s ease both; }

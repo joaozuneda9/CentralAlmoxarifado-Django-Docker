@@ -10,6 +10,7 @@ from pedidos.regras import (
     AUTORIZACAO_RECUSADA,
     LIMPEZA,
     frase_diferenca,
+    qtd_br,
 )
 
 register = template.Library()
@@ -69,6 +70,13 @@ def nome_usuario(usuario) -> str:
 def frase_diferenca_filtro(diferenca: dict) -> str:
     """Uma diferença do histórico de alterações em frase (`regras.frase_diferenca`)."""
     return frase_diferenca(diferenca)
+
+
+@register.filter
+def qtd_campo(valor) -> str:
+    """Quantidade num valor que volta a um campo ou é lido pelo JS (`data-pedido`): pt-BR sem o
+    "." do milhar (`regras.qtd_br`), que o `parse_qtd_br` aceita. Para exibir, `quantidade`."""
+    return "" if valor in (None, "") else qtd_br(valor)
 
 
 @register.filter
