@@ -125,6 +125,16 @@ def test_campo_da_entrega_leva_o_teto_para_a_tela(client, pedido, logado):
         assert 'data-maximo="100"' in campo
 
 
+def test_campo_da_entrega_leva_o_pedido_e_o_teto_sem_milhar(client, pedido, logado):
+    """`data-pedido` e `data-maximo` são lidos pelo pedidos.js e voltam ao campo ("Entregar
+    tudo", "Desfazer troca"): sem o "." do milhar, que o `parse_qtd_br` recusaria."""
+    Material.objects.filter(codigo="023.001.002").update(estoque=Decimal("2500.5"))
+    pedido.itens.filter(codigo="023.001.002").update(qtd_pedida=Decimal("1500"))
+    html = client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
+    campo = re.search(r'<input[^>]*name="entregue-023\.001\.002"[^>]*>', html).group(0)
+    assert 'data-pedido="1500"' in campo and 'data-maximo="2500,5"' in campo
+
+
 def test_placa_fora_da_lista_e_recusada(pedido, usuario):
     r = atender(pedido, usuario, saida(placa="ZZZ0000"))
     assert textos(r) == ["A placa ZZZ0000 não está na lista de centros de custo."]
