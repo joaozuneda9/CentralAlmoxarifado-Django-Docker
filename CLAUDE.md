@@ -121,6 +121,14 @@ O pytest usa `config.settings_test` (definido no `pyproject.toml`) e cria o banc
 `test_almoxarifado`. Testes rodam contra MySQL/MariaDB, nunca SQLite: `select_for_update` e
 transações precisam se comportar como no servidor.
 
+## Servidor de desenvolvimento e verificação no navegador
+
+- Quase sempre já há um servidor Django rodando na porta 8000. Confira antes de subir outro
+  (`lsof -nP -iTCP:8000 -sTCP:LISTEN` no Mac, `netstat -ano | findstr :8000` no Windows, ou um
+  `curl` na porta) e reaproveite o que está no ar, dizendo de qual checkout e branch ele serve.
+- Esboços e protótipos são um único arquivo HTML autocontido, com o CSS embutido e sem fontes
+  externas.
+
 ## Arquitetura
 
 - `config/settings.py` é um módulo único para todos os ambientes, lido do `.env`
