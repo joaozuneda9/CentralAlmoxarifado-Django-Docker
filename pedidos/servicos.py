@@ -35,7 +35,6 @@ from pedidos.models import (
 from pedidos.regras import (
     AVULSA,
     EM_LANCAMENTO,
-    ERRO,
     LANCADA,
     NAO_LANCAR,
     PENDENTE,
@@ -53,8 +52,10 @@ from pedidos.regras import (
     ItemSaida,
     atendimento_confere,
     cabecalho_saida,
+    data_hora,
     diferencas_atendimento,
     edicao_permitida,
+    lote_todo_sem_lancar,
     marcado_nao_lancar,
     norm_placa,
     norm_u,
@@ -70,6 +71,7 @@ from pedidos.regras import (
 )
 from pedidos.telegram import notificar_autorizacao_pendente, notificar_pedido
 from scpi.execucao import trava
+from scpi.requisicoes import ESTADOS_TRAVA
 
 logger = logging.getLogger("pedidos")
 
@@ -311,7 +313,7 @@ def _ja_decidida(pedido: Pedido, autorizacao: AutorizacaoPedido) -> Resposta:
         if autorizacao.situacao == AutorizacaoPedido.Situacao.AUTORIZADO
         else "recusado"
     )
-    quando = timezone.localtime(autorizacao.decidido_em).strftime("%d/%m/%Y %H:%M")
+    quando = data_hora(autorizacao.decidido_em)
     quem = _nome_do_usuario(autorizacao.decidido_por)
     return Resposta(
         ok=False,
@@ -394,18 +396,20 @@ def decidir_autorizacao(
 # ---------------------------------------------------------------------------
 
 
+def _centros(consulta) -> list[Centro]:
+    return [Centro(c.descricao, c.codigo, c.placa or "") for c in consulta]
+
+
 def centros() -> list[Centro]:
     """Todas as linhas do cadastro de centros, ativas ou não: é o que o atendimento, a edição e o
     robô do SCPI resolvem (spec 009, FR-012)."""
-    return [Centro(c.descricao, c.codigo, c.placa or "") for c in CentroCusto.objects.all()]
+    return _centros(CentroCusto.objects.all())
 
 
 def centros_ativos() -> list[Centro]:
     """As linhas de centro ativas: o que a saída avulsa **nova** oferece e aceita. O centro
     inativo continua resolvido por `centros()` onde já foi usado (spec 009, FR-008)."""
-    return [
-        Centro(c.descricao, c.codigo, c.placa or "") for c in CentroCusto.objects.filter(ativo=True)
-    ]
+    return _centros(CentroCusto.objects.filter(ativo=True))
 
 
 def centros_do_fluxo(fluxo) -> list[Centro]:
@@ -455,19 +459,43 @@ def cabecalho_atendimento(atendimento: Atendimento) -> tuple[str, ...]:
     )
 
 
+def _campos_do_atendimento(dados: DadosSaida, nao_lancar: bool) -> dict:
+    """Os campos do `Atendimento` que vêm da saída: os mesmos ao criar e ao editar."""
+    return {
+        "data_efetiva": date.fromisoformat(texto(dados.data)),
+        "recebedor": texto(dados.recebedor),
+        "centro_custo": texto(dados.centro_custo),
+        "tipo_saida": texto(dados.tipo),
+        "placa": norm_placa(dados.placa),
+        "obs": texto(dados.obs),
+        "nao_lancar": nao_lancar,
+    }
+
+
 def _criar_atendimento(atendimento_id, pedido, dados: DadosSaida, nao_lancar, usuario):
     return Atendimento.objects.create(
         id=atendimento_id,
         pedido=pedido,
-        data_efetiva=date.fromisoformat(texto(dados.data)),
-        recebedor=texto(dados.recebedor),
-        centro_custo=texto(dados.centro_custo),
-        tipo_saida=texto(dados.tipo),
-        placa=norm_placa(dados.placa),
-        obs=texto(dados.obs),
-        nao_lancar=nao_lancar,
         atendido_por=usuario,
+        **_campos_do_atendimento(dados, nao_lancar),
     )
+
+
+def _erros_de_tamanho_da_saida(dados: DadosSaida) -> list[Erro]:
+    return erros_de_tamanho(
+        {
+            "Recebedor": dados.recebedor,
+            "Centro de custo": dados.centro_custo,
+            "Observações": dados.obs,
+        },
+        None,
+    )
+
+
+def catalogo_avulsa_por_codigo() -> dict[str, ItemCatalogo]:
+    """O catálogo da saída avulsa pelo código (vazio quando indisponível): de onde vêm os
+    materiais que o almoxarifado acrescenta ao atendimento."""
+    return {c.codigo: c for c in catalogo_de(AVULSA) or []}
 
 
 def _gravar_linhas(atendimento: Atendimento, pares, lote: str) -> None:
@@ -503,10 +531,31 @@ def _qtd_adicionada(qtds: dict[str, str], codigo: str) -> Decimal | None:
     return parse_qtd_br(texto(qtds.get(codigo)) or "0")
 
 
+def _codigo_trocado(item: ItemPedido, por_id: dict) -> str:
+    """Código do item pedido que o acrescentado substitui ("" sem troca), pelos itens já lidos."""
+    return por_id[item.no_lugar_de_id].codigo if item.no_lugar_de_id else ""
+
+
+def _novo_acrescentado(pedido: Pedido, m: ItemCatalogo, usuario, **campos) -> ItemPedido:
+    """Material acrescentado pelo almoxarifado, com os dados do catálogo da saída avulsa."""
+    return ItemPedido(
+        pedido=pedido,
+        codigo=m.codigo,
+        material=m.nome,
+        unidade=m.unidade,
+        grupo=m.grupo,
+        subgrupo=m.subgrupo,
+        origem=ItemPedido.Origem.ALMOXARIFADO,
+        adicionado_por=usuario,
+        qtd_pedida=None,
+        **campos,
+    )
+
+
 def _adicionados_gravados(itens: list[ItemPedido]) -> frozenset:
     por_id = {i.id: i for i in itens}
     return frozenset(
-        (i.codigo, por_id[i.no_lugar_de_id].codigo if i.no_lugar_de_id else "", i.qtd_entregue)
+        (i.codigo, _codigo_trocado(i, por_id), i.qtd_entregue)
         for i in itens
         if i.origem == ItemPedido.Origem.ALMOXARIFADO
     )
@@ -636,7 +685,6 @@ def _erros_de_troca_entregue(
 
 
 def _validar_atendimento(
-    pedido: Pedido,
     itens: list[ItemPedido],
     dados: DadosSaida,
     parsed: dict,
@@ -645,11 +693,13 @@ def _validar_atendimento(
     nao_lancar: bool,
     *,
     hoje: date,
+    base: dict[str, ItemCatalogo],
     catalogo_extra: dict[str, ItemCatalogo] | None = None,
 ) -> tuple[list[Adicionado], dict[str, ItemCatalogo], list[Erro]]:
     """Regras do atendimento (e da edição dele): dados da saída, quantidades entregues e os
-    materiais acrescentados. Devolve os acrescentados sem repetição, o catálogo usado (o da
-    saída avulsa, com `catalogo_extra` por cima) e os erros."""
+    materiais acrescentados. `base` é o catálogo da saída avulsa (`catalogo_avulsa_por_codigo`,
+    lido antes de travar o pedido; vazio sem acrescentados). Devolve os acrescentados sem
+    repetição, o catálogo usado (`base` com `catalogo_extra` por cima) e os erros."""
     lista_centros, tipos = centros(), tipos_saida()
 
     def validar(itens_saida, catalogo=None):
@@ -662,9 +712,7 @@ def _validar_atendimento(
             catalogo=catalogo,
         )
 
-    catalogo = {c.codigo: c for c in catalogo_de(AVULSA) or []} if adicionados else {}
-    base = dict(catalogo)
-    catalogo.update(catalogo_extra or {})
+    catalogo = {**base, **(catalogo_extra or {})}
     unicos, erros_adicionados = _erros_dos_adicionados(
         adicionados,
         itens,
@@ -681,14 +729,7 @@ def _validar_atendimento(
         + [ItemSaida(a.codigo, qtds_adicionadas[a.codigo]) for a in unicos]
     )
     erros = (
-        erros_de_tamanho(
-            {
-                "Recebedor": dados.recebedor,
-                "Centro de custo": dados.centro_custo,
-                "Observações": dados.obs,
-            },
-            None,
-        )
+        _erros_de_tamanho_da_saida(dados)
         + [e for e in v.erros if e.codigo is None or e.codigo not in codigos_unicos]
         + erros_adicionados
         + _erros_de_entrega_acima(itens, parsed)
@@ -706,8 +747,7 @@ def estado_gravado(pedido: Pedido) -> EstadoAtendimento:
     cabecalho = cabecalho_atendimento(pedido.atendimento)
     # "Não lançar" marcado em Automações muda as linhas, não o atendimento: o formulário de
     # edição já abre marcado, então não é diferença.
-    status = set(pedido.atendimento.linhas.values_list("status", flat=True))
-    if status == {NAO_LANCAR}:
+    if lote_todo_sem_lancar(pedido.atendimento.linhas.values_list("status", flat=True)):
         cabecalho = (*cabecalho[:6], "1")
     return EstadoAtendimento(
         cabecalho=cabecalho,
@@ -717,7 +757,7 @@ def estado_gravado(pedido: Pedido) -> EstadoAtendimento:
             if avulsa or i.origem == ItemPedido.Origem.PEDIDO
         },
         adicionados={
-            i.codigo: (por_id[i.no_lugar_de_id].codigo if i.no_lugar_de_id else "", i.qtd_entregue)
+            i.codigo: (_codigo_trocado(i, por_id), i.qtd_entregue)
             for i in todos
             if not avulsa and i.origem == ItemPedido.Origem.ALMOXARIFADO
         },
@@ -748,10 +788,9 @@ def estado_enviado(
 def _recusa_por_falta_de_autorizacao(pedido: Pedido) -> str:
     """O motivo de o atendimento não poder seguir por causa da autorização da Segurança do
     Trabalho, ou "" (o pedido não exige autorização, ou já está autorizado)."""
-    autorizacao = pedido.autorizacao_ou_none
-    if autorizacao is None or autorizacao.situacao == AutorizacaoPedido.Situacao.AUTORIZADO:
+    if pedido.atendimento_liberado:
         return ""
-    if autorizacao.situacao == AutorizacaoPedido.Situacao.RECUSADO:
+    if pedido.autorizacao.situacao == AutorizacaoPedido.Situacao.RECUSADO:
         return (
             f"O pedido {pedido.numero} foi recusado pela Segurança do Trabalho e está encerrado. "
             "Nada foi gravado."
@@ -777,6 +816,8 @@ def confirmar_atendimento(
     quantidade entregue de cada item, os materiais acrescentados pelo almoxarifado e as linhas
     de saída, numa transação."""
     adicionados = [Adicionado(texto(a.codigo), texto(a.no_lugar_de)) for a in adicionados]
+    # O catálogo dos acrescentados é lido antes de travar o pedido, como no `registrar_pedido`.
+    base = catalogo_avulsa_por_codigo() if adicionados else {}
     with transaction.atomic():
         pedido = Pedido.objects.select_for_update().filter(pk=pedido_id).first()
         if pedido is None or pedido.origem == AVULSA:
@@ -815,7 +856,6 @@ def confirmar_atendimento(
         if mensagem := _recusa_por_falta_de_autorizacao(pedido):
             return Resposta(ok=False, mensagem=mensagem)
         unicos, catalogo, erros = _validar_atendimento(
-            pedido,
             itens,
             dados,
             parsed,
@@ -823,6 +863,7 @@ def confirmar_atendimento(
             qtds_adicionadas,
             nao_lancar,
             hoje=hoje or timezone.localdate(),
+            base=base,
         )
         if erros:
             return Resposta(ok=False, mensagem="Corrija os dados da saída.", erros=erros)
@@ -830,17 +871,11 @@ def confirmar_atendimento(
         atendimento = _criar_atendimento(atendimento_id, pedido, dados, nao_lancar, usuario)
         do_pedido = {i.codigo: i for i in itens}
         acrescentados = ItemPedido.objects.bulk_create(
-            ItemPedido(
-                pedido=pedido,
-                codigo=a.codigo,
-                material=catalogo[a.codigo].nome,
-                unidade=catalogo[a.codigo].unidade,
-                grupo=catalogo[a.codigo].grupo,
-                subgrupo=catalogo[a.codigo].subgrupo,
-                origem=ItemPedido.Origem.ALMOXARIFADO,
+            _novo_acrescentado(
+                pedido,
+                catalogo[a.codigo],
+                usuario,
                 no_lugar_de=do_pedido.get(a.no_lugar_de),
-                adicionado_por=usuario,
-                qtd_pedida=None,
                 qtd_entregue=Decimal(qtds_adicionadas[a.codigo]),
             )
             for a in adicionados
@@ -928,7 +963,7 @@ def _conferir_edicao(pedido: Pedido, linhas, versao: int, diferencas: list) -> R
     if ultima is None:
         quem = "Outra pessoa salvou alterações neste pedido."
     else:
-        nome = ultima.usuario.get_full_name() or ultima.usuario.username
+        nome = _nome_do_usuario(ultima.usuario)
         quem = f"{nome} salvou alterações neste pedido às {timezone.localtime(ultima.em):%H:%M}."
     return Resposta(
         ok=False, motivo="versao", mensagem=quem, diferencas=diferencas, numero=pedido.numero
@@ -948,13 +983,8 @@ def _gravar_edicao(
     """Grava o cabeçalho do atendimento, a versão, o histórico e as linhas de saída novas. As
     linhas nunca são atualizadas no lugar: apagadas e recriadas, com IDs novos, o robô que leu
     o lote antes da edição o encontra mudado e o pula (`lancamento._travar`)."""
-    atendimento.data_efetiva = date.fromisoformat(texto(dados.data))
-    atendimento.recebedor = texto(dados.recebedor)
-    atendimento.centro_custo = texto(dados.centro_custo)
-    atendimento.tipo_saida = texto(dados.tipo)
-    atendimento.placa = norm_placa(dados.placa)
-    atendimento.obs = texto(dados.obs)
-    atendimento.nao_lancar = nao_lancar
+    for campo, valor in _campos_do_atendimento(dados, nao_lancar).items():
+        setattr(atendimento, campo, valor)
     atendimento.recibo_impresso_em = None
     atendimento.save()
     pedido.versao += 1
@@ -976,7 +1006,7 @@ def _gravar_edicao(
     )
     LinhaSaida.objects.filter(atendimento=atendimento).delete()
     _gravar_linhas(atendimento, pares, pedido.numero)
-    quando = timezone.localtime().strftime("%d/%m/%Y %H:%M")
+    quando = data_hora(timezone.now())
     novas = LinhaSaida.objects.filter(atendimento=atendimento)
     novas.update(mensagem=f"Refeita na edição de {quando} por {usuario.username}.")
     # Material marcado sozinho para não lançar (no admin) continua fora do robô. O lote inteiro
@@ -1001,6 +1031,8 @@ def editar_atendimento(
     saída, quantidades entregues e materiais acrescentados pelo almoxarifado. O que veio do
     funcionário (cabeçalho, materiais e quantidades pedidas) nunca muda."""
     adicionados = [Adicionado(texto(a.codigo), texto(a.no_lugar_de)) for a in adicionados]
+    # Lido antes de travar o pedido e as linhas, que o robô também trava.
+    catalogo_avulsa = catalogo_avulsa_por_codigo() if adicionados else {}
     with transaction.atomic():
         pedido = Pedido.objects.select_for_update().filter(pk=pedido_id).first()
         atendimento = pedido.atendimento_ou_none if pedido is not None else None
@@ -1020,15 +1052,8 @@ def editar_atendimento(
         mantidos = {
             a.codigo: item_catalogo_gravado(gravados[a.codigo])
             for a in adicionados
-            if a.codigo in gravados
-            and (
-                por_id[gravados[a.codigo].no_lugar_de_id].codigo
-                if gravados[a.codigo].no_lugar_de_id
-                else ""
-            )
-            == a.no_lugar_de
+            if a.codigo in gravados and _codigo_trocado(gravados[a.codigo], por_id) == a.no_lugar_de
         }
-        catalogo_avulsa = {c.codigo: c for c in catalogo_de(AVULSA) or []} if adicionados else {}
         nomes = {c: catalogo_avulsa[c].nome for c in qtds_adicionadas if c in catalogo_avulsa}
         diferencas = diferencas_atendimento(
             estado_gravado(pedido),
@@ -1039,7 +1064,6 @@ def editar_atendimento(
             return recusa
 
         unicos, catalogo, erros = _validar_atendimento(
-            pedido,
             itens,
             dados,
             parsed,
@@ -1047,6 +1071,7 @@ def editar_atendimento(
             qtds_adicionadas,
             nao_lancar,
             hoje=hoje or timezone.localdate(),
+            base=catalogo_avulsa,
             catalogo_extra=mantidos,
         )
         erros = _erros_de_valor_sumido(cabecalho_atendimento(atendimento), dados) + erros
@@ -1069,18 +1094,7 @@ def editar_atendimento(
         for a in unicos:
             item = gravados.get(a.codigo)
             if item is None:
-                m = catalogo[a.codigo]
-                item = ItemPedido(
-                    pedido=pedido,
-                    codigo=a.codigo,
-                    material=m.nome,
-                    unidade=m.unidade,
-                    grupo=m.grupo,
-                    subgrupo=m.subgrupo,
-                    origem=ItemPedido.Origem.ALMOXARIFADO,
-                    adicionado_por=usuario,
-                    qtd_pedida=None,
-                )
+                item = _novo_acrescentado(pedido, catalogo[a.codigo], usuario)
             item.no_lugar_de = do_pedido.get(a.no_lugar_de)
             item.qtd_entregue = Decimal(qtds_adicionadas[a.codigo])
             item.save()
@@ -1140,14 +1154,7 @@ def _validar_saida_avulsa(
     if not soma.ordem and not soma.invalidos:
         erros.append(Erro(None, "Adicione ao menos um material."))
     erros += erros_extras_da_saida(envio.dados, envio.nao_lancar, v.centro)
-    erros += erros_de_tamanho(
-        {
-            "Recebedor": envio.dados.recebedor,
-            "Centro de custo": envio.dados.centro_custo,
-            "Observações": envio.dados.obs,
-        },
-        None,
-    )
+    erros += _erros_de_tamanho_da_saida(envio.dados)
     return soma, erros
 
 
@@ -1171,6 +1178,9 @@ def registrar_saida_avulsa(
 ) -> Resposta:
     """Saída registrada direto pelo almoxarifado (`registrarSaidaAvulsa`): pedido AVULSA,
     atendimento e linhas de saída numa transação."""
+    # Como no `registrar_pedido`: o catálogo é lido antes de travar a numeração, que os
+    # formulários públicos também esperam.
+    catalogo = catalogo_de(AVULSA)
     with transaction.atomic():
         seq = travar_sequencia()
         anterior = Pedido.objects.filter(pk=envio_id).first()
@@ -1188,7 +1198,6 @@ def registrar_saida_avulsa(
                 ok=False, divergente=True, mensagem=mensagem_divergente(anterior.numero)
             )
 
-        catalogo = catalogo_de(AVULSA)
         if catalogo is None:
             return Resposta(ok=False, mensagem="O cadastro de materiais não está disponível agora.")
         por_codigo = {i.codigo: i for i in catalogo}
@@ -1224,6 +1233,8 @@ def editar_saida_avulsa(
 ) -> Resposta:
     """Corrige uma saída avulsa enquanto o lote não entrou em lançamento: dados da saída e
     materiais (o carrinho inteiro substitui os itens)."""
+    # Lido antes de travar o pedido e as linhas, que o robô também trava.
+    catalogo = catalogo_de(AVULSA)
     with transaction.atomic():
         pedido = Pedido.objects.select_for_update().filter(pk=pedido_id).first()
         atendimento = pedido.atendimento_ou_none if pedido is not None else None
@@ -1232,7 +1243,6 @@ def editar_saida_avulsa(
         linhas = list(
             LinhaSaida.objects.select_for_update().filter(atendimento=atendimento).order_by("seq")
         )
-        catalogo = catalogo_de(AVULSA)
         if catalogo is None:
             return Resposta(ok=False, mensagem="O cadastro de materiais não está disponível agora.")
         por_codigo = {i.codigo: i for i in catalogo}
@@ -1321,7 +1331,6 @@ ACOES_TRAVA = ("lancada", "liberar", "nao_lancar")
 MENSAGEM_LANCAMENTO_EM_ANDAMENTO = (
     "Há um lançamento no SCPI em andamento. Aguarde terminar para resolver as travas."
 )
-_ESTADOS_TRAVA = (VERIFICAR, EM_LANCAMENTO, ERRO)
 
 
 def resolver_lote(
@@ -1355,7 +1364,7 @@ def _resolver_com_a_trava(lote, acao, usuario, requisicao, conferido, agora) -> 
     with transaction.atomic():
         linhas = list(
             LinhaSaida.objects.select_for_update()
-            .filter(lote=lote, status__in=_ESTADOS_TRAVA)
+            .filter(lote=lote, status__in=ESTADOS_TRAVA)
             .order_by("seq")
         )
         if not linhas:
@@ -1385,7 +1394,7 @@ def _resolver_com_a_trava(lote, acao, usuario, requisicao, conferido, agora) -> 
         else:
             novo, feito = NAO_LANCAR, "Marcada para não lançar"
             final = f"Lote {lote} marcado para não lançar no SCPI."
-        quando = timezone.localtime(agora).strftime("%d/%m/%Y %H:%M")
+        quando = data_hora(agora)
         rotulos = dict(LinhaSaida.Status.choices)
         for linha in linhas:
             antes = rotulos.get(linha.status, linha.status)

@@ -108,6 +108,15 @@ def motivo_bloqueio(fluxo, item: ItemCatalogo) -> str:
     return ""
 
 
+def recusa_do_material(fluxo, item: ItemCatalogo | None) -> str:
+    """Por que o material não pode entrar ("" se pode): fora do catálogo ou bloqueado. O mesmo
+    texto no carrinho e no material acrescentado pelo almoxarifado no atendimento."""
+    if item is None:
+        return "Material não encontrado no catálogo."
+    motivo = motivo_bloqueio(fluxo, item)
+    return f"{item.nome} ({item.codigo}): {motivo} — não pode ser adicionado." if motivo else ""
+
+
 def acima_do_estoque(fluxo, item: ItemCatalogo, q) -> str:
     """O erro de quantidade acima do limite, "" se cabe."""
     teto = limite(fluxo, item)
@@ -129,13 +138,8 @@ def quantidade(fluxo, texto_qtd, item: ItemCatalogo | None = None):
 
 def adicionar(linhas, fluxo, item: ItemCatalogo | None, texto_qtd: str) -> Carrinho:
     linhas = list(linhas)
-    if item is None:
-        return Carrinho(linhas, erro="Material não encontrado no catálogo.")
-    motivo = motivo_bloqueio(fluxo, item)
-    if motivo:
-        return Carrinho(
-            linhas, erro=f"{item.nome} ({item.codigo}): {motivo} — não pode ser adicionado."
-        )
+    if recusa := recusa_do_material(fluxo, item):
+        return Carrinho(linhas, erro=recusa)
     q, erro = quantidade(fluxo, texto_qtd, item)
     if erro:
         return Carrinho(linhas, erro=erro)

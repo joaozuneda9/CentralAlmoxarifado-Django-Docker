@@ -784,10 +784,17 @@ class Edicao:
         return self.chave == "editavel"
 
 
-def _data_hora(momento: datetime) -> str:
+def data_hora(momento: datetime) -> str:
     if timezone.is_aware(momento):
         momento = timezone.localtime(momento)
     return momento.strftime("%d/%m/%Y %H:%M")
+
+
+def lote_todo_sem_lancar(status: Iterable[str]) -> bool:
+    """O lote inteiro marcado para não lançar (em Automações, o que muda as linhas e não o
+    atendimento): vale como a caixa "Não lançar" marcada."""
+    status = list(status)
+    return bool(status) and all(s == NAO_LANCAR for s in status)
 
 
 def edicao_permitida(atendido: bool, linhas) -> Edicao:
@@ -805,7 +812,7 @@ def edicao_permitida(atendido: bool, linhas) -> Edicao:
         datas = [r.lancado_em for r in lancadas if r.lancado_em]
         quando = max(datas) if datas else None
         onde = f"na requisição {', '.join(numeros)}" if numeros else "no SCPI"
-        em = f" em {_data_hora(quando)}" if quando else ""
+        em = f" em {data_hora(quando)}" if quando else ""
         return Edicao(
             "bloqueada",
             f"Lançado {onde}{em}; correções são feitas no SCPI.",
@@ -970,7 +977,7 @@ def cabecalho_enviado(origem: str, envio) -> tuple[str, ...]:
     return cabecalho_saida(envio.dados, envio.nao_lancar)
 
 
-def itens_conferem(origem: str, itens_gravados, envio) -> bool:
+def itens_conferem(itens_gravados, envio) -> bool:
     """Só o conjunto código → quantidade, somando repetições como a gravação faz."""
     gravados: dict[str, Decimal] = {}
     for codigo, qtd in itens_gravados:
@@ -990,7 +997,7 @@ def registro_confere(origem: str, cabecalho_gravado, itens_gravados, envio) -> b
     (`registroConfere_`)."""
     if tuple(texto(v) for v in cabecalho_gravado) != cabecalho_enviado(origem, envio):
         return False
-    return itens_conferem(origem, itens_gravados, envio)
+    return itens_conferem(itens_gravados, envio)
 
 
 def atendimento_confere(

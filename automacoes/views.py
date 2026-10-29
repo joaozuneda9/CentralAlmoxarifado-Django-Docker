@@ -25,7 +25,12 @@ from catalogo.models import Importacao
 from catalogo.saude import situacao_do_catalogo
 from interface.htmx import regiao_pedida, render_regiao
 from pedidos import andamento
-from pedidos.consultas import fila_do_robo, lotes_pendentes, lotes_travados
+from pedidos.consultas import (
+    contar_lotes_travados,
+    fila_do_robo,
+    lotes_pendentes,
+    lotes_travados,
+)
 from pedidos.forms import LancamentoForm
 from pedidos.models import ExecucaoRobo
 from pedidos.servicos import resolver_lote
@@ -160,7 +165,7 @@ def _lancamento_resumido() -> dict:
         interrompida=bool(execucao and execucao.interrompida),
         em_andamento=ExecucaoRobo.em_andamento(timezone.now()).exists(),
         pendentes=lotes_pendentes(),
-        travados=len(lotes_travados()),
+        travados=contar_lotes_travados(),
     )
 
 
