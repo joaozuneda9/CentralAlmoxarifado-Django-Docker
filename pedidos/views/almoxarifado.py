@@ -431,40 +431,48 @@ def editar(request, numero):
 
 def _editar_avulsa(request, pedido):
     """Modo de edição da saída avulsa: o formulário da saída avulsa, com o carrinho e os dados
-    da saída gravados."""
+    da saída gravados. A tela só é montada quando é mostrada (o salvar que dá certo não a paga), e
+    o catálogo vai pronto para o serviço."""
     fluxo = FLUXOS["avulsa"]
     catalogo = catalogo_de(fluxo.origem)
-    por_codigo = {i.codigo: i for i in catalogo or []}
     atendimento = pedido.atendimento
-    linhas = pedido.linhas
-    campos, nao_lancar = _campos_gravados(atendimento, linhas)
-    contexto = {
-        "fluxo": fluxo,
-        "indisponivel": catalogo is None,
-        "editando": True,
-        "acompanhar_robo": _acompanhar_robo(),
-        "pedido": pedido,
-        "versao": pedido.versao,
-        "lote_com_erro": _lote_com_erro(linhas),
-        "campos": campos,
-        "nao_lancar": nao_lancar,
-        # Material já na saída aparece mesmo que tenha saído do catálogo.
-        "carrinho": carrinho_mod.Carrinho(
-            [
-                carrinho_mod.LinhaCarrinho(
-                    i.codigo, i.qtd_entregue, por_codigo.get(i.codigo) or item_catalogo_gravado(i)
-                )
-                for i in pedido.itens.all()
-            ]
-        ),
-        "codigos_erro": set(),
-        "filtros": [],
-        **contexto_busca(fluxo, catalogo or []),
-        **urls_do_fluxo(fluxo),
-        **opcoes_saida(),
-    }
-    if request.method != "POST":
+
+    def tela(**extra):
+        por_codigo = {i.codigo: i for i in catalogo or []}
+        linhas = pedido.linhas
+        campos, nao_lancar = _campos_gravados(atendimento, linhas)
+        contexto = {
+            "fluxo": fluxo,
+            "indisponivel": catalogo is None,
+            "editando": True,
+            "acompanhar_robo": _acompanhar_robo(),
+            "pedido": pedido,
+            "versao": pedido.versao,
+            "lote_com_erro": _lote_com_erro(linhas),
+            "campos": campos,
+            "nao_lancar": nao_lancar,
+            # Material já na saída aparece mesmo que tenha saído do catálogo.
+            "carrinho": carrinho_mod.Carrinho(
+                [
+                    carrinho_mod.LinhaCarrinho(
+                        i.codigo,
+                        i.qtd_entregue,
+                        por_codigo.get(i.codigo) or item_catalogo_gravado(i),
+                    )
+                    for i in pedido.itens.all()
+                ]
+            ),
+            "codigos_erro": set(),
+            "filtros": [],
+            **contexto_busca(fluxo, catalogo or []),
+            **urls_do_fluxo(fluxo),
+            **opcoes_saida(),
+            **extra,
+        }
         return render(request, "pedidos/avulsa.html", contexto)
+
+    if request.method != "POST":
+        return tela()
 
     try:
         versao = int(request.POST.get("versao", ""))
@@ -474,7 +482,9 @@ def _editar_avulsa(request, pedido):
     recibo_estava_impresso = bool(atendimento.recibo_impresso_em)
     dados, nao_lancar = dados_saida(request.POST)
     envio = EnvioSaida(dados, carrinho_mod.itens_enviados(request.POST), nao_lancar)
-    resposta = editar_saida_avulsa(pedido.id, versao, envio, usuario=request.user)
+    resposta = editar_saida_avulsa(
+        pedido.id, versao, envio, usuario=request.user, catalogo=catalogo
+    )
     if resposta.ok:
         _avisar_salvo(request, resposta, recibo_estava_impresso)
         return redirect("pedidos:detalhe", numero=pedido.numero)
@@ -484,7 +494,7 @@ def _editar_avulsa(request, pedido):
     if not resposta.erros:
         messages.error(request, resposta.mensagem)
         return redirect("pedidos:detalhe", numero=pedido.numero)
-    contexto.update(
+    return tela(
         versao=versao,
         campos=request.POST,
         nao_lancar=nao_lancar,
@@ -493,7 +503,6 @@ def _editar_avulsa(request, pedido):
         erros=resposta.erros,
         codigos_erro={e.codigo for e in resposta.erros if e.codigo},
     )
-    return render(request, "pedidos/avulsa.html", contexto)
 
 
 def _adicionados_enviados(post) -> list[Adicionado]:
@@ -634,37 +643,42 @@ def avulsa_carrinho(request):
 
 @login_required
 def avulsa(request):
-    """Saída registrada direto pelo almoxarifado, sem pedido anterior."""
+    """Saída registrada direto pelo almoxarifado, sem pedido anterior. A tela só é montada quando
+    é mostrada (o registro que dá certo não a paga), e o catálogo vai pronto para o serviço."""
     fluxo = FLUXOS["avulsa"]
     catalogo = catalogo_de(fluxo.origem)
-    contexto = {
-        "fluxo": fluxo,
-        "indisponivel": catalogo is None,
-        "envio_id": uuid.uuid4(),
-        "campos": {"data": timezone.localdate().isoformat()},
-        "carrinho": carrinho_mod.Carrinho(),
-        "codigos_erro": set(),
-        "filtros": [],
-        **contexto_busca(fluxo, catalogo or []),
-        **urls_do_fluxo(fluxo),
-        **opcoes_saida(so_ativos=True),
-    }
-    if request.method != "POST":
+
+    def tela(**extra):
+        contexto = {
+            "fluxo": fluxo,
+            "indisponivel": catalogo is None,
+            "envio_id": uuid.uuid4(),
+            "campos": {"data": timezone.localdate().isoformat()},
+            "carrinho": carrinho_mod.Carrinho(),
+            "codigos_erro": set(),
+            "filtros": [],
+            **contexto_busca(fluxo, catalogo or []),
+            **urls_do_fluxo(fluxo),
+            **opcoes_saida(so_ativos=True),
+            **extra,
+        }
         return render(request, "pedidos/avulsa.html", contexto)
 
+    if request.method != "POST":
+        return tela()
+
     dados, nao_lancar = dados_saida(request.POST)
-    contexto.update(
-        campos=request.POST,
-        nao_lancar=nao_lancar,
-        carrinho=carrinho_mod.Carrinho(carrinho_mod.ler(request.POST, fluxo, catalogo)),
-    )
+    enviado = {
+        "campos": request.POST,
+        "nao_lancar": nao_lancar,
+        "carrinho": carrinho_mod.Carrinho(carrinho_mod.ler(request.POST, fluxo, catalogo)),
+    }
     try:
         envio_id = uuid.UUID(request.POST.get("envio_id", ""))
     except ValueError:
-        contexto["mensagem"] = "Identificador do envio inválido. Recarregue a página."
-        return render(request, "pedidos/avulsa.html", contexto)
+        return tela(**enviado, mensagem="Identificador do envio inválido. Recarregue a página.")
     envio = EnvioSaida(dados, carrinho_mod.itens_enviados(request.POST), nao_lancar)
-    resposta = registrar_saida_avulsa(envio_id, envio, usuario=request.user)
+    resposta = registrar_saida_avulsa(envio_id, envio, usuario=request.user, catalogo=catalogo)
     if resposta.ok:
         if resposta.reenvio:
             texto = f"Saída já registrada (reenvio confirmado): Nº {resposta.numero}."
@@ -672,14 +686,14 @@ def avulsa(request):
             texto = f"Saída avulsa registrada: Nº {resposta.numero}."
         messages.success(request, texto)
         return redirect("pedidos:detalhe", numero=resposta.numero)
-    contexto.update(
+    return tela(
+        **enviado,
         envio_id=uuid.uuid4() if resposta.divergente else envio_id,
         divergente=resposta.divergente,
         mensagem=resposta.mensagem,
         erros=resposta.erros,
         codigos_erro={e.codigo for e in resposta.erros if e.codigo},
     )
-    return render(request, "pedidos/avulsa.html", contexto)
 
 
 @login_required

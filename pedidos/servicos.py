@@ -126,6 +126,15 @@ def catalogo_de(origem: str) -> list[ItemCatalogo] | None:
     return fluxo.catalogo() if fluxo is not None else None
 
 
+# Valor padrão do `catalogo` dos serviços que gravam: o serviço monta o catálogo. A view que já o
+# montou para a tela o passa, e o envio não paga a conta duas vezes (a do AB é pesada).
+MONTAR = object()
+
+
+def _catalogo(origem: str, catalogo) -> list[ItemCatalogo] | None:
+    return catalogo_de(origem) if catalogo is MONTAR else catalogo
+
+
 def _itens_gravados(pedido: Pedido) -> list[tuple[str, Decimal]]:
     return [(i.codigo, i.qtd_pedida) for i in pedido.itens.filter(origem=ItemPedido.Origem.PEDIDO)]
 
@@ -211,13 +220,15 @@ def registrar_pedido(
     ip: str | None = None,
     url_painel: str = "",
     agora: datetime | None = None,
+    catalogo=MONTAR,
 ) -> Resposta:
-    """Pedido dos formulários públicos (`registrarPedido`)."""
+    """Pedido dos formulários públicos (`registrarPedido`). `catalogo` é o `catalogo_de(origem)`
+    que a view já montou (`MONTAR`, o padrão, o monta aqui)."""
     agora = agora or timezone.now()
     # O catálogo (o do AB é uma conta pesada) e os centros são lidos antes de travar a numeração:
     # o estoque é só um teto, nada é reservado, e os outros envios não podem esperar essa conta.
     # A ordem das respostas abaixo não muda (reenvio, limite, indisponível, validação).
-    catalogo = catalogo_de(origem)
+    catalogo = _catalogo(origem, catalogo)
     fluxo = fluxo_da_origem(origem)  # None só para origem desconhecida, que não tem catálogo
     lista_centros = centros_do_fluxo(fluxo)
     # O número da ocorrência só vale no formulário que o pede; nos outros, o que vier é ignorado.
@@ -1174,13 +1185,18 @@ def _gravar_itens_avulsa(pedido: Pedido, soma, por_codigo: dict) -> list[ItemPed
 
 
 def registrar_saida_avulsa(
-    envio_id: uuid.UUID, envio: EnvioSaida, *, usuario, hoje: date | None = None
+    envio_id: uuid.UUID,
+    envio: EnvioSaida,
+    *,
+    usuario,
+    hoje: date | None = None,
+    catalogo=MONTAR,
 ) -> Resposta:
     """Saída registrada direto pelo almoxarifado (`registrarSaidaAvulsa`): pedido AVULSA,
-    atendimento e linhas de saída numa transação."""
+    atendimento e linhas de saída numa transação. `catalogo` como no `registrar_pedido`."""
     # Como no `registrar_pedido`: o catálogo é lido antes de travar a numeração, que os
     # formulários públicos também esperam.
-    catalogo = catalogo_de(AVULSA)
+    catalogo = _catalogo(AVULSA, catalogo)
     with transaction.atomic():
         seq = travar_sequencia()
         anterior = Pedido.objects.filter(pk=envio_id).first()
@@ -1230,11 +1246,12 @@ def editar_saida_avulsa(
     *,
     usuario,
     hoje: date | None = None,
+    catalogo=MONTAR,
 ) -> Resposta:
     """Corrige uma saída avulsa enquanto o lote não entrou em lançamento: dados da saída e
-    materiais (o carrinho inteiro substitui os itens)."""
+    materiais (o carrinho inteiro substitui os itens). `catalogo` como no `registrar_pedido`."""
     # Lido antes de travar o pedido e as linhas, que o robô também trava.
-    catalogo = catalogo_de(AVULSA)
+    catalogo = _catalogo(AVULSA, catalogo)
     with transaction.atomic():
         pedido = Pedido.objects.select_for_update().filter(pk=pedido_id).first()
         atendimento = pedido.atendimento_ou_none if pedido is not None else None
