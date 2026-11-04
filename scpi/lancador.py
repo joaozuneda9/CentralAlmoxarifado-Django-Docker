@@ -229,8 +229,8 @@ def sair_do_campo(frame: Frame, entrada, etapa: str) -> None:
     checar_mensagem(frame, etapa)
 
 
-# Pedidos Ajax que o ExtJS manda ao servidor do SCPI. O valor do combo só vale no Salvar se o
-# servidor recebeu o evento `select` com ele: depois do Cancelar, no mesmo iframe, o componente
+# Pedidos Ajax que o servidor do SCPI respondeu com sucesso. O valor do combo só vale no Salvar
+# se o servidor recebeu o evento `select` com ele: depois do Cancelar, no mesmo iframe, o componente
 # continua com a opção marcada, escolhê-la de novo não dispara nada, e o servidor (que zerou o
 # formulário) salvava o Tipo Saída vazio, com a tela e o combo mostrando BALCÃO.
 JS_ESCUTAR_PEDIDOS = """
@@ -240,7 +240,9 @@ JS_ESCUTAR_PEDIDOS = """
     window.__scpiPedidos = [];
     if (!window.__scpiEscutando) {
         window.__scpiEscutando = true;
-        E.Ajax.on('beforerequest', (conn, o) => {
+        // requestcomplete: só o pedido que o servidor respondeu com sucesso (não o cancelado,
+        // abortado, expirado ou com erro, que vão para requestexception)
+        E.Ajax.on('requestcomplete', (conn, resposta, o) => {
             let p = o && o.params;
             try { p = typeof p === 'string' ? p : JSON.stringify(p); } catch (e) { p = String(p); }
             (window.__scpiPedidos = window.__scpiPedidos || []).push(String(p || ''));
@@ -256,7 +258,8 @@ PAUSA_COMBO_MS = 800  # entre as ações da nova escolha: o SCPI processa cada c
 
 
 def escutar_pedidos(frame: Frame) -> bool:
-    """Passa a guardar os pedidos Ajax do quadro (zerando os já guardados)."""
+    """Passa a guardar os pedidos Ajax do quadro concluídos com sucesso (zerando os já
+    guardados)."""
     try:
         return bool(frame.evaluate(JS_ESCUTAR_PEDIDOS))
     except Exception:

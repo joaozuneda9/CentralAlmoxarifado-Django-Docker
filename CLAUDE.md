@@ -579,7 +579,8 @@ transações precisam se comportar como no servidor.
   conferência final (`RODADAS_RECONCILIACAO`, 5) o robô pede essa recarga (`recarregar_grade`) e a
   tela passa a mostrar o que o servidor tem (se a recarga falha, a conferência final recusa o lote em vez de aceitar a tela); o log traz o diagnóstico (`registrar_regressoes`,
   `registrar_servidor`). O Tipo Saída só vale quando o servidor do SCPI recebeu a escolha:
-  o `selecionar_combo` escuta os pedidos Ajax do ExtJS (`escutar_pedidos`, `pedidos_enviados`) e
+  o `selecionar_combo` escuta os pedidos Ajax do ExtJS que o servidor respondeu com sucesso
+  (`requestcomplete`; `escutar_pedidos`, `pedidos_enviados`) e
   exige o evento `select` com a opção (`servidor_recebeu`, puro). Nem o texto da tela nem o valor do
   componente bastam: no mesmo iframe, depois do Cancelar, o combo continua com BALCÃO, escolhê-lo de
   novo não manda nada, e o servidor salvava o tipo vazio. Sem o envio, escolhe de novo com calma
