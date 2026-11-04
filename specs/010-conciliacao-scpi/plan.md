@@ -214,8 +214,8 @@ apresentação, na aba que já existe.
 - **Não muda**: robô, `SaidaSCPI`, telas.
 - **Testes**:
   - leitura: colunas obrigatórias, registro quebrado, planilha, cabeçalho variando, vazio, quantidade 0;
-  - extração: sucesso, falha (sem requisições gravadas e com `maior_requisicao` nulo), impressão igual,
-    trava ocupada;
+  - extração: sucesso, falha (sem requisições gravadas e com `maior_requisicao` nulo), impressão igual
+    (aponta para a origem), impressão igual a uma origem já sem bytes (guarda o seu), trava ocupada;
   - chave na virada do ano.
 - **Pronto quando**: os portões passam e o quickstart, passo 2 (primeira parte), foi feito pelo usuário
   no SCPI real.

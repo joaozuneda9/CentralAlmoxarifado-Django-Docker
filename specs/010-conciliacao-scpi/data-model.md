@@ -50,7 +50,9 @@ por tipo (`trava_importacao`) passam a valer para a extração sem nenhuma outra
 
 **Retenção do bruto**: a limpeza só esvazia o `arquivo` de uma extração quando ela **e todas as que
 apontam para ela** (`mesmo_arquivo_que`) têm mais de 60 dias. Uma extração repetida recente segura o
-bruto da origem até ela mesma passar dos 60 dias.
+bruto da origem até ela mesma passar dos 60 dias. A deduplicação só aponta para uma extração que
+**ainda tem os bytes**; se a única com a mesma impressão já teve o bruto apagado, a extração nova
+guarda o seu e passa a ser a origem.
 
 ## `RequisicaoOficial` e `ItemOficial` (PR 1)
 

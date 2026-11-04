@@ -258,8 +258,9 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
 
 1. **Given** uma extração, **When** ela termina, **Then** o arquivo bruto fica guardado comprimido, com
    a impressão digital do conteúdo registrada.
-2. **Given** uma extração igual à anterior (mesma impressão digital), **When** ela termina, **Then** não
-   se guarda um arquivo novo.
+2. **Given** uma extração igual à anterior (mesma impressão digital), cujo bruto ainda está guardado,
+   **When** ela termina, **Then** não se guarda um arquivo novo; se o bruto da anterior já foi apagado,
+   a nova guarda o seu.
 3. **Given** um arquivo bruto com mais de 60 dias, **When** a limpeza roda, **Then** ele é apagado e o
    veredito, as linhas ligadas a lotes e a impressão digital continuam no banco.
 
@@ -322,7 +323,9 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
   nas requisições do robô é a data digitada: o período sempre cobre as requisições que o robô pode ter
   salvo.
 - **FR-003**: Cada extração DEVE guardar o arquivo bruto comprimido e a impressão digital do seu
-  conteúdo; uma extração com a mesma impressão digital da anterior NÃO PODE gerar arquivo novo.
+  conteúdo; uma extração com a mesma impressão digital de outra cujo bruto ainda está guardado NÃO
+  PODE gerar arquivo novo e aponta para ela. Se o bruto daquela já foi apagado, a extração nova guarda
+  o seu.
 - **FR-004**: O arquivo bruto DEVE ser apagado depois de 60 dias; as linhas das requisições ligadas a
   lotes, os vereditos e a impressão digital DEVEM ficar para sempre.
 - **FR-005**: Uma extração vazia num período com lotes lançados, ou que não puder ser lida por inteiro,

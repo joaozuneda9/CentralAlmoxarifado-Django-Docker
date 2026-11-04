@@ -33,7 +33,8 @@ SHA-256 dos bytes recebidos (`impressao`). Se a impressão for igual à da extra
 período, o campo fica vazio e `mesmo_arquivo_que` aponta para a extração que guarda o arquivo
 (FR-003). A limpeza de 60 dias esvazia o campo e marca `arquivo_apagado_em` (FR-004), mas só
 quando a extração e todas as que apontam para ela passaram dos 60 dias. Assim, uma extração repetida
-recente nunca fica sem o bruto.
+recente nunca fica sem o bruto. A deduplicação só aponta para uma extração que ainda guarda os bytes;
+se o bruto com a mesma impressão já foi apagado, a nova extração guarda o seu.
 
 **Motivo**:
 - Cerca de 20 KB por extração e 4 a 5 extrações por dia dão uns 6 MB em 60 dias.

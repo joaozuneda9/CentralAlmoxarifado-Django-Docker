@@ -131,7 +131,9 @@ sem cor.
 - uma falha nele que não desfaz os três primeiros;
 - a limpeza que esvazia o bruto com mais de 60 dias e mantém os vereditos e as requisições ligadas
   (SC-007);
-- uma extração igual à anterior que não guarda arquivo novo.
+- uma extração igual à anterior que não guarda arquivo novo;
+- a origem que só perde o bruto quando ela e todas as que apontam para ela passaram dos 60 dias;
+- uma extração igual a uma origem já sem bruto, que guarda o seu.
 
 O `deploy/crontab` mostra o `atualizar_catalogo` às 07:15. Daqui em diante, um novo repasse do
 passo 6 leva `--sem-limpeza`, para não apagar brutos da cópia local.

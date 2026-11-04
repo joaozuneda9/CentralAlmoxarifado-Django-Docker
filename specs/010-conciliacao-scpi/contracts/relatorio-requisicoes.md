@@ -31,7 +31,7 @@ SCPI › Relatórios › Requisições › Relação de Requisições, rádio "R
 | `RECEBE` | sim | recebedor |
 | `PLACA` | não | placa (o SCPI preenche a partir do centro de uma viatura) |
 | `OBS_CABECALHO` | sim | campo Observações; leva "Central Almoxarifado <lote>" |
-| `CADPRO` | sim | código do material, comparado cru |
+| `CADPRO` | sim | código do material, comparado por `norm_u` e sem de/para (FR-019b) |
 | `QUAN2` | sim | quantidade, `decimal_br` |
 | `UNID1` | não | unidade (só exibição) |
 | `ENTR` | não | "S" nos ajustes e transferências |
