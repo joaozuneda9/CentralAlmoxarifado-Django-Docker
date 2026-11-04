@@ -138,10 +138,15 @@ São o resultado de um lote numa extração (FR-004 da spec, entidade "Conferên
 ### "Aguardando" nunca vem de uma extração com falha
 
 Só uma extração `SUCESSO` grava `ConferenciaLote`. O "Aguardando conferência" da tela é **derivado**:
-é o estado de um lote lançado que ainda não tem conferência de uma extração bem-sucedida feita
-depois do lançamento (nenhuma extração, ou só extrações com falha). Uma `ConferenciaLote` com
-`AGUARDANDO` só é gravada por uma extração bem-sucedida que ainda não traz a requisição nem um número
-maior (a latência do SC-008).
+é o estado de um lote lançado que ainda não tem **conferência conclusiva** depois do lançamento. Isso
+cobre três casos:
+- nenhuma extração depois do lançamento;
+- só extrações com falha, que não gravam nada;
+- só extrações bem-sucedidas com `veredito=AGUARDANDO`, que ainda não trazem a requisição nem um
+  número maior (a latência do SC-008).
+
+Uma `ConferenciaLote` com `AGUARDANDO` vem só desse último caso e mantém o lote nesse estado. O
+primeiro veredito conclusivo é o do lançamento (FR-017).
 
 ### Estados de um lote lançado
 

@@ -356,7 +356,8 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
 - **FR-015**: Uma requisição oficial DEVE ser ligada a um lote pelo lote nas observações e pelo número
   gravado no lote; quando os dois existem, DEVEM apontar para a mesma requisição.
 - **FR-016**: Cada lote lançado DEVE receber, por extração que cobre a sua data, um destes vereditos:
-  - **Aguardando conferência**: ainda não houve extração bem-sucedida depois do lançamento;
+  - **Aguardando conferência**: ainda não há conferência conclusiva depois do lançamento: nenhuma
+    extração bem-sucedida, ou só as que ainda não trazem a requisição nem um número maior;
   - **Comprovado**: requisição ligada, com o mesmo tipo, a mesma data, o mesmo centro de custo, o
     mesmo recebedor, a placa esperada e a mesma lista de código e quantidade (mesmo número de linhas,
     quantidades exatas, códigos sem de/para);
