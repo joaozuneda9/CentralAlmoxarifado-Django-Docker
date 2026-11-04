@@ -367,7 +367,8 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
   - **Duplicado**: duas requisições com o lote nas observações, ou o mesmo número gravado em dois lotes;
   - **Vínculo em conflito**: observações e número apontam para requisições diferentes.
 - **FR-017**: O veredito do lançamento DEVE vir da primeira extração bem-sucedida feita depois do
-  lançamento; as extrações seguintes que cobrirem a data do lote DEVEM conferi-lo de novo e registrar
+  lançamento que dê um veredito conclusivo (diferente de "Aguardando conferência"); as extrações
+  seguintes que cobrirem a data do lote DEVEM conferi-lo de novo e registrar
   qualquer diferença como "alterado no SCPI depois do lançamento", com o campo e a extração, sem mudar o
   veredito do lançamento.
 - **FR-018**: Um lote divergente que uma extração posterior mostrar igual à entrega DEVE passar a

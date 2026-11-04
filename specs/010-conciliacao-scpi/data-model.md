@@ -145,8 +145,13 @@ cobre três casos:
 - só extrações bem-sucedidas com `veredito=AGUARDANDO`, que ainda não trazem a requisição nem um
   número maior (a latência do SC-008).
 
-Uma `ConferenciaLote` com `AGUARDANDO` vem só desse último caso e mantém o lote nesse estado. O
-primeiro veredito conclusivo é o do lançamento (FR-017).
+Uma `ConferenciaLote` com `AGUARDANDO` vem só desse último caso e mantém o lote nesse estado.
+
+**Tipo da conferência**: enquanto o lote não tem conferência conclusiva, toda conferência dele é do
+tipo `LANCAMENTO`, inclusive as `AGUARDANDO`, que são provisórias. A **primeira conferência
+`LANCAMENTO` conclusiva** dá o veredito do lançamento (FR-017). Só as conferências seguintes a ela são
+`REVISAO`. Assim, a latência do relatório nunca transforma o veredito do lançamento em revisão, e o
+"alterado no SCPI depois do lançamento" compara sempre contra esse primeiro veredito conclusivo.
 
 ### Estados de um lote lançado
 

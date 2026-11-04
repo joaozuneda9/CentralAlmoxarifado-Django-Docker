@@ -187,8 +187,10 @@ A origem do vínculo fica gravada: `observacoes`, `numero` ou `ambos`.
 ## R13. Revisão nas extrações seguintes
 
 **Decisão**:
-- A primeira conferência bem-sucedida depois do lançamento é a do lançamento (`tipo=LANCAMENTO`).
-- Cada extração seguinte que cobre a data grava uma de `tipo=REVISAO`. Se a requisição ligada diferir
+- Enquanto o lote não tem conferência conclusiva, cada extração bem-sucedida grava uma de
+  `tipo=LANCAMENTO`; as `AGUARDANDO` são provisórias. A primeira `LANCAMENTO` conclusiva é a do
+  veredito do lançamento.
+- Cada extração seguinte a ela que cobre a data grava uma de `tipo=REVISAO`. Se a requisição ligada diferir
   da conferida no lançamento, a revisão marca `alterado_depois` e lista as diferenças entre as duas
   fotos oficiais.
 - O veredito do lançamento não muda (FR-017), com uma exceção: o Divergente que uma revisão mostra
