@@ -135,6 +135,14 @@ São o resultado de um lote numa extração (FR-004 da spec, entidade "Conferên
 `Candidata` tem `conferencia` (FK, `CASCADE`), `requisicao` (FK → `RequisicaoOficial`, `PROTECT`),
 `e_esta` (bool: este lote nas observações) e `ordem` (semelhança, FR-023).
 
+### "Aguardando" nunca vem de uma extração com falha
+
+Só uma extração `SUCESSO` grava `ConferenciaLote`. O "Aguardando conferência" da tela é **derivado**:
+é o estado de um lote lançado que ainda não tem conferência de uma extração bem-sucedida feita
+depois do lançamento (nenhuma extração, ou só extrações com falha). Uma `ConferenciaLote` com
+`AGUARDANDO` só é gravada por uma extração bem-sucedida que ainda não traz a requisição nem um número
+maior (a latência do SC-008).
+
 ### Estados de um lote lançado
 
 ```text

@@ -43,7 +43,9 @@ As demais colunas ficam só no arquivo bruto.
 
 1. Falta uma coluna obrigatória: `ErroImportacao` com o nome dela.
 2. Nenhum registro: `ErroImportacao`. A extração falha (FR-005).
-3. `REQUI` fora do formato: `ErroImportacao` com a linha. Nada é gravado.
+3. `REQUI` fora do formato: `ErroImportacao` com a linha. Nenhuma `RequisicaoOficial` é gravada; a
+   `ExtracaoOficial` fica registrada, sem requisições e com `maior_requisicao` nulo, e a `Importacao`
+   termina `FALHA` com o motivo. Vale para todo `ErroImportacao` desta lista.
 4. Um campo de cabeçalho que varia entre as linhas da mesma requisição: `ErroImportacao`. No CSV real,
    isso nunca acontece.
 5. Quantidade ilegível: `ErroImportacao`. Quantidade 0 é aceita, porque aparece nos ajustes de

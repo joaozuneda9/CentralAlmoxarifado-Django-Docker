@@ -17,7 +17,8 @@ manage.py extrair_requisicoes --desde DD/MM/AAAA --ate DD/MM/AAAA [--arquivo CSV
 ### `conciliar_lancamentos` (PR 4)
 
 ```text
-manage.py conciliar_lancamentos [--arquivo CSV] [--desde DD/MM/AAAA --ate DD/MM/AAAA] [--sem-limpeza]
+manage.py conciliar_lancamentos [--arquivo CSV] [--desde DD/MM/AAAA --ate DD/MM/AAAA]
+manage.py conciliar_lancamentos ... --sem-limpeza        # a partir do PR 6
 ```
 
 - Sem `--arquivo`, extrai o período de R9 (hoje − 9 dias, mais as datas dos lotes em verificar
@@ -59,8 +60,9 @@ A ordem de uma execução **real** é:
    `_gravar` (data-model).
 6. Com o navegador do lançamento fechado, a **extração de depois** (mesmo período). Ela é seguida da
    conciliação dos lotes da execução a partir do PR 3 (candidatas) e do PR 4 (vereditos). Se falhar,
-   gera um aviso no log e os lotes ficam "Aguardando" (FR-012). A situação da execução não piora por
-   isso.
+   gera um aviso no log e nenhuma `ConferenciaLote` é gravada; os lotes aparecem "Aguardando" porque
+   ainda não têm conferência de uma extração bem-sucedida depois do lançamento (FR-012; ver
+   data-model, "Aguardando"). A situação da execução não piora por isso.
 
 A **simulação** (`--dry-run`) não extrai nem concilia (FR-013), mas preenche as Observações.
 

@@ -205,10 +205,14 @@ lê só esse.
 - **Limite superior**: o primeiro número obtido por uma tentativa posterior da mesma execução. Sem
   nenhuma, fica aberto, e vale tudo acima do limite inferior que a extração de depois traz.
 
-Candidata é toda `RequisicaoOficial` da extração com a chave dentro do intervalo (aberto embaixo e
-fechado em cima, quando há cima), seja qual for o tipo, com uma exclusão: a que tem outro lote nas
+Candidata é toda `RequisicaoOficial` da extração com a chave **estritamente entre** os dois limites
+(o FR-022: acima do inferior e abaixo do superior), seja qual for o tipo, com uma exclusão: a que tem outro lote nas
 observações não conta. A que tem este lote nas observações vem marcada "é esta". As demais vêm
 ordenadas pela semelhança da foto: itens iguais, depois tipo, depois centro (FR-023).
+
+O limite superior fica de fora de propósito: é o número que o lote seguinte obteve, e não pode ser do
+lote em verificar. Se entrasse, sempre haveria uma candidata (a requisição do lote seguinte, quando
+as observações dela se perdessem), e nenhum lote em verificar seria liberado.
 
 **Execuções 8 e 28 (SC-003)**: os limites ficam entre 003495 e 003496 e entre 003532 e 003533, sem
 nenhum número no meio. O intervalo sai vazio.
@@ -248,12 +252,16 @@ não do robô.
 ## R17. Liberação de um lote em verificar (FR-024)
 
 **Decisão**: em `pedidos.servicos._resolver_com_a_trava`, a ação `liberar` com alguma linha
-`VERIFICAR` ou `EM_LANCAMENTO` consulta `conciliacao.consultas.liberacao(lote, agora)`, que exige três
+`VERIFICAR` ou `EM_LANCAMENTO` consulta `conciliacao.consultas.liberacao(lote, agora)`, que exige duas
 condições:
-1. a conferência mais recente do lote é de uma extração **bem-sucedida, iniciada depois da tentativa e
-   cobrindo a data do lote**;
-2. o intervalo dela está vazio;
-3. não há extração mais nova com candidata.
+1. existe ao menos uma conferência do lote feita por uma extração **bem-sucedida, iniciada depois da
+   tentativa e cobrindo a data do lote**;
+2. **nenhuma** dessas conferências teve candidata (FR-024: "ao menos uma candidata").
+
+Uma candidata vista uma vez continua bloqueando, mesmo que uma extração mais nova não a traga: a
+requisição pode ter sumido do relatório por falha dele, e liberar nesse caso arriscaria lançar duas
+vezes (Princípio III). Se a pessoa confirmou no SCPI que a candidata não é deste lote (por exemplo,
+porque foi excluída), o lote se resolve marcando "não lançar" e lançando à mão, ou informando o número.
 
 A caixa "Conferi no SCPI" continua obrigatória. Confirmar a candidata "é esta" usa a ação `lancada` de
 sempre, com o número dela (FR-025).
