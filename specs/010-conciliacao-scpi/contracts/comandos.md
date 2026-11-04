@@ -22,8 +22,9 @@ manage.py conciliar_lancamentos [--arquivo CSV] [--desde DD/MM/AAAA --ate DD/MM/
 
 - Sem `--arquivo`, extrai o período de R9 (hoje − 9 dias, mais as datas dos lotes em verificar
   abertos). Com `--arquivo`, usa o período dado ou o que o próprio CSV cobre.
-- Concilia os lotes lançados e os lotes em verificar cobertos, depois roda a limpeza de 60 dias (a
-  partir do PR 6), salvo com `--sem-limpeza`.
+- Concilia os lotes lançados e os lotes em verificar cobertos.
+- A partir do PR 6, roda em seguida a limpeza de 60 dias, salvo com `--sem-limpeza`. A opção nasce no
+  PR 6, junto com a limpeza; no PR 4 o comando não limpa nada e não tem a opção.
 - Recusa com lançamento ou importação em andamento (FR-029).
 - É o que a tela dispara pelo botão "Conferir agora" (`scpi.disparo.iniciar_conciliacao`, log
   `conciliar_lancamentos.log`). Com `--arquivo`, é também o que repassa o CSV real numa cópia do

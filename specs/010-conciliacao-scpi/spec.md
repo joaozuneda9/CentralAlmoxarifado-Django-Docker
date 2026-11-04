@@ -356,7 +356,7 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
   - **Aguardando conferência**: ainda não houve extração bem-sucedida depois do lançamento;
   - **Comprovado**: requisição ligada, com o mesmo tipo, a mesma data, o mesmo centro de custo, o
     mesmo recebedor, a placa esperada e a mesma lista de código e quantidade (mesmo número de linhas,
-    quantidades exatas, códigos crus);
+    quantidades exatas, códigos sem de/para);
   - **Divergente**: requisição ligada com alguma diferença, cada uma nomeada com os dois valores;
   - **Não encontrado**: nem o número gravado nem o lote nas observações aparecem, e a extração já traz
     requisição com número maior que o do lote;
@@ -375,7 +375,9 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
   do lote no cadastro); um nome diferente com o mesmo código DEVE aparecer como nota, sem tornar o lote
   divergente.
 - **FR-019b**: Toda comparação de texto (tipo, nome do centro, recebedor) DEVE ignorar a forma Unicode
-  dos acentos, as maiúsculas e os espaços nas pontas; códigos e quantidades são comparados exatos.
+  dos acentos, as maiúsculas e os espaços nas pontas. Códigos são comparados por `norm_u`, como em todo
+  o sistema (constituição, Princípio I, igual à collation do banco), e nunca pelo de/para; quantidades
+  são comparadas exatas.
 - **FR-020**: O de/para NUNCA pode aceitar sozinho uma diferença de código; pode só ser mostrado como
   explicação, quando houver par.
 - **FR-021**: A conciliação NÃO PODE mudar o status, o número, a data de lançamento nem a mensagem das
@@ -437,8 +439,11 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
 
 ### Measurable Outcomes
 
-- **SC-001**: Todo lote lançado entre 7h e 17h tem um veredito diferente de "Aguardando conferência"
-  no mesmo dia.
+- **SC-001**: Todo lote lançado entre 7h e 17h tem, no mesmo dia, um veredito diferente de
+  "Aguardando conferência" quando a extração posterior foi bem-sucedida e o relatório já traz a
+  requisição ou um número maior que o do lote. Se a extração falhou (FR-012) ou o relatório ainda não
+  traz nenhum dos dois (SC-008), o lote continua "Aguardando conferência", e o aviso de saúde do FR-028
+  aponta o que passar de um dia útil.
 - **SC-002**: Repassando os dados de 09/10 a 03/11/2026, as sete requisições com Tipo Saída vazio
   (lotes AV-000014, 036, 059, 067, 071, 072 e 073) aparecem como "Divergente: tipo" e as dos lotes
   AV-000083 e 084 como "Divergente: código"; nenhuma delas aparece como comprovada.

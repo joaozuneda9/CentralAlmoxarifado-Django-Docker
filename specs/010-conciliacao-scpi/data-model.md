@@ -36,14 +36,21 @@ por tipo (`trava_importacao`) passam a valer para a extração sem nenhuma outra
 | `impressao` | char(64) | SHA-256 dos bytes recebidos |
 | `arquivo` | `BinaryField`, nulo | gzip do bruto; vazio se igual ao anterior ou depois de 60 dias |
 | `mesmo_arquivo_que` | FK → self, nula | a extração que guarda o mesmo bruto |
-| `arquivo_apagado_em` | datetime, nulo | marcado pela limpeza (FR-004) |
-| `maior_requisicao` | char(9) | o maior `REQUI` lido, pela chave (ano, número); o piso no `ANTES` |
+| `arquivo_apagado_em` | datetime, nulo | marcado pela limpeza (FR-004); vale também para as extrações que apontam para esta |
+| `maior_requisicao` | char(9), nulo | o maior `REQUI` lido, pela chave (ano, número); o piso no `ANTES`; `NULL` em toda extração que não terminou `SUCESSO` |
 | `requisicoes` | int | quantas requisições o relatório trouxe |
 
 **Validação**:
 - uma extração só conta para veredito ou liberação se a `Importacao` terminou `SUCESSO`;
 - extração vazia, cortada ou sem coluna obrigatória é `FALHA` (FR-005);
+- a leitura é tudo ou nada: numa falha, nenhuma `RequisicaoOficial` é gravada e `maior_requisicao`
+  fica `NULL`, mesmo que parte do arquivo tenha sido lida. Uma extração com falha nunca dá piso, nunca
+  conta para "Não encontrado" e nunca libera um lote em verificar;
 - um índice em (`motivo`, `execucao`).
+
+**Retenção do bruto**: a limpeza só esvazia o `arquivo` de uma extração quando ela **e todas as que
+apontam para ela** (`mesmo_arquivo_que`) têm mais de 60 dias. Uma extração repetida recente segura o
+bruto da origem até ela mesma passar dos 60 dias.
 
 ## `RequisicaoOficial` e `ItemOficial` (PR 1)
 

@@ -31,7 +31,9 @@ serviços (`conciliacao/servicos.py`), consultas da tela (`conciliacao/consultas
 **Decisão**: no banco, comprimido com gzip num `BinaryField` da `ExtracaoOficial` (`arquivo`), com o
 SHA-256 dos bytes recebidos (`impressao`). Se a impressão for igual à da extração anterior do mesmo
 período, o campo fica vazio e `mesmo_arquivo_que` aponta para a extração que guarda o arquivo
-(FR-003). A limpeza de 60 dias esvazia o campo e marca `arquivo_apagado_em` (FR-004).
+(FR-003). A limpeza de 60 dias esvazia o campo e marca `arquivo_apagado_em` (FR-004), mas só
+quando a extração e todas as que apontam para ela passaram dos 60 dias. Assim, uma extração repetida
+recente nunca fica sem o bruto.
 
 **Motivo**:
 - Cerca de 20 KB por extração e 4 a 5 extrações por dia dão uns 6 MB em 60 dias.
@@ -150,7 +152,7 @@ Campos comparados (FR-016, FR-019, FR-019a e FR-019b):
 | centro | `cod_ccusto` | `CODCCUSTO` | código, sem zeros à esquerda; o nome diferente vira nota |
 | recebedor | `recebedor` | `RECEBE` | texto normalizado |
 | placa | placa do item ou do centro | `PLACA` | `norm_placa`; se o lote não tem placa, vale a do centro |
-| itens | lista de código e quantidade | lista de `CADPRO` e `QUAN2` | mesmo número de linhas, código por `norm_u`, quantidade `Decimal` exata |
+| itens | lista de código e quantidade | lista de `CADPRO` e `QUAN2` | mesmo número de linhas, código por `norm_u` (Princípio I; o mesmo material para o banco), sem de/para, quantidade `Decimal` exata |
 
 "Texto normalizado" é NFC, `casefold` e sem espaços nas pontas.
 

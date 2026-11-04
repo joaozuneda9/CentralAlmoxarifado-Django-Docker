@@ -98,7 +98,7 @@ uv run python manage.py importar_tentativas --journal <cópia do journal> --dry-
 ```
 
 ```bash
-uv run python manage.py conciliar_lancamentos --arquivo "<CSV real de 23/10 a 04/11>" --sem-limpeza
+uv run python manage.py conciliar_lancamentos --arquivo "<CSV real de 23/10 a 04/11>"
 ```
 
 Esperado (SC-002a): dos 76 lotes com número cobertos pelo CSV,
@@ -133,4 +133,5 @@ sem cor.
   (SC-007);
 - uma extração igual à anterior que não guarda arquivo novo.
 
-O `deploy/crontab` mostra o `atualizar_catalogo` às 07:15.
+O `deploy/crontab` mostra o `atualizar_catalogo` às 07:15. Daqui em diante, um novo repasse do
+passo 6 leva `--sem-limpeza`, para não apagar brutos da cópia local.
