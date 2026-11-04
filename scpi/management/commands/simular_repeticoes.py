@@ -14,7 +14,7 @@ RE_QTD_DO_SERVIDOR = re.compile(r"servidor devolveu QTD \S+ no item (\d+)")
 @contextmanager
 def sessao_ja_aberta(sessao):
     """O `abrir_scpi` do lançamento sem abrir nem fechar nada: cada repetição começa do zero no
-    formulário, mas na mesma sessão do SCPI (a `limpar` do fim de cada simulação o devolve à
+    formulário, mas na mesma sessão do SCPI (o fim de cada simulação reabre o módulo e volta à
     tela de saída)."""
     yield sessao
 

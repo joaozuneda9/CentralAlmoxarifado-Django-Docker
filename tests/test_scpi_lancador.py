@@ -791,3 +791,157 @@ def test_salvar_le_o_numero_depois_de_confirmar_na_ultima_volta(monkeypatch):
 
     assert lancador.salvar_requisicao(quadro, _BotaoSalvar()) == "003722/26"
     assert quadro.respostas == ["Sim"]
+
+
+# ---------------------------------------------------------------- Tipo Saída guardado no combo
+
+BALCAO_GUARDADO = {"texto": "BALCÃO", "valor": "1", "exibido": "BALCÃO"}
+# o que o SCPI deixava depois do Cancelar: a tela mostra BALCÃO, o combo não guardou nada
+BALCAO_SO_NA_TELA = {"texto": "BALCÃO", "valor": None, "exibido": None}
+
+
+def test_combo_confere_exige_o_valor_guardado_e_nao_so_o_texto():
+    assert lancador.combo_confere(BALCAO_GUARDADO, "BALCÃO")
+    assert lancador.combo_confere(dict(BALCAO_GUARDADO, texto="balcao"), "BALCÃO")
+    assert not lancador.combo_confere(BALCAO_SO_NA_TELA, "BALCÃO")
+    assert not lancador.combo_confere(dict(BALCAO_GUARDADO, valor=""), "BALCÃO")
+    assert not lancador.combo_confere(dict(BALCAO_GUARDADO, exibido="ENTREGA"), "BALCÃO")
+    assert not lancador.combo_confere(None, "BALCÃO")  # componente ExtJS não encontrado
+
+
+def _combo_simulado(monkeypatch, estados):
+    estados = iter(estados)
+    escolhas = []
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: object())
+    monkeypatch.setattr(lancador, "aguardar_mascara", lambda frame: None)
+    monkeypatch.setattr(lancador, "checar_mensagem", lambda frame, etapa: None)
+    monkeypatch.setattr(
+        lancador, "escolher_opcao", lambda frame, entrada, opcao: escolhas.append(opcao)
+    )
+    monkeypatch.setattr(lancador, "outra_opcao", lambda frame, entrada, opcao: "ENTREGA")
+    monkeypatch.setattr(lancador, "estado_combo", lambda frame, entrada: next(estados))
+    return escolhas
+
+
+def test_selecionar_combo_escolhe_uma_vez_quando_o_valor_fica_guardado(monkeypatch):
+    escolhas = _combo_simulado(monkeypatch, [BALCAO_GUARDADO])
+
+    lancador.selecionar_combo(_Quadro(), "Tipo Saída", "BALCÃO")
+    assert escolhas == ["BALCÃO"]
+
+
+def test_selecionar_combo_escolhe_de_novo_com_calma_quando_so_a_tela_mudou(monkeypatch):
+    # Clicar na opção que o combo já tem marcada só troca o texto: passa por outra opção antes.
+    escolhas = _combo_simulado(monkeypatch, [BALCAO_SO_NA_TELA, BALCAO_GUARDADO])
+    quadro = _Quadro()
+
+    lancador.selecionar_combo(quadro, "Tipo Saída", "BALCÃO")
+    assert escolhas == ["BALCÃO", "ENTREGA", "BALCÃO"]
+    assert lancador.PAUSA_COMBO_MS in quadro.page.pausas
+
+
+def test_selecionar_combo_recusa_depois_das_tentativas(monkeypatch):
+    escolhas = _combo_simulado(monkeypatch, [BALCAO_SO_NA_TELA] * lancador.TENTATIVAS_COMBO)
+
+    with pytest.raises(ErroSCPI, match="Tipo Saída"):
+        lancador.selecionar_combo(_Quadro(), "Tipo Saída", "BALCÃO")
+    assert escolhas.count("BALCÃO") == lancador.TENTATIVAS_COMBO
+
+
+class _QuadroComAbas(_Quadro):
+    def click(self):
+        pass
+
+
+class _CampoTexto:
+    def __init__(self, valor):
+        self.valor = valor
+
+    def input_value(self):
+        return self.valor
+
+
+def _cabecalho_simulado(monkeypatch, estados):
+    req = _Requisicao()
+    req.recebedor = "Fulano"
+    textos = {
+        "Data e Hora da Saída": req.data,
+        "Tipo Saída": "BALCÃO",
+        "Centro de Custo": req.cod_ccusto,
+        "Recebimento": req.recebedor,
+    }
+    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: _CampoTexto(textos[rotulo]))
+    estados = iter(estados)
+    monkeypatch.setattr(lancador, "estado_combo", lambda frame, entrada: next(estados))
+    selecoes = []
+    monkeypatch.setattr(
+        lancador, "selecionar_combo", lambda frame, rotulo, opcao: selecoes.append(opcao)
+    )
+    return req, selecoes
+
+
+def test_conferir_cabecalho_aceita_o_tipo_guardado(monkeypatch):
+    req, selecoes = _cabecalho_simulado(monkeypatch, [BALCAO_GUARDADO])
+
+    lancador.conferir_cabecalho(_QuadroComAbas(), req)
+    assert selecoes == []
+
+
+def test_conferir_cabecalho_escolhe_o_tipo_de_novo_antes_de_recusar(monkeypatch):
+    req, selecoes = _cabecalho_simulado(monkeypatch, [BALCAO_SO_NA_TELA])
+
+    lancador.conferir_cabecalho(_QuadroComAbas(), req)  # a nova seleção confere e levanta se falhar
+    assert selecoes == ["BALCÃO"]
+
+
+def test_conferir_cabecalho_recusa_se_a_nova_selecao_falha(monkeypatch):
+    req, _ = _cabecalho_simulado(monkeypatch, [BALCAO_SO_NA_TELA])
+
+    def falha(frame, rotulo, opcao):
+        raise ErroSCPI("combo 'Tipo Saída' não guardou 'BALCÃO'")
+
+    monkeypatch.setattr(lancador, "selecionar_combo", falha)
+    with pytest.raises(ErroSCPI, match="não guardou"):
+        lancador.conferir_cabecalho(_QuadroComAbas(), req)
+
+
+# ---------------------------------------------------------------- próximo lote em módulo novo
+
+
+def _navegador_que_recomeca(monkeypatch, reabrir_falha=False):
+    passos = []
+    nav = NavegadorSCPI(playwright=None)
+    nav.page = type("P", (), {"screenshot": lambda self, path: None})()
+    monkeypatch.setattr(nav, "limpar", lambda: passos.append("limpar"))
+
+    def reabrir():
+        passos.append("reabrir")
+        if reabrir_falha:
+            raise RuntimeError("Fechar não respondeu")
+
+    monkeypatch.setattr(nav, "reabrir_modulo", reabrir)
+    monkeypatch.setattr(nav, "reiniciar", lambda: passos.append("reiniciar"))
+    return nav, passos
+
+
+def test_descartar_reabre_o_modulo_depois_de_limpar(monkeypatch, settings, tmp_path):
+    # Só Cancelar deixava o formulário seguinte com o Tipo Saída vazio no SCPI.
+    settings.LOG_DIR = tmp_path
+    nav, passos = _navegador_que_recomeca(monkeypatch)
+
+    nav.descartar("AV-000058")
+    assert passos == ["limpar", "reabrir"]
+
+
+def test_simulacao_reabre_o_modulo_depois_de_limpar(monkeypatch):
+    nav, passos = _navegador_que_recomeca(monkeypatch)
+
+    nav.encerrar_simulacao()
+    assert passos == ["limpar", "reabrir"]
+
+
+def test_recomecar_reinicia_a_sessao_se_o_modulo_nao_reabre(monkeypatch):
+    nav, passos = _navegador_que_recomeca(monkeypatch, reabrir_falha=True)
+
+    nav.encerrar_simulacao()
+    assert passos == ["limpar", "reabrir", "reiniciar"]
