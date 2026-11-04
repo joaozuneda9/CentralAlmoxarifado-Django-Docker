@@ -1,0 +1,85 @@
+# Contrato: comandos e robô
+
+## Comandos novos
+
+### `extrair_requisicoes` (PR 1)
+
+```text
+manage.py extrair_requisicoes --desde DD/MM/AAAA --ate DD/MM/AAAA [--arquivo CSV]
+```
+
+- Abre o SCPI (`relatorios.baixar_requisicoes`) ou lê o `--arquivo`. Grava uma `ExtracaoOficial` com
+  `motivo=MANUAL` e não concilia nada.
+- Sai com erro se a extração falhar. A `Importacao` fica `FALHA`, com o motivo.
+- Recusa se já houver uma extração em andamento (trava do tipo `REQUISICOES`).
+- Serve à verificação manual da navegação no SCPI real (quickstart, passo 2).
+
+### `conciliar_lancamentos` (PR 4)
+
+```text
+manage.py conciliar_lancamentos [--arquivo CSV] [--desde DD/MM/AAAA --ate DD/MM/AAAA] [--sem-limpeza]
+```
+
+- Sem `--arquivo`, extrai o período de R9 (hoje − 9 dias, mais as datas dos lotes em verificar
+  abertos). Com `--arquivo`, usa o período dado ou o que o próprio CSV cobre.
+- Concilia os lotes lançados e os lotes em verificar cobertos, depois roda a limpeza de 60 dias (a
+  partir do PR 6), salvo com `--sem-limpeza`.
+- Recusa com lançamento ou importação em andamento (FR-029).
+- É o que a tela dispara pelo botão "Conferir agora" (`scpi.disparo.iniciar_conciliacao`, log
+  `conciliar_lancamentos.log`). Com `--arquivo`, é também o que repassa o CSV real numa cópia do
+  banco (quickstart, passo 6).
+
+### `importar_tentativas` (PR 3)
+
+```text
+manage.py importar_tentativas --journal CAMINHO [--dry-run]
+```
+
+- Lê o `lancar_saidas_journal.jsonl` e cria as `TentativaLancamento` históricas (R15).
+- É idempotente por (`execucao`, `lote`). O `--dry-run` só conta.
+- Roda uma vez por ambiente, depois do deploy do PR 3, e só a pedido do usuário em produção.
+
+## Mudanças no robô (PR 2)
+
+### `executar_lancamento(execucao, abrir_scpi, *, lotes, extrair)`
+
+O parâmetro novo é `extrair: Callable[[date, date], bytes]`. Em produção ele é
+`relatorios.baixar_requisicoes`; nos testes, `SCPISimulado.relatorio`.
+
+A ordem de uma execução **real** é:
+
+1. A trava `TRAVA_LANCAMENTO` (como hoje).
+2. A seleção dos lotes (como hoje). Sem lote válido, termina sem extrair.
+3. A **extração de antes**: o período de R9, até 3 tentativas. Se falhar, a execução termina `FALHA`
+   ("não foi possível extrair as requisições do SCPI antes de lançar"), sem abrir o navegador do
+   lançamento e sem mudar nenhuma linha (FR-009).
+4. O piso = `maior_requisicao` da extração de antes.
+5. O laço `_lancar_um` como hoje, com a `TentativaLancamento` criada no `_travar` e fechada no
+   `_gravar` (data-model).
+6. Com o navegador do lançamento fechado, a **extração de depois** (mesmo período). Ela é seguida da
+   conciliação dos lotes da execução a partir do PR 3 (candidatas) e do PR 4 (vereditos). Se falhar,
+   gera um aviso no log e os lotes ficam "Aguardando" (FR-012). A situação da execução não piora por
+   isso.
+
+A **simulação** (`--dry-run`) não extrai nem concilia (FR-013), mas preenche as Observações.
+
+### `lancador.preencher_cabecalho`
+
+Depois do Recebimento, preenche o campo **Observações** com `Central Almoxarifado <lote>` (FR-011). Se
+o campo não for achado, é `ErroSCPI` antes do Salvar: o lote vira `ERRO`, seguro para tentar de novo.
+
+### Protocolo `SCPI` e `SCPISimulado`
+
+O protocolo não muda: o lote já chega no `preencher(req)`. O simulado ganha:
+- o registro de cada requisição salva (número, cabeçalho, itens, observações, tipo);
+- `relatorio(de, ate) -> bytes` no formato de [relatorio-requisicoes.md](relatorio-requisicoes.md);
+- falhas configuráveis: as de R20, mais `falhas_relatorio` (quantas vezes o relatório falha antes de
+  funcionar).
+
+### Garantias que não mudam (FR-014, Princípio III)
+
+- O `EM_LANCAMENTO` continua confirmado no banco antes do Salvar.
+- Uma falha depois do clique continua virando `VERIFICAR`.
+- O número continua indo ao journal antes do banco.
+- Os testes atuais do lançamento continuam passando sem mudança de expectativa. A única mudança é o
+  `extrair` simulado nas chamadas.
