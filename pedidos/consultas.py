@@ -63,6 +63,18 @@ class FiltrosPainel(forms.Form):
             }
         ),
     )
+    # Campo próprio, para combinar com a busca geral (o material e quem recebeu, por exemplo).
+    material = forms.CharField(
+        required=False,
+        label="Buscar material",
+        widget=forms.TextInput(
+            attrs={
+                "class": "campo-entrada",
+                "type": "search",
+                "placeholder": "Material: código ou nome",
+            }
+        ),
+    )
     origem = forms.ChoiceField(
         required=False,
         label="Origem",
@@ -174,6 +186,16 @@ def pedidos_do_painel(filtros: dict) -> QuerySet:
             | Q(solicitante__icontains=q)
             | Q(atendimento__recebedor__icontains=q)
             | Q(ocorrencia__icontains=q)
+        )
+    if material := (filtros.get("material") or "").strip():
+        # Material pedido ou acrescentado pelo almoxarifado; `Exists` para o pedido com vários
+        # materiais que batem não sair repetido.
+        qs = qs.filter(
+            Exists(
+                ItemPedido.objects.filter(pedido=OuterRef("pk")).filter(
+                    Q(codigo__icontains=material) | Q(material__icontains=material)
+                )
+            )
         )
     if origem := filtros.get("origem"):
         qs = qs.filter(origem=origem)

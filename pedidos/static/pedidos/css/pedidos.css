@@ -530,6 +530,20 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 .tabela-pedidos .col-destino { min-width: 13rem; }
 /* Situação e SCPI numa coluna só: o selo do SCPI embaixo do da situação. */
 .situacao-selos { display: flex; flex-direction: column; align-items: flex-start; gap: var(--esp-meio); }
+/* A origem da lista do painel: texto curto embaixo do Nº, na tabela e no cartão. */
+.tabela-painel .numero-origem { display: block; margin-top: 2px; font-size: 0.8125em; font-weight: 400; line-height: 1.35; }
+/* Lista do painel em tabela: colunas de largura fixa (as do `colgroup`; Pessoa e Destino dividem o
+   resto), para os pedidos da página não as mexerem. Cada largura é o maior conteúdo da coluna mais
+   o padding. */
+@container (width > 720px) {
+  .tabela-painel { table-layout: fixed; min-width: 51rem; }
+  .tabela-painel .largura-numero { width: 6.75rem; }
+  .tabela-painel .largura-data { width: 9.25rem; }
+  .tabela-painel .largura-situacao { width: 13rem; }
+  .tabela-painel .col-pessoa, .tabela-painel .col-destino { min-width: 0; overflow-wrap: anywhere; }
+  /* O selo raro mais largo que a coluna (lançado em várias requisições) quebra dentro dela. */
+  .tabela-painel .col-situacao .selo { max-width: 100%; white-space: normal; }
+}
 /* Estreita (celular, ou tela pequena com a barra lateral): cada pedido vira um cartão. */
 @container (max-width: 720px) {
   .tabela-pedidos thead { position: absolute; width: 1px; height: 1px; overflow: hidden; clip: rect(0 0 0 0); white-space: nowrap; }
@@ -543,8 +557,10 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
   .tabela-pedidos .col-data { order: 2; font-size: 0.875em; }
   .tabela-pedidos .col-pessoa { order: 3; flex-basis: 100%; }
   .tabela-pedidos .col-destino { order: 4; flex-basis: 100%; font-size: 0.875em; color: var(--texto-secundario); }
-  .tabela-pedidos .col-origem { order: 5; }
   .tabela-pedidos .col-situacao { order: 6; }
+  /* Na lista do painel o Nº tem a origem embaixo: o que fica ao lado dele (a data; no tablet, os
+     selos) se alinha pela linha do Nº, não pelo meio das duas. */
+  .tabela-painel .col-numero, .tabela-painel .col-data, .tabela-painel .col-situacao { align-self: baseline; }
   /* O que complementa a linha (materiais, quem decidiu, motivo): embaixo, em texto menor. */
   .tabela-pedidos .col-extra { order: 7; flex-basis: 100%; font-size: 0.875em; color: var(--texto-secundario); }
   /* No cartão, os dois selos voltam a ficar lado a lado, quebrando linha se faltar largura. */
@@ -555,7 +571,6 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
    No celular, os selos ficam embaixo, como acima. */
 @container (min-width: 481px) and (max-width: 720px) {
   .tabela-pedidos .col-numero { flex: none; margin-right: var(--esp-meio); }
-  .tabela-pedidos .col-origem { order: 2; }
   .tabela-pedidos .col-situacao { order: 3; }
   .tabela-pedidos .col-data { position: absolute; right: var(--esp-1); bottom: 14px; white-space: nowrap; }
   .tabela-pedidos .col-pessoa { order: 5; margin-top: 2px; }

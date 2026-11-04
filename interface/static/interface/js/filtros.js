@@ -45,7 +45,7 @@
     return r ? r.textContent.trim() : campo.name;
   }
 
-  // Os filtros ativos do painel (a busca fica de fora: ela já aparece no próprio campo).
+  // Os filtros ativos do painel (as buscas da barra ficam de fora: já aparecem no próprio campo).
   function ativos(form) {
     var lista = [];
     var painel = form.querySelector("[data-filtros-painel]");
@@ -93,7 +93,10 @@
       "aria-label",
       "Filtros" + (lista.length ? " (" + lista.length + (lista.length > 1 ? " ativos)" : " ativo)") : "")
     );
-    limpar.hidden = !lista.length && !(form.elements.q && form.elements.q.value.trim());
+    var buscando = Array.prototype.some.call(form.querySelectorAll(".filtros-busca input"), function (c) {
+      return c.value.trim();
+    });
+    limpar.hidden = !lista.length && !buscando;
 
     // Redesenhar apaga o chip com o foco: ele volta para o chip na mesma posição, ou para o
     // botão "Filtros" se não sobrou nenhum.

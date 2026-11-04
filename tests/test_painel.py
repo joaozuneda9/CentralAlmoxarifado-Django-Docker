@@ -9,9 +9,16 @@ from django.urls import reverse
 from django.utils import timezone
 
 from catalogo.models import Importacao
-from pedidos.consultas import OPCOES_SCPI, OPCOES_SITUACAO, filtrar_scpi, filtrar_situacao
+from pedidos.consultas import (
+    OPCOES_SCPI,
+    OPCOES_SITUACAO,
+    filtrar_scpi,
+    filtrar_situacao,
+    pedidos_do_painel,
+)
 from pedidos.models import ExecucaoRobo, ItemPedido, Pedido
-from pedidos.regras import AB, AVULSA
+from pedidos.regras import AB, AVULSA, EPIS, LIMPEZA, OFICINA, VIATURAS
+from pedidos.templatetags.pedidos_extras import origem_curta
 from tests.cenario import criar_pedido
 
 pytestmark = pytest.mark.django_db
@@ -104,6 +111,26 @@ def test_filtro_por_origem(client, logado):
     assert ab.numero in r.text and limpeza.numero not in r.text
 
 
+def test_lista_mostra_a_origem_curta_embaixo_do_numero(client, logado):
+    # A origem é texto curto embaixo do Nº, na tabela (para caber na coluna fixa) e no cartão; não
+    # há mais coluna nem selo de origem.
+    curtos = {
+        LIMPEZA: "Limpeza",
+        AB: "Materiais AB",
+        VIATURAS: "Viaturas",
+        OFICINA: "Oficina",
+        EPIS: "EPIs",
+        AVULSA: "Saída avulsa",
+    }
+    assert set(curtos) == set(Pedido.Origem.values)
+    for origem, curto in curtos.items():
+        assert origem_curta(Pedido(origem=origem)) == curto
+    criar_pedido(origem=VIATURAS)
+    texto = client.get(reverse("pedidos:painel")).text
+    assert ' title="Reposição de peças das viaturas">Viaturas</span>' in texto
+    assert '<th scope="col">Origem</th>' not in texto and "col-origem" not in texto
+
+
 def test_busca_por_numero_solicitante_e_recebedor_sem_acento(client, logado):
     a = criar_pedido(solicitante="Mariana")
     b = criar_pedido(atendido=True, recebedor="João")
@@ -113,6 +140,38 @@ def test_busca_por_numero_solicitante_e_recebedor_sem_acento(client, logado):
     texto = client.get(url, {"q": "joao"}).text
     assert b.numero in texto and a.numero not in texto
     assert c.numero in client.get(url, {"q": c.numero}).text
+
+
+def test_busca_por_codigo_ou_nome_de_material_do_pedido(client, logado):
+    a = criar_pedido(itens=(("023.001.002", "2"), ("023.001.003", "1")))
+    a.itens.filter(codigo="023.001.002").update(material="SABÃO EM PÓ")
+    a.itens.filter(codigo="023.001.003").update(material="SABONETE LÍQUIDO")
+    b = criar_pedido(itens=(("045.010.001", "1"),), atendido=True)
+    _acrescentar(b, None, Decimal("1"))  # 999.999.999, MATERIAL EXTRA
+    c = criar_pedido(itens=(("045.010.002", "1"),))
+
+    def achados(material):
+        filtros = {"material": material}
+        return list(pedidos_do_painel(filtros).values_list("numero", flat=True))
+
+    assert achados("sabao") == [a.numero]
+    assert achados("SABON") == [a.numero]
+    assert achados("023.001") == [a.numero]  # dois itens batem, o pedido vem uma vez
+    assert achados("045.010.002") == [c.numero]
+    assert achados("material extra") == [b.numero]  # acrescentado pelo almoxarifado
+    # A busca geral não procura no material: ele tem campo próprio.
+    assert not pedidos_do_painel({"q": "sabao"}).exists()
+    assert c.numero in client.get(reverse("pedidos:painel"), {"material": "045.010.002"}).text
+
+
+def test_busca_por_material_combina_com_a_busca_geral(client, logado):
+    joao = criar_pedido(itens=(("023.001.002", "1"),), atendido=True, recebedor="João")
+    criar_pedido(itens=(("023.001.002", "1"),), atendido=True, recebedor="Maria")
+    criar_pedido(itens=(("045.010.001", "1"),), atendido=True, recebedor="João")
+    filtros = {"material": "023.001.002", "q": "joao"}
+    assert list(pedidos_do_painel(filtros)) == [joao]
+    r = client.get(reverse("pedidos:painel"), filtros)
+    assert 'name="material"' in r.text and 'value="023.001.002"' in r.text
 
 
 def test_periodo_inclui_o_dia_final_inteiro(client, logado):
@@ -166,20 +225,27 @@ def test_painel_no_estilo_clean(client, logado):
     r = client.get(reverse("pedidos:painel"))
     assert 'class="filtros-recolhiveis"' in r.text and 'class="campo-busca"' in r.text
     assert 'class="selo selo-info"' in r.text
-    tabela = r'<div class="tabela-rolagem">\s*<table class="tabela tabela-pedidos">'
+    tabela = r'<div class="tabela-rolagem">\s*<table class="tabela tabela-pedidos tabela-painel">'
     assert re.search(tabela, r.text)
     assert 'class="campo-entrada"' in r.text  # widgets do FiltrosPainel
 
 
-def test_selo_de_origem_da_lista_e_curto_com_o_nome_inteiro_no_title(client, logado):
-    criar_pedido()
+def test_origem_da_lista_e_curta_com_o_nome_inteiro_no_title(client, logado):
+    limpeza = criar_pedido()
     criar_pedido(origem=AB)
     r = client.get(reverse("pedidos:painel"))
     assert (
-        '<span class="selo selo-neutro" title="Limpeza, copa/cozinha e escritório">Limpeza</span>'
+        '<span class="numero-origem texto-secundario" '
+        'title="Limpeza, copa/cozinha e escritório">Limpeza</span>' in r.text
+    )
+    assert (
+        '<span class="numero-origem texto-secundario" title="Materiais AB">Materiais AB</span>'
         in r.text
     )
-    assert '<span class="selo selo-neutro" title="Materiais AB">Materiais AB</span>' in r.text
+    # O link do Nº cobre a linha (`a::after`) e fica por cima do texto da origem: o `title` dele
+    # é o que aparece ao passar o mouse.
+    detalhe = reverse("pedidos:detalhe", args=[limpeza.numero])
+    assert f'<a href="{detalhe}" title="Limpeza, copa/cozinha e escritório">' in r.text
 
 
 def test_saude_do_catalogo_fica_no_fim_do_painel(client, logado):

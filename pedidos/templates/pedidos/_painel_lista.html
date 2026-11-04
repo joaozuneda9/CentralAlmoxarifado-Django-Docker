@@ -2,14 +2,17 @@
 {% comment %}
 Lista do painel (a view devolve só este trecho quando recebe `HX-Request`). Na largura estreita
 (container query em pedidos.css) cada linha vira um cartão; a linha inteira leva ao detalhe.
+Na tabela as colunas têm largura fixa (`colgroup`, `tabela-painel`): os pedidos da página não as
+mexem. A origem vai em texto curto embaixo do Nº (`numero-origem`), na tabela e no cartão; o nome
+inteiro vai no `title` do link, que cobre a linha e é o que recebe o ponteiro.
 {% endcomment %}
 {% if pagina.paginator.count %}
 <div class="tabela-rolagem">
-  <table class="tabela tabela-pedidos">
+  <table class="tabela tabela-pedidos tabela-painel">
+    <colgroup><col class="largura-numero"><col class="largura-data"><col><col><col class="largura-situacao"></colgroup>
     <thead>
       <tr>
-        <th scope="col">Nº</th>
-        <th scope="col">Origem</th>
+        <th scope="col">Nº / origem</th>
         <th scope="col">Enviado em</th>
         <th scope="col">Pessoa</th>
         <th scope="col">Destino / centro de custo</th>
@@ -20,8 +23,7 @@ Lista do painel (a view devolve só este trecho quando recebe `HX-Request`). Na 
       {% for p in pagina %}
       {% with a=p.atendimento_ou_none situacao=p.situacao scpi=p.situacao_scpi %}
       <tr>
-        <td class="col-numero"><a href="{% url 'pedidos:detalhe' p.numero %}"><span class="mono numero-pedido">{{ p.numero }}</span></a></td>
-        <td class="col-origem"><span class="selo selo-neutro" title="{{ p.get_origem_display }}">{{ p|origem_curta }}</span></td>
+        <td class="col-numero"><a href="{% url 'pedidos:detalhe' p.numero %}" title="{{ p.get_origem_display }}"><span class="mono numero-pedido">{{ p.numero }}</span></a><span class="numero-origem texto-secundario" title="{{ p.get_origem_display }}">{{ p|origem_curta }}</span></td>
         <td class="tabela-data col-data">{{ p.criado_em|date:"d/m/Y H:i" }}</td>
         <td class="col-pessoa"{% if p.origem != "AVULSA" %} data-rotulo="Solicitante"{% endif %}>{% if p.origem == "AVULSA" %}<span class="texto-secundario">Recebedor:</span> {{ a.recebedor|default:"—" }}{% else %}{{ p.solicitante }}{% if a %}<span class="texto-secundario">, recebeu:</span> {{ a.recebedor }}{% endif %}{% endif %}</td>
         <td class="col-destino" data-rotulo="{% if p.origem == "AVULSA" %}Centro de custo{% else %}Destino{% endif %}">{% if p.origem == "AVULSA" %}{{ a.centro_custo }} · {{ a.tipo_saida }}{% else %}{{ p.destino }}{% if p.ocorrencia %}<span class="texto-secundario texto-pequeno"><br>Ocorrência <span class="mono">{{ p.ocorrencia }}</span></span>{% endif %}{% endif %}</td>

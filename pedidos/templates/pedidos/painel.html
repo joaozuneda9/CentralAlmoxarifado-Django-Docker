@@ -76,6 +76,14 @@
             {{ filtros.q }}
           </div>
         </div>
+        {# Material em campo próprio, para combinar com a busca geral (o material e quem recebeu). #}
+        <div class="filtros-campo filtros-busca">
+          <label class="visually-hidden" for="{{ filtros.material.id_for_label }}">{{ filtros.material.label }}</label>
+          <div class="campo-busca">
+            {% include "interface/_icone.html" with nome="caixa" %}
+            {{ filtros.material }}
+          </div>
+        </div>
         <button type="button" class="botao botao-secundario filtros-alternar" data-filtros-alternar
                 aria-expanded="true" aria-controls="filtros-painel">
           {% include "interface/_icone.html" with nome="filtro" %}<span>Filtros</span>
@@ -89,7 +97,7 @@
 
       <div class="filtros-painel" id="filtros-painel" data-filtros-painel>
         <div class="filtros-grade">
-          {% for campo in filtros %}{% if campo.name != "q" and campo.name != "de" and campo.name != "ate" %}
+          {% for campo in filtros %}{% if campo.name != "q" and campo.name != "material" and campo.name != "de" and campo.name != "ate" %}
           <div class="filtros-campo">
             <label class="campo-rotulo" for="{{ campo.id_for_label }}">{{ campo.label }}</label>
             {{ campo }}

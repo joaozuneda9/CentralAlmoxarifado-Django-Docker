@@ -99,7 +99,7 @@ def test_painel_e_aviso(client):
     pedido = Pedido.objects.get()
     client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
     filtrado = client.get(reverse("pedidos:painel"), {"origem": ORIGEM}).text
-    assert pedido.numero in filtrado and 'title="Oficina mecânica">Oficina mecânica<' in filtrado
+    assert pedido.numero in filtrado and 'title="Oficina mecânica">Oficina<' in filtrado
     assert pedido.numero not in client.get(reverse("pedidos:painel"), {"origem": "AB"}).text
     assert "Oficina mecânica" in texto_aviso(pedido)
 
