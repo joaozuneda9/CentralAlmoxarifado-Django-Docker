@@ -793,46 +793,65 @@ def test_salvar_le_o_numero_depois_de_confirmar_na_ultima_volta(monkeypatch):
     assert quadro.respostas == ["Sim"]
 
 
-# ---------------------------------------------------------------- Tipo Saída guardado no combo
+# ---------------------------------------------------------------- Tipo Saída enviado ao servidor
 
-BALCAO_GUARDADO = {"texto": "BALCÃO", "valor": "1", "exibido": "BALCÃO"}
-# o que o SCPI deixava depois do Cancelar: a tela mostra BALCÃO, o combo não guardou nada
-BALCAO_SO_NA_TELA = {"texto": "BALCÃO", "valor": None, "exibido": None}
-
-
-def test_combo_confere_exige_o_valor_guardado_e_nao_so_o_texto():
-    assert lancador.combo_confere(BALCAO_GUARDADO, "BALCÃO")
-    assert lancador.combo_confere(dict(BALCAO_GUARDADO, texto="balcao"), "BALCÃO")
-    assert not lancador.combo_confere(BALCAO_SO_NA_TELA, "BALCÃO")
-    assert not lancador.combo_confere(dict(BALCAO_GUARDADO, valor=""), "BALCÃO")
-    assert not lancador.combo_confere(dict(BALCAO_GUARDADO, exibido="ENTREGA"), "BALCÃO")
-    assert not lancador.combo_confere(None, "BALCÃO")  # componente ExtJS não encontrado
+# pedidos que o SCPI real mandou ao escolher BALCÃO num formulário novo (04/11/2026)
+SELECT_BALCAO = (
+    "Ajax=1&amp;IsEvent=1&amp;Obj=O9A0&amp;Evt=select&amp;&amp;_S_ID=V6A5&amp;"
+    "_fp_=%26O9A0%3D%25020%2502-1%2502BALC%25C3%2583O&amp;_seq_=1e&amp;_uo_=O7EB"
+)
+EDITED = "Ajax=1&amp;IsEvent=1&amp;Obj=O9A0&amp;Evt=edited&amp;This=O9A0&amp;_seq_=1d"
+# outro combo do formulário, sem o tipo: o único pedido do 3º lote depois do Cancelar
+SELECT_OUTRO = "Ajax=1&amp;IsEvent=1&amp;Obj=OB71&amp;Evt=select&amp;&amp;_seq_=a4&amp;_uo_=O7EB"
 
 
-def _combo_simulado(monkeypatch, estados):
-    estados = iter(estados)
+def test_servidor_recebeu_so_com_o_select_que_leva_a_opcao():
+    assert lancador.servidor_recebeu([SELECT_OUTRO, EDITED, SELECT_BALCAO], "BALCÃO")
+    assert lancador.servidor_recebeu([SELECT_BALCAO], "balcao")
+    # depois do Cancelar: o combo mostra BALCÃO, mas nada (ou só outro combo) vai ao servidor
+    assert not lancador.servidor_recebeu([], "BALCÃO")
+    assert not lancador.servidor_recebeu([SELECT_OUTRO], "BALCÃO")
+    assert not lancador.servidor_recebeu([EDITED], "BALCÃO")
+    assert not lancador.servidor_recebeu([SELECT_BALCAO], "ENTREGA")
+    assert not lancador.servidor_recebeu([SELECT_BALCAO.replace("BALC", "XBALC")], "BALCÃO")
+
+
+def _combo_simulado(monkeypatch, envios, escuta=True):
+    """`envios`: os pedidos que o SCPI manda a cada escolha da opção pedida."""
+    envios = iter(envios)
     escolhas = []
+    pendentes = []
     monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: object())
     monkeypatch.setattr(lancador, "aguardar_mascara", lambda frame: None)
     monkeypatch.setattr(lancador, "checar_mensagem", lambda frame, etapa: None)
-    monkeypatch.setattr(
-        lancador, "escolher_opcao", lambda frame, entrada, opcao: escolhas.append(opcao)
-    )
+    monkeypatch.setattr(lancador, "escutar_pedidos", lambda frame: escuta)
+
+    def escolher(frame, entrada, opcao):
+        escolhas.append(opcao)
+        if opcao == "BALCÃO":
+            pendentes.extend(next(envios))
+
+    def enviados(frame):
+        lidos = list(pendentes)
+        pendentes.clear()
+        return lidos
+
+    monkeypatch.setattr(lancador, "escolher_opcao", escolher)
+    monkeypatch.setattr(lancador, "pedidos_enviados", enviados)
     monkeypatch.setattr(lancador, "outra_opcao", lambda frame, entrada, opcao: "ENTREGA")
-    monkeypatch.setattr(lancador, "estado_combo", lambda frame, entrada: next(estados))
     return escolhas
 
 
-def test_selecionar_combo_escolhe_uma_vez_quando_o_valor_fica_guardado(monkeypatch):
-    escolhas = _combo_simulado(monkeypatch, [BALCAO_GUARDADO])
+def test_selecionar_combo_escolhe_uma_vez_quando_o_servidor_recebe(monkeypatch):
+    escolhas = _combo_simulado(monkeypatch, [[EDITED, SELECT_BALCAO]])
 
     lancador.selecionar_combo(_Quadro(), "Tipo Saída", "BALCÃO")
     assert escolhas == ["BALCÃO"]
 
 
-def test_selecionar_combo_escolhe_de_novo_com_calma_quando_so_a_tela_mudou(monkeypatch):
-    # Clicar na opção que o combo já tem marcada só troca o texto: passa por outra opção antes.
-    escolhas = _combo_simulado(monkeypatch, [BALCAO_SO_NA_TELA, BALCAO_GUARDADO])
+def test_selecionar_combo_escolhe_de_novo_com_calma_quando_nada_vai_ao_servidor(monkeypatch):
+    # Depois do Cancelar, escolher a opção que o combo já tem não manda nada: passa por outra antes.
+    escolhas = _combo_simulado(monkeypatch, [[], [SELECT_BALCAO]])
     quadro = _Quadro()
 
     lancador.selecionar_combo(quadro, "Tipo Saída", "BALCÃO")
@@ -841,68 +860,19 @@ def test_selecionar_combo_escolhe_de_novo_com_calma_quando_so_a_tela_mudou(monke
 
 
 def test_selecionar_combo_recusa_depois_das_tentativas(monkeypatch):
-    escolhas = _combo_simulado(monkeypatch, [BALCAO_SO_NA_TELA] * lancador.TENTATIVAS_COMBO)
+    escolhas = _combo_simulado(monkeypatch, [[SELECT_OUTRO]] * lancador.TENTATIVAS_COMBO)
 
-    with pytest.raises(ErroSCPI, match="Tipo Saída"):
+    with pytest.raises(ErroSCPI, match="não enviou 'BALCÃO' ao servidor"):
         lancador.selecionar_combo(_Quadro(), "Tipo Saída", "BALCÃO")
     assert escolhas.count("BALCÃO") == lancador.TENTATIVAS_COMBO
 
 
-class _QuadroComAbas(_Quadro):
-    def click(self):
-        pass
+def test_selecionar_combo_recusa_sem_poder_acompanhar_o_envio(monkeypatch):
+    escolhas = _combo_simulado(monkeypatch, [[SELECT_BALCAO]], escuta=False)
 
-
-class _CampoTexto:
-    def __init__(self, valor):
-        self.valor = valor
-
-    def input_value(self):
-        return self.valor
-
-
-def _cabecalho_simulado(monkeypatch, estados):
-    req = _Requisicao()
-    req.recebedor = "Fulano"
-    textos = {
-        "Data e Hora da Saída": req.data,
-        "Tipo Saída": "BALCÃO",
-        "Centro de Custo": req.cod_ccusto,
-        "Recebimento": req.recebedor,
-    }
-    monkeypatch.setattr(lancador, "campo", lambda frame, rotulo: _CampoTexto(textos[rotulo]))
-    estados = iter(estados)
-    monkeypatch.setattr(lancador, "estado_combo", lambda frame, entrada: next(estados))
-    selecoes = []
-    monkeypatch.setattr(
-        lancador, "selecionar_combo", lambda frame, rotulo, opcao: selecoes.append(opcao)
-    )
-    return req, selecoes
-
-
-def test_conferir_cabecalho_aceita_o_tipo_guardado(monkeypatch):
-    req, selecoes = _cabecalho_simulado(monkeypatch, [BALCAO_GUARDADO])
-
-    lancador.conferir_cabecalho(_QuadroComAbas(), req)
-    assert selecoes == []
-
-
-def test_conferir_cabecalho_escolhe_o_tipo_de_novo_antes_de_recusar(monkeypatch):
-    req, selecoes = _cabecalho_simulado(monkeypatch, [BALCAO_SO_NA_TELA])
-
-    lancador.conferir_cabecalho(_QuadroComAbas(), req)  # a nova seleção confere e levanta se falhar
-    assert selecoes == ["BALCÃO"]
-
-
-def test_conferir_cabecalho_recusa_se_a_nova_selecao_falha(monkeypatch):
-    req, _ = _cabecalho_simulado(monkeypatch, [BALCAO_SO_NA_TELA])
-
-    def falha(frame, rotulo, opcao):
-        raise ErroSCPI("combo 'Tipo Saída' não guardou 'BALCÃO'")
-
-    monkeypatch.setattr(lancador, "selecionar_combo", falha)
-    with pytest.raises(ErroSCPI, match="não guardou"):
-        lancador.conferir_cabecalho(_QuadroComAbas(), req)
+    with pytest.raises(ErroSCPI, match="acompanhar o envio"):
+        lancador.selecionar_combo(_Quadro(), "Tipo Saída", "BALCÃO")
+    assert escolhas == []
 
 
 # ---------------------------------------------------------------- próximo lote em módulo novo

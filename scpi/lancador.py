@@ -24,6 +24,7 @@ from contextlib import contextmanager
 from decimal import Decimal, InvalidOperation
 from pathlib import Path
 from typing import TYPE_CHECKING
+from urllib.parse import unquote
 
 from django.conf import settings
 from django.utils import timezone
@@ -228,47 +229,59 @@ def sair_do_campo(frame: Frame, entrada, etapa: str) -> None:
     checar_mensagem(frame, etapa)
 
 
-# Estado do combo ExtJS dono do input: o texto da tela, o valor guardado (o que vai no Salvar) e
-# o texto do registro desse valor. O ID do input é o do componente mais "-inputEl".
-JS_ESTADO_COMBO = """
-(id) => {
+# Pedidos Ajax que o ExtJS manda ao servidor do SCPI. O valor do combo só vale no Salvar se o
+# servidor recebeu o evento `select` com ele: depois do Cancelar, no mesmo iframe, o componente
+# continua com a opção marcada, escolhê-la de novo não dispara nada, e o servidor (que zerou o
+# formulário) salvava o Tipo Saída vazio, com a tela e o combo mostrando BALCÃO.
+JS_ESCUTAR_PEDIDOS = """
+() => {
     const E = window.Ext;
-    if (!E) return null;
-    const c = E.getCmp(id.replace(/-inputEl$/, ''))
-        || E.ComponentQuery.query('combobox').find(c => c.inputEl && c.inputEl.dom.id === id);
-    if (!c || !c.getValue) return null;
-    const valor = c.getValue();
-    const vazio = valor === null || valor === undefined || valor === '';
-    const reg = !vazio && c.findRecordByValue ? c.findRecordByValue(valor) : null;
-    return {
-        texto: c.getRawValue ? c.getRawValue() : '',
-        valor: vazio ? null : String(valor),
-        exibido: reg ? String(reg.get(c.displayField)) : null,
-    };
+    if (!E || !E.Ajax || !E.Ajax.on) return false;
+    window.__scpiPedidos = [];
+    if (!window.__scpiEscutando) {
+        window.__scpiEscutando = true;
+        E.Ajax.on('beforerequest', (conn, o) => {
+            let p = o && o.params;
+            try { p = typeof p === 'string' ? p : JSON.stringify(p); } catch (e) { p = String(p); }
+            (window.__scpiPedidos = window.__scpiPedidos || []).push(String(p || ''));
+        });
+    }
+    return true;
 }
 """
+JS_PEDIDOS_ENVIADOS = "() => (window.__scpiPedidos || []).splice(0)"
 
 TENTATIVAS_COMBO = 3
 PAUSA_COMBO_MS = 800  # entre as ações da nova escolha: o SCPI processa cada clique no combo
 
 
-def estado_combo(frame: Frame, entrada) -> dict | None:
-    """O que o componente do combo guardou, ou None se não deu para ler."""
+def escutar_pedidos(frame: Frame) -> bool:
+    """Passa a guardar os pedidos Ajax do quadro (zerando os já guardados)."""
     try:
-        return frame.evaluate(JS_ESTADO_COMBO, entrada.get_attribute("id"))
+        return bool(frame.evaluate(JS_ESCUTAR_PEDIDOS))
     except Exception:
-        return None
+        return False
 
 
-def combo_confere(estado: dict | None, opcao: str) -> bool:
-    """O combo guardou a opção, não só a mostra: depois do Cancelar, clicar na opção que ele já
-    tinha marcada trocava só o texto, e o SCPI salvava o Tipo Saída vazio."""
-    return (
-        bool(estado)
-        and bool(estado.get("valor"))
-        and norm(estado.get("exibido") or "") == norm(opcao)
-        and norm(estado.get("texto") or "") == norm(opcao)
-    )
+def pedidos_enviados(frame: Frame) -> list[str]:
+    """Os parâmetros dos pedidos Ajax guardados desde a última leitura."""
+    try:
+        return [str(p) for p in frame.evaluate(JS_PEDIDOS_ENVIADOS) or []]
+    except Exception:
+        return []
+
+
+def servidor_recebeu(pedidos: list[str], opcao: str) -> bool:
+    """Algum pedido é o evento `select` de um combo levando `opcao` no `_fp_`, que vem em
+    URL dupla com os campos separados por \\x02 (`&O9A0=%020%02-1%02BALC%C3%83O`)."""
+    alvo = norm(opcao)
+    for pedido in pedidos:
+        texto = unquote(unquote(pedido.replace("&amp;", "&")))
+        if "Evt=select" not in texto:
+            continue
+        if any(norm(parte) == alvo for parte in re.split(r"[\x02&=]", texto)):
+            return True
+    return False
 
 
 def abrir_lista(entrada) -> None:
@@ -295,20 +308,16 @@ def outra_opcao(frame: Frame, entrada, opcao: str) -> str | None:
 
 
 def selecionar_combo(frame: Frame, rotulo: str, opcao: str) -> None:
-    """Escolhe a opção e confere o valor guardado no componente. Se só a tela mudou, escolhe de
-    novo com calma, passando antes por outra opção (a escolha da mesma opção não grava nada).
-    Depois das tentativas, recusa o lote."""
+    """Escolhe a opção e confere que o SCPI mandou a escolha ao servidor (`servidor_recebeu`). Se
+    não mandou, escolhe de novo com calma, passando antes por outra opção (a escolha da opção que
+    o combo já tem não dispara nada). Depois das tentativas, recusa o lote, antes do Salvar."""
     etapa = f"combo '{rotulo}'"
-    estado = None
     for tentativa in range(1, TENTATIVAS_COMBO + 1):
         entrada = campo(frame, rotulo)
-        if tentativa == 1:
-            escolher_opcao(frame, entrada, opcao)
-        else:
+        if tentativa > 1:
             log(
-                f"  ⚠ {etapa} mostra {(estado or {}).get('texto')!r} mas guardou "
-                f"{(estado or {}).get('valor')!r}; escolhendo de novo com calma "
-                f"({tentativa}/{TENTATIVAS_COMBO})"
+                f"  ⚠ {etapa}: a escolha de '{opcao}' não foi enviada ao servidor do SCPI; "
+                f"escolhendo de novo com calma ({tentativa}/{TENTATIVAS_COMBO})"
             )
             frame.page.keyboard.press("Escape")
             frame.page.wait_for_timeout(PAUSA_COMBO_MS)
@@ -319,19 +328,20 @@ def selecionar_combo(frame: Frame, rotulo: str, opcao: str) -> None:
                 aguardar_mascara(frame)
                 checar_mensagem(frame, etapa)
                 frame.page.wait_for_timeout(PAUSA_COMBO_MS)
-            escolher_opcao(frame, entrada, opcao)
+        if not escutar_pedidos(frame):
+            raise ErroSCPI(f"{etapa}: não foi possível acompanhar o envio da escolha ao SCPI")
+        escolher_opcao(frame, entrada, opcao)
         aguardar_mascara(frame)
         checar_mensagem(frame, etapa)
-        if tentativa > 1:
-            frame.page.wait_for_timeout(PAUSA_COMBO_MS)
-        estado = estado_combo(frame, entrada)
-        if combo_confere(estado, opcao):
+        enviados = pedidos_enviados(frame)
+        if not servidor_recebeu(enviados, opcao):
+            frame.page.wait_for_timeout(PAUSA_COMBO_MS)  # o pedido pode sair um pouco depois
+            enviados += pedidos_enviados(frame)
+        if servidor_recebeu(enviados, opcao):
+            log(f"    ok: {etapa} = {opcao}, enviado ao servidor do SCPI")
             return
-    if estado is None:
-        raise ErroSCPI(f"{etapa}: não foi possível ler o valor guardado no combo")
     raise ErroSCPI(
-        f"{etapa} não guardou '{opcao}' (tela {estado.get('texto')!r}, "
-        f"valor {estado.get('valor')!r})"
+        f"{etapa}: o SCPI não enviou '{opcao}' ao servidor depois de {TENTATIVAS_COMBO} tentativas"
     )
 
 
@@ -902,13 +912,9 @@ def conferir_item(frame: Frame, i: int, item: Item, req: Requisicao, etapa: str)
 
 
 def conferir_cabecalho(frame: Frame, req: Requisicao) -> None:
-    """Relê o cabeçalho depois dos itens — o SCPI pode ter alterado algo nos lookups. O Tipo
-    Saída é conferido pelo valor guardado no combo; se só a tela o mostra, é escolhido de novo
-    (`selecionar_combo` recusa o lote se ainda assim não guardar)."""
+    """Relê o cabeçalho depois dos itens — o SCPI pode ter alterado algo nos lookups. Que o
+    servidor recebeu o Tipo Saída já foi conferido na escolha (`selecionar_combo`)."""
     frame.get_by_role("tab", name="Dados da Saída").click()
-    if not combo_confere(estado_combo(frame, campo(frame, "Tipo Saída")), req.tipo_saida):
-        log("  ⚠ cabeçalho: o Tipo Saída não ficou guardado no combo; escolhendo de novo")
-        selecionar_combo(frame, "Tipo Saída", req.tipo_saida)
     esperado = {
         "Data e Hora da Saída": req.data,
         "Tipo Saída": req.tipo_saida,
@@ -919,11 +925,7 @@ def conferir_cabecalho(frame: Frame, req: Requisicao) -> None:
         atual = campo(frame, rotulo).input_value()
         if norm(atual) != norm(valor):
             raise ErroSCPI(f"cabeçalho: '{rotulo}' ficou '{atual}', esperado '{valor}'")
-    log(
-        "    ok: cabeçalho "
-        + " | ".join(f"{k} = {v}" for k, v in esperado.items())
-        + " (Tipo Saída guardado no combo)"
-    )
+    log("    ok: cabeçalho " + " | ".join(f"{k} = {v}" for k, v in esperado.items()))
 
 
 # a tela "Saída" é ela mesma uma .x-window embutida; janelas flutuantes (pesquisa,

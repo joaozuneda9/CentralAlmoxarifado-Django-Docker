@@ -578,11 +578,13 @@ transações precisam se comportar como no servidor.
   servidor às vezes devolvia a QTD de uma linha ao padrão (1), então antes de cada rodada da
   conferência final (`RODADAS_RECONCILIACAO`, 5) o robô pede essa recarga (`recarregar_grade`) e a
   tela passa a mostrar o que o servidor tem (se a recarga falha, a conferência final recusa o lote em vez de aceitar a tela); o log traz o diagnóstico (`registrar_regressoes`,
-  `registrar_servidor`). O Tipo Saída é conferido pelo valor guardado no combo ExtJS
-  (`estado_combo`, `combo_confere`), nunca só pelo texto da tela: no mesmo iframe, depois do
-  Cancelar, clicar na opção que o combo já tinha marcada trocava só o texto, e o SCPI salvava o tipo
-  vazio. O `selecionar_combo` escolhe de novo com calma (`PAUSA_COMBO_MS`, passando antes por outra
-  opção) até `TENTATIVAS_COMBO` vezes, também na conferência do cabeçalho, e só então recusa o lote; e
+  `registrar_servidor`). O Tipo Saída só vale quando o servidor do SCPI recebeu a escolha:
+  o `selecionar_combo` escuta os pedidos Ajax do ExtJS (`escutar_pedidos`, `pedidos_enviados`) e
+  exige o evento `select` com a opção (`servidor_recebeu`, puro). Nem o texto da tela nem o valor do
+  componente bastam: no mesmo iframe, depois do Cancelar, o combo continua com BALCÃO, escolhê-lo de
+  novo não manda nada, e o servidor salvava o tipo vazio. Sem o envio, escolhe de novo com calma
+  (`PAUSA_COMBO_MS`, passando antes por outra opção) até `TENTATIVAS_COMBO` vezes e só então recusa
+  o lote, antes do Salvar; e
   todo lote não salvo (falha ou simulação) termina em `recomecar`, que reabre o módulo como depois de
   um lançamento. `simular_repeticoes --lote <n> --vezes <k>` (só para testes do robô)
   simula a mesma requisição várias vezes numa sessão só do SCPI e resume os resets. A trava do
