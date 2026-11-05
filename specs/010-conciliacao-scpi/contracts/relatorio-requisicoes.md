@@ -46,8 +46,10 @@ As demais colunas ficam só no arquivo bruto.
 3. `REQUI` fora do formato: `ErroImportacao` com a linha. Nenhuma `RequisicaoOficial` é gravada; a
    `ExtracaoOficial` fica registrada, sem requisições e com `maior_requisicao` nulo, e a `Importacao`
    termina `FALHA` com o motivo. Vale para todo `ErroImportacao` desta lista.
-4. Relatório cortado: o arquivo termina no meio de um registro (a recolagem não completa os campos do
-   cabeçalho) ou sem a última linha inteira. É `ErroImportacao` com a posição, e vale a regra 3.
+4. Relatório cortado: depois da recolagem, um registro (em geral o último) fica com **menos campos
+   que o cabeçalho**. A detecção é só por essa contagem. A quebra de linha no fim do arquivo é
+   opcional: um CSV válido pode terminar sem ela, e a falta dela sozinha nunca é erro. É
+   `ErroImportacao` com a posição (linha física onde o registro começa), e vale a regra 3.
 5. Um campo de cabeçalho que varia entre as linhas da mesma requisição: `ErroImportacao`. No CSV real,
    isso nunca acontece.
 6. Quantidade ilegível: `ErroImportacao`. Quantidade 0 é aceita, porque aparece nos ajustes de

@@ -46,7 +46,22 @@ manage.py importar_tentativas --journal CAMINHO [--dry-run]
 ### `executar_lancamento(execucao, abrir_scpi, *, lotes, extrair)`
 
 O parâmetro novo é `extrair: Callable[[date, date], bytes]`. Em produção ele é
-`relatorios.baixar_requisicoes`; nos testes, `SCPISimulado.relatorio`.
+`relatorios.baixar_requisicoes`; nos testes, `SCPISimulado.relatorio`. Ele só baixa: devolve os bytes
+ou levanta exceção, e não grava nada.
+
+**Como a falha chega ao lançamento.** Cada tentativa de extração passa por
+`conciliacao.extracao.extrair(motivo, periodo, obter_csv, execucao) -> ExtracaoOficial`, com
+`obter_csv = lambda: extrair(de, ate)`. É essa camada, e não o lançamento, que grava:
+- ela chama `scpi.execucao.executar`, que cria a `Importacao` do tipo `REQUISICOES` e, numa transação,
+  lê o CSV (`ler_requisicoes`) e grava a `ExtracaoOficial` com as requisições;
+- se o download levantar exceção ou a leitura der `ErroImportacao`, o `executar` captura e marca a
+  `Importacao` como `FALHA`, com o motivo. Ainda assim, `extrair` grava a `ExtracaoOficial` daquela
+  tentativa, fora da transação desfeita: sem requisições, com `maior_requisicao` nulo e o `motivo`
+  `ANTES` ou `DEPOIS`;
+- o sinal para o lançamento é o **resultado**, não uma exceção: `extracao.importacao.situacao ==
+  SUCESSO`. A única exceção que sobe é `ImportacaoEmAndamento` (a trava do tipo está com outra
+  extração). Nesse caso não há `Importacao` nem `ExtracaoOficial`; a tentativa conta como falha e só
+  vai para o log.
 
 A ordem de uma execução **real** é:
 
