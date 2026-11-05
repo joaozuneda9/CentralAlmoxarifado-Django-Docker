@@ -48,7 +48,8 @@ uv run python manage.py lancar_saidas --dry-run --lote <lote pendente>
 ```
 
 No log, o campo Observações aparece preenchido com `Central Almoxarifado <lote>` antes do descarte.
-Nada é salvo.
+Nenhuma requisição é salva no SCPI, nenhuma linha de saída muda e nenhuma extração é feita; só fica
+registrada a execução da simulação (`ExecucaoRobo` com `simulacao`), como em todo `--dry-run`.
 
 ## 3. Robô com o SCPI simulado (PR 2)
 
