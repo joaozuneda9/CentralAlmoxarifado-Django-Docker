@@ -5,7 +5,7 @@ Do que já existe, só muda o `choices` de `catalogo.Importacao.Tipo`. A `LinhaS
 `ExecucaoRobo` continuam como estão (FR-006, FR-021).
 
 As migrations são aditivas e novas: `catalogo/0008_importacao_requisicoes` (choices) e
-`conciliacao/0001` a `0004`, uma por PR que muda modelo ([plano](plan.md#entrega-em-prs-empilhados)).
+as de `conciliacao` a partir da `0001`, nos PRs que mudam modelo (o PR 1 tem a `0001` e a `0002`, a trava de `ANTES`/`DEPOIS` sem execução) ([plano](plan.md#entrega-em-prs-empilhados)).
 
 ```text
 ExecucaoRobo (pedidos) 1 ──< TentativaLancamento >── lote (texto; LinhaSaida.lote)

@@ -276,6 +276,20 @@ class RequisicaoLida:
     itens: tuple[ItemLido, ...]
 
 
+# Limite de `conciliacao.ItemOficial.quantidade` (DecimalField de 14 dígitos com 4 casas): uma
+# quantidade fora dele seria arredondada ou recusada pelo banco, e a leitura é tudo ou nada.
+CASAS_QUANTIDADE = 4
+TETO_QUANTIDADE = Decimal(10) ** (14 - CASAS_QUANTIDADE)
+
+
+def _quantidade_que_cabe(valor: Decimal) -> Decimal:
+    """A quantidade como veio, se cabe exata no campo do banco; senão, ValueError."""
+    casas = max(-valor.normalize().as_tuple().exponent, 0)
+    if casas > CASAS_QUANTIDADE or abs(valor) >= TETO_QUANTIDADE:
+        raise ValueError(f"quantidade fora do limite: {valor}")
+    return valor
+
+
 # Colunas do cabeçalho de uma requisição: repetidas em cada linha, iguais em todas.
 CABECALHO_REQUISICAO = (
     "ID_REQUI",
@@ -353,7 +367,7 @@ def ler_requisicoes(conteudo: bytes) -> Leitura:
         itens = []
         for linha in linhas:
             try:
-                quantidade = decimal_br(linha["QUAN2"])
+                quantidade = _quantidade_que_cabe(decimal_br(linha["QUAN2"]))
             except ValueError:
                 raise ErroImportacao(
                     f"{rotulo}: quantidade inválida na requisição {numero_visivel}, "

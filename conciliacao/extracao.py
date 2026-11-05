@@ -82,7 +82,10 @@ def extrair(
     """Baixa (ou lê) o relatório, guarda o bruto e as requisições e devolve a extração.
 
     Sucesso ou falha, a extração fica registrada; na falha, sem requisições e com
-    `maior_requisicao` nulo (a leitura é tudo ou nada). Levanta só `ImportacaoEmAndamento`."""
+    `maior_requisicao` nulo (a leitura é tudo ou nada). Levanta só `ImportacaoEmAndamento`
+    (e `ValueError` numa chamada errada: `ANTES` e `DEPOIS` exigem a execução do robô)."""
+    if motivo in ExtracaoOficial.MOTIVOS_DA_EXECUCAO and execucao is None:
+        raise ValueError(f"Extração {motivo} sem a execução do robô.")
     recebido: dict[str, object] = {}
 
     def baixar() -> bytes:

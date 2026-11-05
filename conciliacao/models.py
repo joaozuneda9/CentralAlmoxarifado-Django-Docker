@@ -50,6 +50,16 @@ class ExtracaoOficial(models.Model):
         verbose_name = "extração do SCPI"
         verbose_name_plural = "extrações do SCPI"
         indexes = [models.Index(fields=["motivo", "execucao"], name="extracao_motivo_execucao")]
+        constraints = [
+            # A extração de antes e a de depois pertencem sempre a uma execução real do robô.
+            models.CheckConstraint(
+                condition=~models.Q(motivo__in=["ANTES", "DEPOIS"])
+                | models.Q(execucao__isnull=False),
+                name="extracao_execucao_antes_depois",
+            )
+        ]
+
+    MOTIVOS_DA_EXECUCAO = (Motivo.ANTES, Motivo.DEPOIS)
 
     def __str__(self):
         return f"{self.get_motivo_display()} · {self.importacao}"

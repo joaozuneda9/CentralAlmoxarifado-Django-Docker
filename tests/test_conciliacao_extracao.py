@@ -4,9 +4,10 @@ from datetime import date
 
 import pytest
 from django.core.management import CommandError, call_command
+from django.db import IntegrityError, transaction
 from django.utils import timezone
 
-from automacoes.historico import ROTULO_DO_TIPO
+from automacoes.historico import ROTULO_DO_TIPO, linha_de_importacao
 from catalogo.models import Importacao
 from conciliacao.extracao import extrair
 from conciliacao.models import ExtracaoOficial, ItemOficial, RequisicaoOficial
@@ -95,7 +96,7 @@ def test_falha_no_download_registra_a_extracao_sem_bruto():
     def baixar():
         raise RuntimeError("SCPI fora do ar")
 
-    extracao = extrair(ExtracaoOficial.Motivo.ANTES, PERIODO, baixar)
+    extracao = extrair(ExtracaoOficial.Motivo.MANUAL, PERIODO, baixar)
     extracao.refresh_from_db()
     assert extracao.importacao.situacao == "FALHA"
     assert extracao.importacao.erro == "Falha inesperada: SCPI fora do ar"
@@ -134,3 +135,21 @@ def test_comando_com_falha_sai_com_erro(tmp_path):
 
 def test_historico_rotula_a_extracao():
     assert ROTULO_DO_TIPO["REQUISICOES"] == "Requisições do SCPI"
+
+
+@pytest.mark.parametrize("motivo", ["ANTES", "DEPOIS"])
+def test_antes_e_depois_exigem_a_execucao(motivo):
+    with pytest.raises(ValueError, match="sem a execução"):
+        _extrair(_csv(3588), motivo)
+    assert not Importacao.objects.exists()
+
+
+def test_banco_recusa_extracao_de_antes_sem_execucao():
+    imp = Importacao.objects.create(tipo="REQUISICOES")
+    with pytest.raises(IntegrityError), transaction.atomic():
+        ExtracaoOficial.objects.create(importacao=imp, motivo="ANTES")
+
+
+def test_historico_mostra_o_periodo_da_extracao():
+    extracao = _extrair(_csv(3588))
+    assert linha_de_importacao(extracao.importacao, set()).modo == "Período 22/10 a 24/10"

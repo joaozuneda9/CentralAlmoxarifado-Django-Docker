@@ -128,3 +128,15 @@ def test_relatorio_salvo_por_planilha():
 def test_gerador_usa_o_cabecalho_real():
     assert len(COLUNAS) == 65
     assert relatorio([]).startswith("﻿GRUPO;GRUPO_1;ID_REQUI;REQUI;".encode())
+
+
+@pytest.mark.parametrize("quantidade", ["1,23456", "12345678901"])
+def test_quantidade_que_nao_cabe_exata_no_banco_e_erro(quantidade):
+    with pytest.raises(ErroImportacao, match="quantidade inválida"):
+        ler_requisicoes(relatorio([_req(itens=[ItemCSV("1", quantidade)])]))
+
+
+def test_quantidade_com_zeros_a_direita_e_no_limite_e_aceita():
+    itens = [ItemCSV("1", "1,50000"), ItemCSV("2", "9999999999,9999")]
+    (lida,) = ler_requisicoes(relatorio([_req(itens=itens)])).linhas
+    assert [i.quantidade for i in lida.itens] == [Decimal("1.5"), Decimal("9999999999.9999")]
