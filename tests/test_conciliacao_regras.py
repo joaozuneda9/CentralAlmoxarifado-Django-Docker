@@ -63,3 +63,14 @@ def test_lote_com_digitos_demais_nao_casa():
     assert regras.lote_observado("Central Almoxarifado AV-123456789") == "AV-123456789"
     assert regras.lote_observado("Central Almoxarifado AV-1234567890") == ""
     assert regras.lote_observado("Central Almoxarifado AV-٠١٢") == ""  # dígitos não ASCII
+
+
+def test_observacoes_levam_a_obs_da_saida_num_paragrafo_novo():
+    assert regras.texto_observacoes("AV-000165") == "Central Almoxarifado AV-000165"
+    assert (
+        regras.texto_observacoes("AV-000165", "  Entregue ao\nAndré  ")
+        == "Central Almoxarifado AV-000165\nObs.: Entregue ao André"
+    )
+    assert regras.lote_observado(regras.texto_observacoes("P-000019", "P-000020 junto")) == (
+        "P-000019"
+    )

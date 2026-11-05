@@ -79,7 +79,7 @@ Decisões do usuário, uma a uma, na conversa de desenho:
 - Q: Onde fica o resultado? → A: num **registro próprio**, por lote e por extração, sem mudar o status
   das linhas de saída nem o que o robô grava.
 - Q: Como gravar a identidade do lote no registro oficial? → A: o robô escreve
-  "Central Almoxarifado <lote>" numa linha só no campo **Observações** da requisição, que numa
+  "Central Almoxarifado <lote>" na primeira linha do campo **Observações** da requisição, que numa
   requisição nova vem sempre vazio; no relatório é a coluna `OBS_CABECALHO`. O lote nas observações
   **prova presença**; a falta dele **não prova nada**.
 - Q: E se a extração antes do lançamento falhar? → A: depois de algumas tentativas, a execução
@@ -93,6 +93,12 @@ Decisões do usuário, uma a uma, na conversa de desenho:
   **informando o número certo**. No "Não encontrado", a pessoa lança à mão no SCPI, se preciso, e
   informa o número; no "Vínculo em conflito", escolhe qual das duas requisições vale. O robô nunca
   relança um lote lançado, e a conciliação seguinte confere o número informado.
+
+### Session 2026-11-05
+
+- Q: O campo Observações leva só o lote? → A: não. A observação da saída registrada no Central vai
+  junto, num parágrafo novo depois da marca do lote (decisão do usuário, depois do `--dry-run` do
+  AV-000165 que confirmou o campo no SCPI real).
 
 ## User Scenarios & Testing *(mandatory)*
 
@@ -204,7 +210,8 @@ levam a "Vínculo em conflito".
 **Acceptance Scenarios**:
 
 1. **Given** um lote a lançar, **When** o robô preenche a requisição, **Then** o campo Observações
-   recebe "Central Almoxarifado <lote>", numa linha só.
+   recebe "Central Almoxarifado <lote>" na primeira linha e, se a saída tem observação no Central,
+   "Obs.: <observação>" num parágrafo novo.
 2. **Given** duas requisições oficiais com o mesmo lote nas observações, ou o mesmo número gravado em
    dois lotes, **When** conciliadas, **Then** o lote aparece como "Duplicado", com as duas requisições.
 3. **Given** observações que apontam para uma requisição e um número gravado que aponta para outra,
@@ -343,8 +350,11 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
   falha explicada e NÃO PODE mudar nenhum lote.
 - **FR-010**: A execução DEVE registrar, em ordem, cada tentativa de lançamento: o lote, o momento, o
   resultado e o número obtido, quando houver.
-- **FR-011**: O robô DEVE escrever "Central Almoxarifado <lote>" numa linha só no campo Observações de
-  cada requisição que preencher.
+- **FR-011**: O robô DEVE escrever "Central Almoxarifado <lote>" na primeira linha do campo
+  Observações de cada requisição que preencher. Se a saída tem observação no Central (a do
+  atendimento ou da saída avulsa, a mesma em todas as linhas do lote), ela vai num parágrafo novo,
+  como "Obs.: <observação>", com as quebras de linha dela trocadas por espaço. O "Obs.: " impede que
+  uma observação começada por uma data parta o registro na leitura do relatório.
 - **FR-012**: Depois do último lote, a execução DEVE extrair de novo o mesmo período e conciliar os
   lotes dela; se essa extração falhar, os lotes ficam "Aguardando conferência".
 - **FR-013**: A simulação (sem lançamento real) NÃO PODE extrair nem conciliar.

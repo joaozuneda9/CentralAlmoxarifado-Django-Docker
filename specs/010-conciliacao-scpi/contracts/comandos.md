@@ -88,8 +88,10 @@ A **simulação** (`--dry-run`) não extrai nem concilia (FR-013), mas preenche 
 
 ### `lancador.preencher_cabecalho`
 
-Depois do Recebimento, preenche o campo **Observações** com `Central Almoxarifado <lote>` (FR-011). Se
-o campo não for achado, é `ErroSCPI` antes do Salvar: o lote vira `ERRO`, seguro para tentar de novo.
+Depois do centro de custo e antes do Recebimento, preenche o campo **Observações** com
+`Central Almoxarifado <lote>` e, se a saída tem observação no Central, `Obs.: <observação>` num
+parágrafo novo (FR-011, `regras.texto_observacoes`). Se o campo não for achado, é `ErroSCPI` antes do
+Salvar: o lote vira `ERRO`, seguro para tentar de novo. O `conferir_cabecalho` relê o campo.
 
 ### Protocolo `SCPI` e `SCPISimulado`
 

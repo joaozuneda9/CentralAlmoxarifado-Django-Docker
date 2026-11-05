@@ -60,6 +60,7 @@ class Requisicao:
     tipo_saida: str = ""
     cod_ccusto: str = ""
     recebedor: str = ""
+    obs: str = ""  # a observação da saída no Central; vai às Observações do SCPI
     itens: list[Item] = field(default_factory=list)
     erro: str = ""
 
@@ -107,6 +108,7 @@ def validar(req: Requisicao, centros: list[Centro]) -> None:
         )
     req.data = l0.data.strftime("%d/%m/%Y")
     req.recebedor = texto(l0.recebedor)
+    req.obs = texto(l0.obs)
     if not req.recebedor:
         erros.append("recebedor vazio")
     centro = resolver_centro_custo(l0.centro_custo, l0.placa, centros)

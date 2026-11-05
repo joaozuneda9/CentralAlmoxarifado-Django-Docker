@@ -115,7 +115,7 @@ def foto(req: Requisicao, placa_centro: str = "") -> dict:
         "tipo_saida": req.tipo_saida,
         "cod_ccusto": req.cod_ccusto,
         "recebedor": req.recebedor,
-        "observacoes": regras.texto_observacoes(req.lote),
+        "observacoes": regras.texto_observacoes(req.lote, req.obs),
         "placa_centro": placa_centro,
         "itens": [
             {"codigo": item.cadpro, "qtd": item.qtd, "placa": item.placa} for item in req.itens

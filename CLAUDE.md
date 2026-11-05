@@ -630,7 +630,9 @@ transações precisam se comportar como no servidor.
   do lançamento fechado, vem a extração de depois, que só registra (falha vai para o log, e a
   execução não piora). A simulação nunca extrai (o `simular_repeticoes` passa um `nunca_extrai`). O
   robô escreve "Central Almoxarifado <lote>" nas Observações do formulário (`preencher_cabecalho`,
-  conferido em `conferir_cabecalho`; `regras.texto_observacoes`). "Nada a exibir" no relatório sem
+  conferido em `conferir_cabecalho`; `regras.texto_observacoes`) e, num parágrafo novo, a observação
+  da saída no Central (`Requisicao.obs`, da `LinhaSaida.obs`) como "Obs.: <texto>", numa linha só: o
+  "Obs.: " impede que uma observação começada por data parta o registro na leitura do relatório. "Nada a exibir" no relatório sem
   filtro devolve bytes vazios: num período sem lote lançado é extração sem requisições; com lote
   lançado, falha. O `SCPISimulado` guarda cada requisição salva (`salvas`) e tem as falhas da
   conciliação: `falhas_relatorio`, `salva_e_falha` (grava e perde a resposta), `perde_tipo`,

@@ -202,3 +202,19 @@ def test_simulado_guarda_itens_e_tipo_perdido(dois_lotes, scpi):
     (salva,) = scpi.salvas
     assert salva.tipo == "" and {i.codigo for i in salva.itens} == {"023.001.002", "008.001.002"}
     assert isinstance(salva.itens[0], ItemCSV)
+
+
+def test_obs_da_saida_vai_as_observacoes_e_nao_quebra_o_relatorio(dois_lotes, scpi):
+    p, _ = dois_lotes
+    # Uma observação que começa por uma data partiria o registro do CSV sem o "Obs.: ".
+    LinhaSaida.objects.filter(lote=p).update(obs="05/11/2026 retirado por Fulano")
+    execucao = lancar(scpi, [p])
+    (salva,) = scpi.salvas
+    assert salva.observacoes == f"Central Almoxarifado {p}\nObs.: 05/11/2026 retirado por Fulano"
+    tentativa = TentativaLancamento.objects.get(execucao=execucao)
+    assert tentativa.foto["observacoes"] == salva.observacoes
+    depois = ExtracaoOficial.objects.get(execucao=execucao, motivo="DEPOIS")
+    assert depois.bem_sucedida
+    lida = RequisicaoOficial.objects.get(extracao=depois)
+    assert lida.lote_observado == p
+    assert lida.observacoes == f"Central Almoxarifado {p} Obs.: 05/11/2026 retirado por Fulano"

@@ -64,7 +64,7 @@ class SCPISimulado:
                 recebedor=req.recebedor,
                 observacoes=""
                 if req.lote in self.perde_observacoes
-                else texto_observacoes(req.lote),
+                else texto_observacoes(req.lote, req.obs),
                 itens=[ItemCSV(i.cadpro, i.qtd, placa=i.placa) for i in req.itens],
             )
         )

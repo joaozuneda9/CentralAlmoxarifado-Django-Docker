@@ -496,7 +496,7 @@ def preencher_cabecalho(frame: Frame, req: Requisicao) -> None:
     # o lote nas Observações liga a requisição ao lote no relatório (spec 010, FR-011); numa
     # requisição nova o campo vem vazio. Sem Tab, como no Recebimento.
     obs = campo(frame, "Observações")
-    obs.fill(texto_observacoes(req.lote))
+    obs.fill(texto_observacoes(req.lote, req.obs))
     obs.dispatch_event("change")
 
     # sem Tab: no Recebimento o Tab pula para os itens e cria uma linha vazia
@@ -930,7 +930,7 @@ def conferir_cabecalho(frame: Frame, req: Requisicao) -> None:
         "Tipo Saída": req.tipo_saida,
         "Centro de Custo": req.cod_ccusto,
         "Recebimento": req.recebedor,
-        "Observações": texto_observacoes(req.lote),
+        "Observações": texto_observacoes(req.lote, req.obs),
     }
     for rotulo, valor in esperado.items():
         atual = campo(frame, rotulo).input_value()

@@ -36,9 +36,16 @@ def periodo(datas: Iterable[date], hoje: date) -> tuple[date, date]:
     return inicio - FOLGA_PERIODO, hoje + FOLGA_PERIODO
 
 
-def texto_observacoes(lote: str) -> str:
-    """O que o robô escreve no campo Observações da requisição."""
-    return f"Central Almoxarifado {lote}"
+def texto_observacoes(lote: str, obs: str = "") -> str:
+    """O que o robô escreve no campo Observações da requisição: o lote na primeira linha e, num
+    parágrafo novo, a observação da saída registrada no Central, numa linha só.
+
+    O "Obs.: " no começo do parágrafo não é enfeite: no CSV do relatório, uma linha que começa
+    por uma data (dd/mm/aaaa) é lida como um registro novo, e uma observação como "05/11/2026
+    retirado por…" partiria a requisição ao meio na leitura."""
+    marca = f"Central Almoxarifado {lote}"
+    obs = " ".join((obs or "").split())
+    return f"{marca}\nObs.: {obs}" if obs else marca
 
 
 def lote_observado(observacoes: str) -> str:
