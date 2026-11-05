@@ -29,6 +29,7 @@ from urllib.parse import unquote
 from django.conf import settings
 from django.utils import timezone
 
+from conciliacao.regras import texto_observacoes
 from pedidos.regras import norm_placa
 from pedidos.regras import norm_u as norm
 from scpi.browser import abrir_sessao, frame_compras, orm_liberado
@@ -492,6 +493,12 @@ def preencher_cabecalho(frame: Frame, req: Requisicao) -> None:
     cc.fill(req.cod_ccusto)
     sair_do_campo(frame, cc, "centro de custo")
 
+    # o lote nas Observações liga a requisição ao lote no relatório (spec 010, FR-011); numa
+    # requisição nova o campo vem vazio. Sem Tab, como no Recebimento.
+    obs = campo(frame, "Observações")
+    obs.fill(texto_observacoes(req.lote))
+    obs.dispatch_event("change")
+
     # sem Tab: no Recebimento o Tab pula para os itens e cria uma linha vazia
     receb = campo(frame, "Recebimento")
     receb.fill(req.recebedor)
@@ -923,6 +930,7 @@ def conferir_cabecalho(frame: Frame, req: Requisicao) -> None:
         "Tipo Saída": req.tipo_saida,
         "Centro de Custo": req.cod_ccusto,
         "Recebimento": req.recebedor,
+        "Observações": texto_observacoes(req.lote),
     }
     for rotulo, valor in esperado.items():
         atual = campo(frame, rotulo).input_value()

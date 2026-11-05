@@ -305,6 +305,10 @@ def _relacao_de_requisicoes(
 
         frame.get_by_role("button", name="Imprimir").click()
         if not _gerar(frame, timeout=ESPERA_GERACAO_SAIDAS_MS):
+            if tipo is None:
+                # Sem filtro de tipo, "Nada a exibir" é um período sem nenhuma requisição: a
+                # extração decide se isso vale (conciliacao.extracao._vazio).
+                return b""
             raise ErroImportacao(
                 f"{rotulo}: nenhuma requisição de saída de {_br(de)} a {_br(ate)}."
             )

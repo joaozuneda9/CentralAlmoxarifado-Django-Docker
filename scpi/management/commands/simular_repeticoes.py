@@ -11,6 +11,11 @@ from scpi.requisicoes import FalhaCritica
 RE_QTD_DO_SERVIDOR = re.compile(r"servidor devolveu QTD \S+ no item (\d+)")
 
 
+def nunca_extrai(de, ate):
+    """Este comando só simula, e a simulação nunca extrai o registro oficial (spec 010, FR-013)."""
+    raise RuntimeError("a simulação não extrai as requisições do SCPI")
+
+
 @contextmanager
 def sessao_ja_aberta(sessao):
     """O `abrir_scpi` do lançamento sem abrir nem fechar nada: cada repetição começa do zero no
@@ -64,7 +69,10 @@ class Command(BaseCommand):
                     registros.append(registro)
                     try:
                         registro = executar_lancamento(
-                            registro, lambda: sessao_ja_aberta(sessao), lotes=[lote]
+                            registro,
+                            lambda: sessao_ja_aberta(sessao),
+                            lotes=[lote],
+                            extrair=nunca_extrai,
                         )
                     except LancamentoEmAndamento as exc:
                         raise CommandError("Outro lançamento já está em andamento.") from exc

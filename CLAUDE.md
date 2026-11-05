@@ -615,6 +615,26 @@ transações precisam se comportar como no servidor.
   `extrair_requisicoes --desde --ate [--arquivo]` só extrai e guarda, sem conciliar. Os testes usam
   CSV sintético no formato real (`tests/relacao_requisicoes.py`); o CSV real tem nomes de pessoas e
   nunca entra no repositório. `SaidaSCPI` e o importador das saídas BALCÃO não mudam.
+  Na execução **real** do robô (PR 2), `lancamento.lancar` recebe `extrair` (o
+  `relatorios.baixar_requisicoes` no `lancar_saidas`, o `SCPISimulado.relatorio` nos testes) e, depois
+  da seleção e antes de qualquer linha mudar, faz a extração de antes (`conciliacao.robo.extrair_antes`:
+  período do dia anterior à data mais antiga dos lotes escolhidos e dos lotes em verificar abertos
+  até o dia seguinte a hoje; até `TENTATIVAS_EXTRACAO` vezes com `PAUSA_EXTRACAO_S`, zerada nos
+  testes pelo fixture autouse `extracao_sem_pausa`; outra extração com a trava conta como tentativa
+  falha). Sem nenhuma bem-sucedida, `ExtracaoAntesFalhou` (um `ErroImportacao`): a execução termina
+  `FALHA`, nada é lançado nem marcado `ERRO`, e o `lancar_saidas` sai com `CommandError`. O piso é o
+  `maior_requisicao` dessa extração. Cada lote vira uma `TentativaLancamento` (ordem, foto do que o
+  robô vai digitar, `conciliacao.robo.foto`), criada `VERIFICAR` na mesma transação do `_travar`
+  (antes do Salvar) e marcada `LANCADA` com o número depois do `_gravar`; o lote que falha no
+  preenchimento é `ERRO`, o que mudou durante a execução é `IGNORADA`. Depois do laço, com o navegador
+  do lançamento fechado, vem a extração de depois, que só registra (falha vai para o log, e a
+  execução não piora). A simulação nunca extrai (o `simular_repeticoes` passa um `nunca_extrai`). O
+  robô escreve "Central Almoxarifado <lote>" nas Observações do formulário (`preencher_cabecalho`,
+  conferido em `conferir_cabecalho`; `regras.texto_observacoes`). "Nada a exibir" no relatório sem
+  filtro devolve bytes vazios: num período sem lote lançado é extração sem requisições; com lote
+  lançado, falha. O `SCPISimulado` guarda cada requisição salva (`salvas`) e tem as falhas da
+  conciliação: `falhas_relatorio`, `salva_e_falha` (grava e perde a resposta), `perde_tipo`,
+  `perde_observacoes` e `requisicao_manual`.
 - `implantacao` (sem modelos nem migrations) guarda o backup, o `robos_em_andamento` e a carga
   do de/para. A migração única das planilhas do Apps Script (`importar_planilhas`, com
   `conversao.py` e `migracao.py`) foi feita e removida; o código fica na tag `v1.0.1`. Do que ela

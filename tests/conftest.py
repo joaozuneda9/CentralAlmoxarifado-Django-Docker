@@ -72,7 +72,14 @@ def scpi():
 def scpi_no_comando(monkeypatch, scpi):
     """O comando `lancar_saidas` abre o SCPI simulado em vez do navegador."""
     monkeypatch.setattr("scpi.management.commands.lancar_saidas.navegador", scpi.abrir)
+    monkeypatch.setattr("scpi.management.commands.lancar_saidas.baixar_requisicoes", scpi.relatorio)
     return scpi
+
+
+@pytest.fixture(autouse=True)
+def extracao_sem_pausa(monkeypatch):
+    """As novas tentativas da extração de antes do lançamento não esperam nos testes."""
+    monkeypatch.setattr("conciliacao.robo.PAUSA_EXTRACAO_S", 0)
 
 
 @pytest.fixture

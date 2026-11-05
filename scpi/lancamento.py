@@ -26,6 +26,9 @@ from django.db.models import TextField, Value
 from django.db.models.functions import Concat
 from django.utils import timezone
 
+from conciliacao import robo
+from conciliacao.models import TentativaLancamento
+from conciliacao.robo import Extrair
 from pedidos.models import TRAVA_LANCAMENTO, ExecucaoRobo, LinhaSaida
 from pedidos.regras import EM_LANCAMENTO, ERRO, LANCADA, PENDENTE, VERIFICAR, texto
 from pedidos.servicos import centros
@@ -140,10 +143,10 @@ def _gravar(req: Requisicao, status: str, *, execucao_id: int, critico: bool, **
         logger.error("✘ %s — não foi possível gravar %s: %s", req.lote, status, exc)
 
 
-def _travar(req: Requisicao, execucao: ExecucaoRobo) -> bool:
+def _travar(req: Requisicao, execucao: ExecucaoRobo, ordem: int) -> bool:
     """Grava `EM_LANCAMENTO` se todas as linhas do lote ainda estão `PENDENTE` e sem número de
-    requisição (travadas com `select_for_update`). A transação fecha aqui, antes do clique em
-    Salvar."""
+    requisição (travadas com `select_for_update`), junto com a tentativa (resultado `VERIFICAR`,
+    o lado seguro se o processo morrer). A transação fecha aqui, antes do clique em Salvar."""
     agora = timezone.localtime()
     try:
         with transaction.atomic():
@@ -160,16 +163,28 @@ def _travar(req: Requisicao, execucao: ExecucaoRobo) -> bool:
                 status=EM_LANCAMENTO,
                 mensagem=f"Em lançamento desde {agora:%d/%m/%Y %H:%M} (execução #{execucao.pk}).",
             )
+            robo.registrar_tentativa(execucao, ordem, req, TentativaLancamento.Resultado.VERIFICAR)
     except Error as exc:  # inclui InterfaceError (conexão já fechada)
         raise FalhaCritica(f"não foi possível travar o lote {req.lote}: {exc}.") from exc
     return True
+
+
+def _tentativa_sem_salvar(execucao: ExecucaoRobo, ordem: int, req: Requisicao, resultado) -> None:
+    """Registra a tentativa que não chegou ao Salvar (erro no preenchimento ou lote que mudou).
+    Falha aqui só vai para o log: nada foi salvo, e o registro não protege nada."""
+    try:
+        robo.registrar_tentativa(execucao, ordem, req, resultado)
+    except Exception:
+        logger.exception("Não foi possível registrar a tentativa de %s.", req.lote)
 
 
 def _salvar_resumo(execucao: ExecucaoRobo, resumo: Resumo) -> None:
     ExecucaoRobo.objects.filter(pk=execucao.pk).update(resumo=asdict(resumo))
 
 
-def _lancar_um(req: Requisicao, scpi: SCPI, execucao: ExecucaoRobo, resumo: Resumo) -> None:
+def _lancar_um(
+    req: Requisicao, scpi: SCPI, execucao: ExecucaoRobo, resumo: Resumo, ordem: int
+) -> None:
     simulacao = execucao.simulacao
     try:
         scpi.preencher(req)
@@ -179,6 +194,7 @@ def _lancar_um(req: Requisicao, scpi: SCPI, execucao: ExecucaoRobo, resumo: Resu
         logger.error("✘ %s — %s", req.lote, mensagem)
         if not simulacao:
             _gravar(req, ERRO, execucao_id=execucao.pk, mensagem=mensagem[:500], critico=False)
+            _tentativa_sem_salvar(execucao, ordem, req, TentativaLancamento.Resultado.ERRO)
         scpi.descartar(req.lote)
         return
 
@@ -188,9 +204,10 @@ def _lancar_um(req: Requisicao, scpi: SCPI, execucao: ExecucaoRobo, resumo: Resu
         logger.info("◇ simulação: %s preenchido e descartado, sem salvar", req.lote)
         return
 
-    if not _travar(req, execucao):
+    if not _travar(req, execucao, ordem):
         logger.warning("⚠ %s — lote mudou durante a execução; não lançado", req.lote)
         resumo.ignoradas += 1
+        _tentativa_sem_salvar(execucao, ordem, req, TentativaLancamento.Resultado.IGNORADA)
         scpi.descartar(req.lote)
         return
 
@@ -221,6 +238,7 @@ def _lancar_um(req: Requisicao, scpi: SCPI, execucao: ExecucaoRobo, resumo: Resu
         mensagem="",
         critico=True,
     )
+    robo.tentativa_lancada(execucao, req.lote, numero)
     resumo.lancadas += 1
     logger.info("✔ lançada no SCPI: requisição %s", numero)
     try:
@@ -230,17 +248,32 @@ def _lancar_um(req: Requisicao, scpi: SCPI, execucao: ExecucaoRobo, resumo: Resu
         scpi.reiniciar()
 
 
-def lancar(execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, lotes: Collection[str]) -> Resumo:
+def lancar(
+    execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, lotes: Collection[str], extrair: Extrair
+) -> Resumo:
     """Lança no SCPI os `lotes` escolhidos (só os `PENDENTE` válidos), um por requisição, e
     devolve o resumo.
 
     Lotes com linha esperando conferência ficam de fora; os inválidos viram `ERRO` sem abrir
-    o navegador. Na simulação, nenhuma linha muda e o Salvar nunca é chamado."""
+    o navegador. Na simulação, nenhuma linha muda e o Salvar nunca é chamado. Na execução real,
+    o registro oficial é extraído antes (sem ele, `ExtracaoAntesFalhou` e nenhuma linha muda) e
+    depois do lançamento (spec 010)."""
     simulacao = execucao.simulacao
     resumo = Resumo()
     linhas = LinhaSaida.objects.filter(status__in=(PENDENTE, *ESTADOS_TRAVA)).order_by("id")
     sel = selecionar(list(linhas), centros())
     escolhidos = set(lotes)
+
+    validas = [req for req in sel.requisicoes if not req.erro]
+    for lote in sorted(escolhidos - {req.lote for req in sel.requisicoes} - set(sel.travados)):
+        logger.warning("⚠ %s não está mais na fila do robô — não será lançada", lote)
+    resumo.ignoradas += sum(1 for req in validas if req.lote not in escolhidos)
+    validas = [req for req in validas if req.lote in escolhidos]
+
+    periodo = None
+    if validas and not simulacao:
+        periodo = robo.periodo_da_execucao(validas, timezone.localdate())
+        robo.extrair_antes(execucao, periodo, extrair)  # sem ela, nada abaixo acontece
 
     for lote in sel.travados:
         if lote in escolhidos:
@@ -253,11 +286,6 @@ def lancar(execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, lotes: Collection[s
             if not simulacao:
                 _gravar(req, ERRO, execucao_id=execucao.pk, mensagem=req.erro[:500], critico=False)
 
-    validas = [req for req in sel.requisicoes if not req.erro]
-    for lote in sorted(escolhidos - {req.lote for req in sel.requisicoes} - set(sel.travados)):
-        logger.warning("⚠ %s não está mais na fila do robô — não será lançada", lote)
-    resumo.ignoradas += sum(1 for req in validas if req.lote not in escolhidos)
-    validas = [req for req in validas if req.lote in escolhidos]
     resumo.requisicoes = len(validas)
     _salvar_resumo(execucao, resumo)
     if not validas:
@@ -265,11 +293,14 @@ def lancar(execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, lotes: Collection[s
         return resumo
 
     with abrir_scpi() as scpi:
-        for i, req in enumerate(validas, start=1):
-            logger.info("→ (%d/%d) %s", i, len(validas), req)
-            _lancar_um(req, scpi, execucao, resumo)
+        for ordem, req in enumerate(validas, start=1):
+            logger.info("→ (%d/%d) %s", ordem, len(validas), req)
+            _lancar_um(req, scpi, execucao, resumo, ordem)
             resumo.processadas += 1
             _salvar_resumo(execucao, resumo)
+
+    if periodo is not None:
+        robo.extrair_depois(execucao, periodo, extrair)
     return resumo
 
 
@@ -293,9 +324,12 @@ def _encerrar_com_falha(execucao: ExecucaoRobo, erro: str) -> None:
 
 
 def executar_lancamento(
-    execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, lotes: Collection[str]
+    execucao: ExecucaoRobo, abrir_scpi: AbrirSCPI, *, lotes: Collection[str], extrair: Extrair
 ) -> ExecucaoRobo:
-    """Roda `lancar` sob a trava única do lançamento e registra o resultado na execução."""
+    """Roda `lancar` sob a trava única do lançamento e registra o resultado na execução.
+
+    `extrair(de, ate)` baixa a "Relação de Requisições" sem filtro de tipo (o registro oficial
+    da conciliação): `relatorios.baixar_requisicoes` em produção, o SCPI simulado nos testes."""
     with trava(TRAVA_LANCAMENTO) as obtida:
         if not obtida:
             _encerrar(
@@ -308,7 +342,7 @@ def executar_lancamento(
         registro = RegistroNaExecucao(execucao)
         logger.addHandler(registro)
         try:
-            resumo = lancar(execucao, abrir_scpi, lotes=lotes)
+            resumo = lancar(execucao, abrir_scpi, lotes=lotes, extrair=extrair)
         except (FalhaCritica, ErroImportacao) as exc:
             logger.error("✘ Execução interrompida: %s", exc)
             _encerrar_com_falha(execucao, str(exc))

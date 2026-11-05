@@ -2,7 +2,7 @@ from django.contrib import admin
 
 from catalogo.admin import SoLeituraAdmin
 
-from .models import ExtracaoOficial, ItemOficial, RequisicaoOficial
+from .models import ExtracaoOficial, ItemOficial, RequisicaoOficial, TentativaLancamento
 
 
 @admin.register(ExtracaoOficial)
@@ -30,3 +30,11 @@ class RequisicaoOficialAdmin(SoLeituraAdmin):
     list_display = ("requisicao", "data", "tipo", "cod_ccusto", "lote_observado", "extracao")
     search_fields = ("requisicao", "lote_observado", "recebedor")
     inlines = [ItemOficialInline]
+
+
+@admin.register(TentativaLancamento)
+class TentativaLancamentoAdmin(SoLeituraAdmin):
+    list_display = ("execucao", "ordem", "lote", "resultado", "requisicao", "momento")
+    list_filter = ("resultado", "historica")
+    list_select_related = ("execucao",)
+    search_fields = ("lote", "requisicao")

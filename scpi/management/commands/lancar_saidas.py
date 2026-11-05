@@ -5,6 +5,8 @@ from django.utils import timezone
 from pedidos.models import ExecucaoRobo
 from scpi.lancador import navegador
 from scpi.lancamento import LANCAMENTO_BLOQUEADO, LancamentoEmAndamento, executar_lancamento
+from scpi.leitura import ErroImportacao
+from scpi.relatorios import baixar_requisicoes
 from scpi.requisicoes import FalhaCritica
 
 
@@ -62,11 +64,15 @@ class Command(BaseCommand):
         registro.save(update_fields=["simulacao"])
 
         try:
-            registro = executar_lancamento(registro, navegador, lotes=lotes)
+            registro = executar_lancamento(
+                registro, navegador, lotes=lotes, extrair=baixar_requisicoes
+            )
         except LancamentoEmAndamento as exc:
             raise CommandError("Outro lançamento já está em andamento.") from exc
         except FalhaCritica as exc:
             raise CommandError(str(exc), returncode=2) from exc
+        except ErroImportacao as exc:  # o SCPI não abriu, ou a extração de antes falhou
+            raise CommandError(str(exc)) from exc
 
         if registro.situacao == ExecucaoRobo.Situacao.ATENCAO:
             raise CommandError("Lançamento terminou com erros ou linhas a verificar.")

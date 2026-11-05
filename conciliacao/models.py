@@ -123,3 +123,42 @@ class ItemOficial(models.Model):
 
     def __str__(self):
         return f"{self.requisicao} · {self.codigo}"
+
+
+class TentativaLancamento(models.Model):
+    """Um lote numa execução real do robô, na ordem em que foi tentado (FR-010).
+
+    É a afirmação do robô, nunca a prova: liga a execução ao piso e permite calcular o intervalo
+    de números de uma tentativa que ficou em verificar. A `foto` guarda o que o robô ia digitar."""
+
+    class Resultado(models.TextChoices):
+        LANCADA = "LANCADA", "Lançada"
+        VERIFICAR = "VERIFICAR", "Verificar no SCPI"
+        ERRO = "ERRO", "Erro antes do Salvar"
+        IGNORADA = "IGNORADA", "Ignorada (o lote mudou)"
+
+    execucao = models.ForeignKey(
+        "pedidos.ExecucaoRobo",
+        on_delete=models.PROTECT,
+        related_name="tentativas",
+        verbose_name="execução do robô",
+    )
+    ordem = models.PositiveSmallIntegerField()
+    lote = models.CharField(max_length=12, db_index=True)
+    momento = models.DateTimeField()
+    resultado = models.CharField(max_length=10, choices=Resultado.choices)
+    requisicao = models.CharField("requisição", max_length=9, blank=True)
+    foto = models.JSONField(null=True, blank=True)
+    historica = models.BooleanField("histórica (do journal)", default=False)
+
+    class Meta:
+        ordering = ["execucao", "ordem"]
+        verbose_name = "tentativa de lançamento"
+        verbose_name_plural = "tentativas de lançamento"
+        constraints = [
+            models.UniqueConstraint(fields=["execucao", "ordem"], name="tentativa_ordem_unica"),
+            models.UniqueConstraint(fields=["execucao", "lote"], name="tentativa_lote_unico"),
+        ]
+
+    def __str__(self):
+        return f"#{self.execucao_id}.{self.ordem} {self.lote} · {self.get_resultado_display()}"
