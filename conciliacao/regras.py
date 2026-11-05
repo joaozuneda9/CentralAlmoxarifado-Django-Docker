@@ -357,6 +357,22 @@ def veredito(
         return Resultado("DUPLICADO", primeira, segunda)
     if pelas_obs and pelo_numero and pelas_obs[0].requisicao != pelo_numero.requisicao:
         return Resultado("CONFLITO", pelo_numero, pelas_obs[0])
+    if pelo_numero and pelo_numero.lote_observado and pelo_numero.lote_observado != lote:
+        # O número gravado leva a uma requisição que as observações dão como de outro lote: ela
+        # não pode comprovar esta entrega, mesmo com o conteúdo igual.
+        return Resultado(
+            "CONFLITO",
+            pelo_numero,
+            pelas_obs[0] if pelas_obs else None,
+            origem="NUMERO",
+            notas=(
+                {
+                    "campo": "observações",
+                    "texto": f"a requisição {pelo_numero.requisicao} tem nas observações o lote "
+                    f"{pelo_numero.lote_observado}",
+                },
+            ),
+        )
     ligada = pelas_obs[0] if pelas_obs else pelo_numero
     if ligada is None:
         if maior and RE_REQUISICAO.match(numero or "") and chave(maior) > chave(numero):

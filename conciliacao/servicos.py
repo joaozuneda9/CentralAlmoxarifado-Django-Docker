@@ -263,11 +263,18 @@ def conciliar_lancados(extracao: ExtracaoOficial) -> dict[str, int]:
         ).exists():
             continue
         numero = linhas[0].requisicao_scpi
+        # A foto da última tentativa que chegou ao Salvar: a lançada, ou a que ficou em verificar
+        # e foi resolvida à mão com o número (o SCPI salvou e a resposta se perdeu). Sem nenhuma,
+        # o lote é de antes da conciliação, e a entrega se recalcula das linhas.
         tentativa = (
             TentativaLancamento.objects.filter(
-                lote=lote, resultado=TentativaLancamento.Resultado.LANCADA, requisicao=numero
+                lote=lote,
+                foto__isnull=False,
+                resultado__in=(
+                    TentativaLancamento.Resultado.LANCADA,
+                    TentativaLancamento.Resultado.VERIFICAR,
+                ),
             )
-            .filter(foto__isnull=False)
             .order_by("-momento", "-pk")
             .first()
         )
@@ -295,8 +302,17 @@ def conciliar_lancados(extracao: ExtracaoOficial) -> dict[str, int]:
         tipo = ConferenciaLote.Tipo.REVISAO if primeira else ConferenciaLote.Tipo.LANCAMENTO
         alterado = False
         diferencas = list(resultado.diferencas)
-        if primeira is not None and primeira.requisicao and resultado.requisicao:
-            mudou = regras.alteracoes(_oficial(primeira.requisicao), resultado.requisicao)
+        if primeira is not None and primeira.requisicao:
+            if resultado.requisicao:
+                mudou = regras.alteracoes(_oficial(primeira.requisicao), resultado.requisicao)
+            else:  # a requisição conferida no lançamento sumiu do relatório (excluída no SCPI)
+                mudou = [
+                    {
+                        "campo": "requisição",
+                        "antes": primeira.requisicao.requisicao,
+                        "agora": "(ausente no relatório)",
+                    }
+                ]
             alterado = bool(mudou)
             diferencas += [{"campo": m["campo"], "esperado": m["antes"], "oficial": m["agora"],
                             "alteracao": True} for m in mudou]  # fmt: skip

@@ -248,7 +248,13 @@ def test_requisicao_excluida_vira_nao_encontrado_depois_de_um_numero_maior(dois_
     lancar(scpi, [p, av])
     scpi.salvas = [r for r in scpi.salvas if r.requisicao != "000001/26"]
     nova_extracao(scpi)
-    assert conferencias(p)[-1].veredito == "NAO_ENCONTRADO"
+    lancamento, revisao = conferencias(p)
+    assert lancamento.veredito == "COMPROVADO"  # o veredito do lançamento fica
+    assert (revisao.veredito, revisao.alterado_depois) == ("NAO_ENCONTRADO", True)
+    assert revisao.diferencas == [
+        {"campo": "requisição", "esperado": "000001/26", "oficial": "(ausente no relatório)",
+         "alteracao": True}
+    ]  # fmt: skip
 
 
 @pytest.mark.django_db
@@ -402,3 +408,33 @@ def test_etapa_que_falha_nao_some_e_o_comando_sai_com_erro(dois_lotes, scpi, tmp
     arquivo.write_bytes(scpi.relatorio(hoje - timedelta(days=40), hoje + timedelta(days=1)))
     with pytest.raises(CommandError, match="lotes lançados: tabela indisponível"):
         call_command("conciliar_lancamentos", arquivo=str(arquivo))
+
+
+def test_numero_que_leva_a_requisicao_de_outro_lote_nao_comprova():
+    # Mesmo conteúdo, mas as observações dão a requisição do número como do lote B.
+    r = regras.veredito("AV-1", "003584/26", [oficial(lote="AV-2")], entrega(), maior="003600/26")
+    assert (r.veredito, r.requisicao.requisicao, r.outra) == ("CONFLITO", "003584/26", None)
+    assert "AV-2" in r.notas[0]["texto"]
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
+def test_lote_resolvido_a_mao_usa_a_foto_da_tentativa_e_nao_o_cadastro_de_hoje(dois_lotes, scpi):
+    from django.contrib.auth import get_user_model
+
+    from catalogo.models import CentroCusto
+    from pedidos.servicos import resolver_lote
+
+    p, av = dois_lotes
+    scpi.salva_e_falha.add(p)  # o SCPI salvou a 000001/26 e a resposta se perdeu
+    lancar(scpi, [p, av])
+    usuario = get_user_model().objects.create_user("00088", password="x")
+    assert resolver_lote(p, "lancada", usuario=usuario, requisicao="000001/26").ok
+    # O cadastro muda depois: o código do centro do lote não é mais o que o robô digitou.
+    centro = LinhaSaida.objects.filter(lote=p).first().centro_custo
+    CentroCusto.objects.filter(descricao=centro).update(codigo="999")
+    ConferenciaLote.objects.filter(tipo__in=("LANCAMENTO", "REVISAO")).delete()
+    nova_extracao(scpi)
+    (c,) = conferencias(p)
+    assert c.tentativa is not None and c.tentativa.resultado == "VERIFICAR"
+    assert c.veredito == "COMPROVADO" and c.diferencas == []
