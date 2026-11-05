@@ -61,6 +61,9 @@ class Requisicao:
     cod_ccusto: str = ""
     recebedor: str = ""
     obs: str = ""  # a observação da saída no Central; vai às Observações do SCPI
+    # A placa que o SCPI preenche sozinho a partir do centro de custo de uma viatura, pelo
+    # cadastro usado na seleção: a foto da tentativa a guarda (spec 010, R10 e R11).
+    placa_centro: str = ""
     itens: list[Item] = field(default_factory=list)
     erro: str = ""
 
@@ -96,6 +99,14 @@ def _cabecalho(linha) -> tuple:
     )
 
 
+def placa_do_centro(codigo: str, centros: list[Centro]) -> str:
+    """A placa do centro de custo `codigo` no cadastro, normalizada. Vazia quando o centro não
+    tem placa ou quando as linhas dele no cadastro têm placas diferentes (o SCPI não teria uma
+    só para preencher)."""
+    placas = {norm_placa(c.placa) for c in centros if c.codigo == codigo and norm_placa(c.placa)}
+    return placas.pop() if len(placas) == 1 else ""
+
+
 def validar(req: Requisicao, centros: list[Centro]) -> None:
     """Preenche o cabeçalho e os itens da requisição, ou levanta `ErroValidacao` com todos os
     problemas juntos. O centro de custo e o tipo saem da primeira linha do lote."""
@@ -116,6 +127,7 @@ def validar(req: Requisicao, centros: list[Centro]) -> None:
         erros.append(centro.erro)
     else:
         req.cod_ccusto = centro.codigo
+        req.placa_centro = placa_do_centro(centro.codigo, centros)
     tipos = {norm_u(t): t for t in TIPOS_SAIDA_PADRAO}
     if norm_u(l0.tipo_saida) not in tipos:
         erros.append(

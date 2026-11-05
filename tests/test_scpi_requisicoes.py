@@ -193,3 +193,20 @@ def test_agrupar_separa_a_fila_dos_travados_na_ordem_do_robo():
     assert travados == ["P-000001", "P-000002", "P-000007", "P-000008"]
     sel = selecionar(linhas, CENTROS)
     assert [r.lote for r in sel.requisicoes] == list(grupos) and sel.travados == travados
+
+
+def test_placa_do_centro_de_viatura_fica_na_requisicao_sem_placa_na_saida():
+    # O SCPI preenche a placa sozinho pelo centro de viatura: a foto da tentativa precisa dela.
+    (req,) = selecionar([L("001.001.001", centro_custo="PICKUP 01")], CENTROS).requisicoes
+    assert (req.cod_ccusto, req.placa_centro, req.itens[0].placa) == ("31", "ABC1D23", "")
+
+
+def test_centro_sem_placa_deixa_a_placa_do_centro_vazia():
+    (req,) = selecionar([L("001.001.001")], CENTROS).requisicoes
+    assert req.placa_centro == ""
+
+
+def test_placa_do_centro_vazia_quando_o_codigo_tem_placas_diferentes():
+    centros = [*CENTROS, Centro("PICKUP 01", "31", "DEF2G34")]
+    (req,) = selecionar([L("001.001.001", centro_custo="PICKUP 01")], centros).requisicoes
+    assert req.placa_centro == ""

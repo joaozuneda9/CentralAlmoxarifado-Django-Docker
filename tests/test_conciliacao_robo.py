@@ -8,7 +8,7 @@ from django.core.management import CommandError, call_command
 from django.db import DatabaseError
 from django.utils import timezone
 
-from catalogo.models import Importacao
+from catalogo.models import CentroCusto, Importacao
 from conciliacao import robo
 from conciliacao.models import ExtracaoOficial, RequisicaoOficial, TentativaLancamento
 from pedidos.models import ExecucaoRobo, LinhaSaida
@@ -246,3 +246,15 @@ def test_erro_de_banco_na_extracao_de_depois_nao_piora_a_execucao(dois_lotes, sc
     execucao = lancar(scpi, list(dois_lotes))
     assert execucao.situacao == "SUCESSO" and status() == {"LANCADA"}
     assert "não pôde ser registrada" in execucao.log
+
+
+def test_foto_guarda_a_placa_do_centro_de_viatura(dois_lotes, scpi):
+    p, _ = dois_lotes
+    centro = LinhaSaida.objects.filter(lote=p).first().centro_custo
+    # Só a linha do cadastro que o robô resolve (a descrição sem placa), com uma placa nova.
+    linha = CentroCusto.objects.filter(descricao=centro, placa__isnull=True).first()
+    CentroCusto.objects.filter(pk=linha.pk).update(placa="QWE1R23")
+    execucao = lancar(scpi, [p])
+    tentativa = TentativaLancamento.objects.get(execucao=execucao)
+    assert tentativa.foto["placa_centro"] == "QWE1R23"
+    assert {i["placa"] for i in tentativa.foto["itens"]} == {""}

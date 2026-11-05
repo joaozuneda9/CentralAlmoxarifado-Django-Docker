@@ -115,7 +115,7 @@ def extrair_depois(execucao, periodo: tuple[date, date], baixar: Extrair) -> Non
         )
 
 
-def foto(req: Requisicao, placa_centro: str = "") -> dict:
+def foto(req: Requisicao) -> dict:
     """O que o robô vai digitar no SCPI: a entrega confirmada como ele a leu (research R11)."""
     return {
         "data": req.data,
@@ -123,7 +123,7 @@ def foto(req: Requisicao, placa_centro: str = "") -> dict:
         "cod_ccusto": req.cod_ccusto,
         "recebedor": req.recebedor,
         "observacoes": regras.texto_observacoes(req.lote, req.obs),
-        "placa_centro": placa_centro,
+        "placa_centro": req.placa_centro,
         "itens": [
             {"codigo": item.cadpro, "qtd": item.qtd, "placa": item.placa} for item in req.itens
         ],
