@@ -287,8 +287,16 @@ def comparar(
         # a contagem de linhas de algum código diferente. O resto (quantidades trocadas entre os
         # mesmos códigos, item a mais ou a menos) é "itens".
         mesmas_qtds = sorted(q for _, q in esperados) == sorted(q for _, q in achados)
-        trocou_codigo = mesmas_qtds and Counter(c for c, _ in esperados) != Counter(
-            c for c, _ in achados
+
+        def qtds(lista, codigo):
+            return sorted(q for c, q in lista if c == codigo)
+
+        comuns_lista = {c for c, _ in esperados} & {c for c, _ in achados}
+        mesmas_qtds_nos_comuns = all(qtds(esperados, c) == qtds(achados, c) for c in comuns_lista)
+        trocou_codigo = (
+            mesmas_qtds
+            and mesmas_qtds_nos_comuns
+            and Counter(c for c, _ in esperados) != Counter(c for c, _ in achados)
         )
         # Só o que difere: o que está só no lote e o que está só no SCPI (contando repetidos).
         so_no_lote = list((Counter(esperados) - Counter(achados)).elements())

@@ -669,7 +669,9 @@ transações precisam se comportar como no servidor.
   as alterações contra a requisição daquela; o veredito atual é o da última conclusiva. Nunca muda as
   linhas de saída.
   `conciliar` roda sob a trava `almoxarifado:conciliacao` (`GET_LOCK` com espera), primeiro os em
-  verificar e depois os lançados, cada etapa isolada (falha vai para o log). A extração de um CSV já
+  verificar e depois os lançados, cada etapa isolada; uma etapa que falha não impede a outra, mas no
+  fim sobe `ConciliacaoIncompleta` (com a contagem parcial): o robô só a registra no log, e os comandos
+  saem com erro. A extração de um CSV já
   baixado (`--arquivo` nos dois comandos) tem o motivo `ARQUIVO`: não se sabe quando foi exportado, então
   nunca confere lote em verificar (um arquivo de antes do Salvar perdido liberaria o relançamento) nem
   revisa um veredito; só dá o primeiro veredito de um lote lançado.

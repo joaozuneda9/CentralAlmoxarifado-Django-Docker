@@ -8,7 +8,12 @@ from conciliacao import regras
 from conciliacao.extracao import extrair
 from conciliacao.models import ExtracaoOficial
 from conciliacao.robo import resumo_da_contagem
-from conciliacao.servicos import TRAVADOS, conciliar
+from conciliacao.servicos import (
+    TRAVADOS,
+    ConciliacaoEmAndamento,
+    ConciliacaoIncompleta,
+    conciliar,
+)
 from pedidos.models import ExecucaoRobo, LinhaSaida
 from scpi import relatorios
 from scpi.execucao import ImportacaoEmAndamento
@@ -74,7 +79,13 @@ class Command(BaseCommand):
             raise CommandError("Extração de requisições do SCPI já em andamento.") from None
         if not extracao.bem_sucedida:
             raise CommandError(extracao.importacao.erro)
-        contagem = conciliar(extracao)
+        try:
+            contagem = conciliar(extracao)
+        except ConciliacaoEmAndamento as exc:
+            raise CommandError(str(exc)) from None
+        except ConciliacaoIncompleta as exc:
+            parcial = resumo_da_contagem(exc.contagem) or "nada gravado"
+            raise CommandError(f"{exc} (gravado: {parcial}).") from None
         self.stdout.write(
             f"Requisições do SCPI ({de:%d/%m/%Y} a {ate:%d/%m/%Y}): {extracao.requisicoes}. "
             f"Conciliação: {resumo_da_contagem(contagem) or 'nenhum lote a conferir'}."

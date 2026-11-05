@@ -329,6 +329,15 @@ class ConciliacaoEmAndamento(Exception):
     """Outra conciliação segurou a trava por mais que a espera."""
 
 
+class ConciliacaoIncompleta(Exception):
+    """Alguma etapa da conciliação falhou; `contagem` tem o que foi gravado nas outras."""
+
+    def __init__(self, contagem: dict[str, int], falhas: list[str]):
+        self.contagem = contagem
+        self.falhas = falhas
+        super().__init__("Conciliação incompleta: " + "; ".join(falhas))
+
+
 @contextmanager
 def _trava_conciliacao():
     """Uma conciliação por vez entre processos (`GET_LOCK`, com espera): duas ao mesmo tempo
@@ -350,19 +359,25 @@ def _trava_conciliacao():
 
 def conciliar(extracao: ExtracaoOficial) -> dict[str, int]:
     """Toda a conciliação de uma extração, sob a trava: primeiro os lotes em verificar (a que
-    protege contra lançar duas vezes), depois os lançados. Uma etapa que falha vai para o log e
-    não impede a outra."""
+    protege contra lançar duas vezes), depois os lançados. Uma etapa que falha não impede a outra,
+    mas a falha não fica escondida: no fim, `ConciliacaoIncompleta` leva a contagem parcial e o
+    que falhou. Quem chama decide: o robô só registra no log; os comandos saem com erro."""
     contagem: dict[str, int] = {}
+    falhas: list[str] = []
     with _trava_conciliacao():
         try:
             verificar = conciliar_verificar(extracao)
-        except Exception:
+        except Exception as exc:
             logger.exception("⚠ não foi possível conferir os lotes em verificar")
+            falhas.append(f"lotes em verificar: {exc}")
         else:
             if verificar:
                 contagem["VERIFICAR"] = verificar
         try:
             contagem = conciliar_lancados(extracao) | contagem
-        except Exception:
+        except Exception as exc:
             logger.exception("⚠ não foi possível conferir os lotes lançados")
+            falhas.append(f"lotes lançados: {exc}")
+    if falhas:
+        raise ConciliacaoIncompleta(contagem, falhas)
     return contagem

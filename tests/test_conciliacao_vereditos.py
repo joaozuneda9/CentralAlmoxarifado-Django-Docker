@@ -377,3 +377,28 @@ def test_comando_recusa_periodo_invertido_e_arquivo_que_nao_abre(tmp_path):
     with pytest.raises(CommandError, match="Não foi possível ler"):
         call_command("conciliar_lancamentos", arquivo=str(tmp_path / "nao-existe.csv"))
     assert not ExtracaoOficial.objects.exists()
+
+
+def test_codigo_trocado_e_quantidade_mudada_num_codigo_comum_sao_itens():
+    lote = entrega(itens=(Item("A", Decimal("1")), Item("B", Decimal("2"))))
+    scpi = oficial(itens=(Item("A", Decimal("2")), Item("C", Decimal("1"))))
+    assert campos(regras.comparar(lote, scpi)[0]) == ["itens"]
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
+def test_etapa_que_falha_nao_some_e_o_comando_sai_com_erro(dois_lotes, scpi, tmp_path, monkeypatch):
+    from conciliacao import servicos
+
+    p, av = dois_lotes
+    lancar(scpi, [p, av])
+
+    def quebra(extracao):
+        raise RuntimeError("tabela indisponível")
+
+    monkeypatch.setattr(servicos, "conciliar_lancados", quebra)
+    hoje = timezone.localdate()
+    arquivo = tmp_path / "requisicoes.csv"
+    arquivo.write_bytes(scpi.relatorio(hoje - timedelta(days=40), hoje + timedelta(days=1)))
+    with pytest.raises(CommandError, match="lotes lançados: tabela indisponível"):
+        call_command("conciliar_lancamentos", arquivo=str(arquivo))
