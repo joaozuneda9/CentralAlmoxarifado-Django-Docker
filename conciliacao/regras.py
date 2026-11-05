@@ -5,7 +5,9 @@ from collections.abc import Iterable
 from datetime import date, timedelta
 
 RE_REQUISICAO = re.compile(r"^(\d{6})/(\d{2})$")  # número visível do SCPI: 003588/26
-RE_LOTE_OBSERVADO = re.compile(r"central\s+almoxarifado\s+((?:P|AV)-\d+)\b", re.IGNORECASE)
+# No máximo 9 dígitos: o lote cabe nos 12 caracteres de `lote_observado` (e da `LinhaSaida`); um
+# número maior não casa, e a falta do lote não prova nada.
+RE_LOTE_OBSERVADO = re.compile(r"central\s+almoxarifado\s+((?:P|AV)-[0-9]{1,9})\b", re.IGNORECASE)
 
 # O período de cada extração começa um dia antes da data mais antiga envolvida e termina um dia
 # depois de hoje (o SCPI aceita fim no futuro): a folga cobre o fuso e a virada do dia.

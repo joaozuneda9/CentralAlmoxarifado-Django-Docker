@@ -9,6 +9,7 @@ from .models import ExtracaoOficial, ItemOficial, RequisicaoOficial
 class ExtracaoOficialAdmin(SoLeituraAdmin):
     list_display = ("importacao", "motivo", "execucao", "requisicoes", "maior_requisicao")
     list_filter = ("motivo",)
+    list_select_related = ("importacao", "execucao")
     exclude = ("arquivo",)
 
 

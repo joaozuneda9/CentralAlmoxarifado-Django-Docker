@@ -56,3 +56,10 @@ def test_lote_observado_no_meio_de_outro_texto():
 )
 def test_sem_lote_nas_observacoes(texto):
     assert regras.lote_observado(texto) == ""
+
+
+def test_lote_com_digitos_demais_nao_casa():
+    # O lote precisa caber nos 12 caracteres de lote_observado.
+    assert regras.lote_observado("Central Almoxarifado AV-123456789") == "AV-123456789"
+    assert regras.lote_observado("Central Almoxarifado AV-1234567890") == ""
+    assert regras.lote_observado("Central Almoxarifado AV-٠١٢") == ""  # dígitos não ASCII
