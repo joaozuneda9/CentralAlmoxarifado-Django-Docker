@@ -40,11 +40,11 @@ def texto_observacoes(lote: str, obs: str = "") -> str:
     """O que o robô escreve no campo Observações da requisição: o lote na primeira linha e, num
     parágrafo novo, a observação da saída registrada no Central, numa linha só.
 
-    O "Obs.: " no começo do parágrafo não é enfeite: no CSV do relatório, uma linha que começa
-    por uma data (dd/mm/aaaa) é lida como um registro novo, e uma observação como "05/11/2026
-    retirado por…" partiria a requisição ao meio na leitura."""
+    Duas proteções da leitura do relatório, que é um CSV sem aspas: o "Obs.: " no começo do
+    parágrafo, porque uma linha que começa por uma data (dd/mm/aaaa) é lida como um registro novo;
+    e o ";" trocado por ",", porque ele é o separador de campos e deslocaria as colunas."""
     marca = f"Central Almoxarifado {lote}"
-    obs = " ".join((obs or "").split())
+    obs = " ".join((obs or "").replace(";", ",").split())
     return f"{marca}\nObs.: {obs}" if obs else marca
 
 

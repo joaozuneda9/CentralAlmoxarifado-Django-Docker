@@ -218,3 +218,16 @@ def test_obs_da_saida_vai_as_observacoes_e_nao_quebra_o_relatorio(dois_lotes, sc
     lida = RequisicaoOficial.objects.get(extracao=depois)
     assert lida.lote_observado == p
     assert lida.observacoes == f"Central Almoxarifado {p} Obs.: 05/11/2026 retirado por Fulano"
+
+
+def test_ponto_e_virgula_na_obs_nao_desloca_as_colunas_do_relatorio(dois_lotes, scpi):
+    p, _ = dois_lotes
+    LinhaSaida.objects.filter(lote=p).update(obs="Entregue; conferido; ok")
+    execucao = lancar(scpi, [p])
+    (salva,) = scpi.salvas
+    assert salva.observacoes == f"Central Almoxarifado {p}\nObs.: Entregue, conferido, ok"
+    depois = ExtracaoOficial.objects.get(execucao=execucao, motivo="DEPOIS")
+    assert depois.bem_sucedida
+    lida = RequisicaoOficial.objects.get(extracao=depois)
+    assert (lida.lote_observado, lida.tipo) == (p, "BALCÃO")
+    assert {i.codigo for i in lida.itens.all()} == {"023.001.002", "008.001.002"}

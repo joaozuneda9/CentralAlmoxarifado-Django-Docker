@@ -74,3 +74,7 @@ def test_observacoes_levam_a_obs_da_saida_num_paragrafo_novo():
     assert regras.lote_observado(regras.texto_observacoes("P-000019", "P-000020 junto")) == (
         "P-000019"
     )
+
+
+def test_ponto_e_virgula_vira_virgula_nas_observacoes():
+    assert regras.texto_observacoes("AV-1", "a; b;c") == "Central Almoxarifado AV-1\nObs.: a, b,c"

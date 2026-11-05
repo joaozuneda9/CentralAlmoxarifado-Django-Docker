@@ -354,7 +354,8 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
   Observações de cada requisição que preencher. Se a saída tem observação no Central (a do
   atendimento ou da saída avulsa, a mesma em todas as linhas do lote), ela vai num parágrafo novo,
   como "Obs.: <observação>", com as quebras de linha dela trocadas por espaço. O "Obs.: " impede que
-  uma observação começada por uma data parta o registro na leitura do relatório.
+  uma observação começada por uma data parta o registro na leitura do relatório, e o ";" vira
+  "," porque é o separador de campos do CSV, que não usa aspas.
 - **FR-012**: Depois do último lote, a execução DEVE extrair de novo o mesmo período e conciliar os
   lotes dela; se essa extração falhar, os lotes ficam "Aguardando conferência".
 - **FR-013**: A simulação (sem lançamento real) NÃO PODE extrair nem conciliar.
