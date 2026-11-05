@@ -16,8 +16,8 @@ from django.utils import timezone
 from catalogo.models import Importacao
 from conciliacao import regras
 from conciliacao.extracao import extrair
-from conciliacao.models import ExtracaoOficial, TentativaLancamento
-from conciliacao.servicos import conciliar_verificar
+from conciliacao.models import ConferenciaLote, ExtracaoOficial, TentativaLancamento
+from conciliacao.servicos import conciliar
 from pedidos.models import LinhaSaida
 from pedidos.regras import EM_LANCAMENTO, VERIFICAR
 from scpi.execucao import ImportacaoEmAndamento
@@ -110,14 +110,25 @@ def extrair_depois(execucao, periodo: tuple[date, date], baixar: Extrair) -> Non
     if extracao.importacao.situacao == Importacao.Situacao.SUCESSO:
         logger.info("✔ %d requisições no SCPI depois do lançamento", extracao.requisicoes)
         try:
-            conciliar_verificar(extracao)
+            contagem = conciliar(extracao)
         except Exception:
-            logger.exception("⚠ não foi possível conferir os lotes em verificar")
+            logger.exception("⚠ não foi possível conciliar os lotes desta execução")
+        else:
+            if contagem:
+                logger.info("✔ conciliação: %s", resumo_da_contagem(contagem))
     else:
         logger.warning(
             "⚠ extração de depois falhou (%s); os lotes ficam aguardando conferência",
             extracao.importacao.erro,
         )
+
+
+def resumo_da_contagem(contagem: dict[str, int]) -> str:
+    """'COMPROVADO': 2, 'DIVERGENTE': 1 → "2 comprovados, 1 divergente"."""
+    rotulos = dict(ConferenciaLote.Veredito.choices)
+    return ", ".join(
+        f"{n} {rotulos.get(v, 'em verificar conferidos').lower()}" for v, n in contagem.items()
+    )
 
 
 def foto(req: Requisicao) -> dict:

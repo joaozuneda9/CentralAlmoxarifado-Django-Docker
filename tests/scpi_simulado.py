@@ -62,6 +62,7 @@ class SCPISimulado:
                 data=datetime.strptime(req.data, "%d/%m/%Y").date(),
                 tipo="" if req.lote in self.perde_tipo else req.tipo_saida,
                 cod_ccusto=req.cod_ccusto,
+                centro=req.linhas[0].centro_custo if req.linhas else "",
                 recebedor=req.recebedor,
                 observacoes=""
                 if req.lote in self.perde_observacoes

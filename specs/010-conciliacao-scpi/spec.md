@@ -467,11 +467,12 @@ arquivo com mais de 60 dias é apagado e o veredito continua consultável.
   e sem o intervalo de candidatas vazio; nas tentativas reais do P-000018 (execuções 8 e 28) o intervalo
   sai vazio.
 - **SC-004**: Nenhuma execução real lança sem a extração de antes bem-sucedida.
-- **SC-002a**: Repassando o CSV real de 23/10 a 04/11/2026, dos 76 lotes com número que ele cobre,
-  72 saem "Comprovado", inclusive o AV-000129 (centro renomeado), os AV-000101, 130 e 131 (acentos em
-  outra forma) e o AV-000106 (placa vinda do centro); os AV-000083 e 084 saem "Divergente: código", o
-  AV-000081 "Divergente: itens" e o AV-000058 (número informado por uma pessoa depois de um erro)
-  "Divergente: data e itens".
+- **SC-002a**: Repassando o CSV real de 23/10 a 04/11/2026 (que filtra por `DTPAG`), dos 75 lotes
+  lançados com data no período, 72 saem "Comprovado", inclusive o AV-000129 (centro renomeado, com a
+  nota), os AV-000101, 130 e 131 (acentos em outra forma) e o AV-000106 (placa vinda do centro); os
+  AV-000083 e 084 saem "Divergente: código" e o AV-000081 "Divergente: itens". O AV-000058 (data
+  21/10) e os lotes com data de 21 e 22/10 ficam fora do período e não são conferidos por este CSV.
+  Conferido no repasse local de 05/11/2026.
 - **SC-005**: Os três lotes de conteúdo idêntico (AV-000040, 041 e 042) ficam cada um ligado a uma
   requisição diferente, sem ambiguidade.
 - **SC-006**: Para resolver um lote em verificar, a pessoa vê numa tela só se há candidatas e quais,

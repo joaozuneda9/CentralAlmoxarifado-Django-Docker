@@ -102,13 +102,13 @@ uv run python manage.py importar_tentativas --journal <cópia do journal> --dry-
 uv run python manage.py conciliar_lancamentos --arquivo "<CSV real de 23/10 a 04/11>"
 ```
 
-Esperado (SC-002a): dos 76 lotes com número cobertos pelo CSV,
-- 72 saem "Comprovado";
+Esperado (SC-002a), conferido em 05/11/2026: dos 75 lotes lançados com data no período do CSV,
+- 72 saem "Comprovado" (o AV-000129 com a nota do centro renomeado);
 - AV-000083 e AV-000084 saem "Divergente: código";
-- AV-000081 sai "Divergente: itens";
-- AV-000058 sai "Divergente: data e itens".
+- AV-000081 sai "Divergente: itens" (no SCPI, `023.002.010 × 4` a mais e `023.003.004 × 3` no lugar
+  de 5).
 
-Os lotes AV-000064, 066, 070, 072 e 074, cuja data fica fora do período do CSV, ficam "Aguardando".
+Os lotes com data fora do período do CSV (o AV-000058 e os de 21 e 22/10) não são conferidos por ele.
 Para o SC-002 (tipo vazio de AV-000014 a 073), repita com um CSV sem filtro que cubra de 09/10 a 22/10.
 
 ## 7. Tela e avisos (PR 5)
