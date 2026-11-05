@@ -286,6 +286,9 @@ def conciliar_lancados(extracao: ExtracaoOficial) -> dict[str, int]:
         em_outro_lote = (
             LinhaSaida.objects.filter(requisicao_scpi=numero).exclude(lote=lote).exists()
         )
+        primeira = _veredito_conclusivo(lote)
+        if primeira is not None and extracao.motivo == ExtracaoOficial.Motivo.ARQUIVO:
+            continue  # um arquivo antigo não revisa um veredito: não se sabe quando foi exportado
         resultado = regras.veredito(
             lote,
             numero,
@@ -295,10 +298,8 @@ def conciliar_lancados(extracao: ExtracaoOficial) -> dict[str, int]:
             numero_em_outro_lote=em_outro_lote,
             depara=depara,
             espera_observacoes=bool(tentativa and tentativa.foto.get("observacoes")),
+            ja_vista=bool(primeira and primeira.requisicao_id),
         )
-        primeira = _veredito_conclusivo(lote)
-        if primeira is not None and extracao.motivo == ExtracaoOficial.Motivo.ARQUIVO:
-            continue  # um arquivo antigo não revisa um veredito: não se sabe quando foi exportado
         tipo = ConferenciaLote.Tipo.REVISAO if primeira else ConferenciaLote.Tipo.LANCAMENTO
         alterado = False
         diferencas = list(resultado.diferencas)
@@ -346,7 +347,8 @@ class ConciliacaoEmAndamento(Exception):
 
 
 class ConciliacaoIncompleta(Exception):
-    """Alguma etapa da conciliação falhou; `contagem` tem o que foi gravado nas outras."""
+    """Alguma etapa da conciliação falhou; `contagem` é o que ficou gravado desta extração, até
+    a falha inclusive (a etapa que falhou pode ter gravado parte dos lotes)."""
 
     def __init__(self, contagem: dict[str, int], falhas: list[str]):
         self.contagem = contagem
@@ -373,6 +375,19 @@ def _trava_conciliacao():
             logger.warning("Não foi possível liberar a trava da conciliação.", exc_info=True)
 
 
+def _gravadas(extracao: ExtracaoOficial) -> dict[str, int]:
+    """O que já está gravado desta extração, lido do banco: depois de uma falha no meio de uma
+    etapa, as conferências dos lotes anteriores ficam (cada uma na sua transação; nos em verificar,
+    apagá-las perderia uma candidata já vista), e a contagem tem de dizê-lo."""
+    contagem: dict[str, int] = {}
+    for tipo, veredito in ConferenciaLote.objects.filter(extracao=extracao).values_list(
+        "tipo", "veredito"
+    ):
+        chave = "VERIFICAR" if tipo == ConferenciaLote.Tipo.VERIFICAR else veredito
+        contagem[chave] = contagem.get(chave, 0) + 1
+    return contagem
+
+
 def conciliar(extracao: ExtracaoOficial) -> dict[str, int]:
     """Toda a conciliação de uma extração, sob a trava: primeiro os lotes em verificar (a que
     protege contra lançar duas vezes), depois os lançados. Uma etapa que falha não impede a outra,
@@ -395,5 +410,5 @@ def conciliar(extracao: ExtracaoOficial) -> dict[str, int]:
             logger.exception("⚠ não foi possível conferir os lotes lançados")
             falhas.append(f"lotes lançados: {exc}")
     if falhas:
-        raise ConciliacaoIncompleta(contagem, falhas)
+        raise ConciliacaoIncompleta(_gravadas(extracao), falhas)
     return contagem

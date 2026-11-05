@@ -341,12 +341,14 @@ def veredito(
     numero_em_outro_lote: bool = False,
     depara: dict[str, str] | None = None,
     espera_observacoes: bool = True,
+    ja_vista: bool = False,
 ) -> Resultado:
     """O veredito de um lote lançado numa extração bem-sucedida que cobre a sua data (R12).
 
     Liga a requisição pelo lote nas observações e pelo número gravado; os dois têm de apontar
     para a mesma. Sem nenhuma das duas, "Não encontrado" só quando o relatório já traz número
-    maior que o do lote (SC-008); antes disso, "Aguardando"."""
+    maior que o do lote (SC-008); antes disso, "Aguardando". Com `ja_vista` (uma conferência
+    conclusiva já achou a requisição), sumir não é demora do relatório: é "Não encontrado"."""
     lote = lote.upper()
     requisicoes = list(requisicoes)
     pelas_obs = [r for r in requisicoes if r.lote_observado == lote]
@@ -375,7 +377,9 @@ def veredito(
         )
     ligada = pelas_obs[0] if pelas_obs else pelo_numero
     if ligada is None:
-        if maior and RE_REQUISICAO.match(numero or "") and chave(maior) > chave(numero):
+        if ja_vista or (
+            maior and RE_REQUISICAO.match(numero or "") and chave(maior) > chave(numero)
+        ):
             return Resultado("NAO_ENCONTRADO")
         return Resultado("AGUARDANDO")
     origem = "AMBOS" if pelas_obs and pelo_numero else "OBSERVACOES" if pelas_obs else "NUMERO"

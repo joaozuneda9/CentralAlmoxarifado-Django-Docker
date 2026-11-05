@@ -172,6 +172,9 @@ def test_nao_encontrado_so_com_numero_maior_no_relatorio():
     assert achou.veredito == "NAO_ENCONTRADO"
     recem = regras.veredito("AV-1", "003584/26", [], entrega(), maior="003583/26")
     assert recem.veredito == "AGUARDANDO"  # SC-008: o relatório ainda não chegou ao número
+    # Já achada numa conferência conclusiva, sumir não é demora do relatório.
+    sumiu = regras.veredito("AV-1", "003584/26", [], entrega(), maior="003583/26", ja_vista=True)
+    assert sumiu.veredito == "NAO_ENCONTRADO"
 
 
 # --- Contra o SCPI simulado ---
@@ -255,6 +258,21 @@ def test_requisicao_excluida_vira_nao_encontrado_depois_de_um_numero_maior(dois_
         {"campo": "requisição", "esperado": "000001/26", "oficial": "(ausente no relatório)",
          "alteracao": True}
     ]  # fmt: skip
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
+def test_excluida_a_requisicao_de_maior_numero_nao_volta_a_aguardando(dois_lotes, scpi):
+    p, av = dois_lotes
+    lancar(scpi, [p, av])
+    scpi.salvas = [r for r in scpi.salvas if r.requisicao != "000002/26"]  # a do AV, a maior
+    nova_extracao(scpi)
+    _, revisao = conferencias(av)
+    assert (revisao.tipo, revisao.veredito, revisao.alterado_depois) == (
+        "REVISAO",
+        "NAO_ENCONTRADO",
+        True,
+    )
 
 
 @pytest.mark.django_db
@@ -438,3 +456,29 @@ def test_lote_resolvido_a_mao_usa_a_foto_da_tentativa_e_nao_o_cadastro_de_hoje(d
     (c,) = conferencias(p)
     assert c.tentativa is not None and c.tentativa.resultado == "VERIFICAR"
     assert c.veredito == "COMPROVADO" and c.diferencas == []
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
+def test_falha_no_meio_da_etapa_conta_o_que_ficou_gravado(dois_lotes, scpi, monkeypatch):
+    from conciliacao import servicos
+    from conciliacao.servicos import ConciliacaoIncompleta
+
+    p, av = dois_lotes
+    lancar(scpi, [p, av])
+    ConferenciaLote.objects.all().delete()
+    original = regras.veredito
+    chamadas = []
+
+    def quebra_no_segundo(*args, **kwargs):
+        chamadas.append(1)
+        if len(chamadas) > 1:
+            raise RuntimeError("tabela indisponível")
+        return original(*args, **kwargs)
+
+    monkeypatch.setattr(servicos.regras, "veredito", quebra_no_segundo)
+    with pytest.raises(ConciliacaoIncompleta) as erro:
+        nova_extracao(scpi)
+    # O primeiro lote ficou gravado: a contagem não pode dizer "nada gravado".
+    assert erro.value.contagem == {"COMPROVADO": 1}
+    assert ConferenciaLote.objects.filter(tipo="LANCAMENTO").count() == 1

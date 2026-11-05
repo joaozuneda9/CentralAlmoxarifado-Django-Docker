@@ -660,8 +660,8 @@ transações precisam se comportar como no servidor.
   abertos; recusa com lançamento ou importação em andamento). Para cada lote `LANCADA` com data no
   período e lançado antes do início da extração, `regras.veredito` liga a requisição pelo lote nas
   observações e pelo número (os dois têm de apontar para a mesma; senão `CONFLITO`; duas com o lote, ou
-  o número em outro lote, `DUPLICADO`; sem nenhuma, `NAO_ENCONTRADO` só com número maior no relatório,
-  senão `AGUARDANDO`) e `regras.comparar` dá as diferenças (tipo, data, centro pelo código com o nome
+  o número em outro lote, `DUPLICADO`; sem nenhuma, `NAO_ENCONTRADO` com número maior no relatório
+  ou com a requisição já achada numa conferência conclusiva, senão `AGUARDANDO`) e `regras.comparar` dá as diferenças (tipo, data, centro pelo código com o nome
   diferente como nota, recebedor, itens por `norm_u` e quantidade exata mostrando só o que difere,
   placa do item ou do centro) e as notas (de/para só explica). A entrega é a foto da tentativa; sem
   ela (lote de antes do PR 2), `servicos.entrega_das_linhas`. A primeira conferência conclusiva é a do
@@ -671,7 +671,8 @@ transações precisam se comportar como no servidor.
   `conciliar` roda sob a trava `almoxarifado:conciliacao` (`GET_LOCK` com espera), primeiro os em
   verificar e depois os lançados, cada etapa isolada; uma etapa que falha não impede a outra, mas no
   fim sobe `ConciliacaoIncompleta` (com a contagem parcial): o robô só a registra no log, e os comandos
-  saem com erro. A extração de um CSV já
+  saem com erro; a contagem dela é lida do banco, porque a etapa que falhou pode ter gravado parte dos
+  lotes. A extração de um CSV já
   baixado (`--arquivo` nos dois comandos) tem o motivo `ARQUIVO`: não se sabe quando foi exportado, então
   nunca confere lote em verificar (um arquivo de antes do Salvar perdido liberaria o relançamento) nem
   revisa um veredito; só dá o primeiro veredito de um lote lançado.
