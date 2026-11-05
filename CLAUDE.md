@@ -634,8 +634,8 @@ transações precisam se comportar como no servidor.
   da saída no Central (`Requisicao.obs`, da `LinhaSaida.obs`) como "Obs.: <texto>", numa linha só: o
   "Obs.: " impede que uma observação começada por data parta o registro na leitura do relatório,
   e o ";" vira "," (é o separador do CSV sem aspas). "Nada a exibir" no relatório sem
-  filtro devolve bytes vazios: num período sem lote lançado é extração sem requisições; com lote
-  lançado, falha. O `SCPISimulado` guarda cada requisição salva (`salvas`) e tem as falhas da
+  filtro levanta `scpi.leitura.NadaAExibir`, que `extrair` captura: num período sem lote lançado é
+  extração sem requisições; com lote lançado, falha. Bytes vazios sem esse aviso sempre são falha. O `SCPISimulado` guarda cada requisição salva (`salvas`) e tem as falhas da
   conciliação: `falhas_relatorio`, `salva_e_falha` (grava e perde a resposta), `perde_tipo`,
   `perde_observacoes` e `requisicao_manual`.
 - `implantacao` (sem modelos nem migrations) guarda o backup, o `robos_em_andamento` e a carga
