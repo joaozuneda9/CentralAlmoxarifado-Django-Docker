@@ -86,10 +86,11 @@ def _cobre(extracao: ExtracaoOficial, datas) -> bool:
     )
 
 
-def conciliar_verificar(extracao: ExtracaoOficial) -> int:
+def conciliar_verificar(extracao: ExtracaoOficial, falhas: list[str] | None = None) -> int:
     """Grava, para cada lote em verificar coberto pela extração, a conferência com o intervalo
     e as candidatas (FR-022, FR-023). Só vale a extração bem-sucedida que começou depois da
-    tentativa; um lote sem tentativa registrada ganha `SEM_TENTATIVA`. Devolve quantas gravou."""
+    tentativa; um lote sem tentativa registrada ganha `SEM_TENTATIVA`. Devolve quantas gravou.
+    Com `falhas`, o lote que quebra vai para a lista e os seguintes continuam; sem ela, sobe."""
     if not extracao.bem_sucedida or extracao.motivo == ExtracaoOficial.Motivo.ARQUIVO:
         # Um arquivo exportado antes do Salvar perdido não traria a requisição: se contasse, o
         # intervalo sairia vazio e o lote seria relançado (Princípio III).
@@ -104,59 +105,65 @@ def conciliar_verificar(extracao: ExtracaoOficial) -> int:
     por_numero = {resumo.requisicao: pk for pk, resumo in lidas.items()}
     gravadas = 0
     for lote, datas_do_lote in sorted(datas.items()):
-        if not _cobre(extracao, datas_do_lote):
-            continue
-        if ConferenciaLote.objects.filter(
-            lote=lote, extracao=extracao, tipo=ConferenciaLote.Tipo.VERIFICAR
-        ).exists():
-            continue
-        tentativa = ultima_tentativa(lote)
-        if tentativa is None:
-            ConferenciaLote.objects.create(
-                lote=lote,
-                extracao=extracao,
-                tipo=ConferenciaLote.Tipo.VERIFICAR,
-                veredito=ConferenciaLote.Veredito.SEM_TENTATIVA,
-            )
-            gravadas += 1
-            continue
-        if extracao.importacao.inicio <= tentativa.momento:
-            continue  # a extração não é posterior à tentativa: não prova nada sobre ela
-        tentativas = [
-            regras.TentativaResumo(t.ordem, t.lote, t.requisicao)
-            for t in tentativa.execucao.tentativas.all()
-        ]
-        de, ate = regras.intervalo(tentativas, piso(tentativa.execucao), lote)
-        achadas = regras.candidatas(lidas.values(), lote, de, ate, tentativa.foto)
-        with transaction.atomic():
-            conferencia = ConferenciaLote.objects.create(
-                lote=lote,
-                extracao=extracao,
-                tipo=ConferenciaLote.Tipo.VERIFICAR,
-                veredito=ConferenciaLote.Veredito.COM_CANDIDATAS
-                if achadas
-                else ConferenciaLote.Veredito.INTERVALO_VAZIO,
-                intervalo_de=de or "",
-                intervalo_ate=ate or "",
-                tentativa=tentativa,
-            )
-            Candidata.objects.bulk_create(
-                Candidata(
-                    conferencia=conferencia,
-                    requisicao_id=por_numero[resumo.requisicao],
-                    e_esta=e_esta,
-                    ordem=ordem,
+        try:
+            if not _cobre(extracao, datas_do_lote):
+                continue
+            if ConferenciaLote.objects.filter(
+                lote=lote, extracao=extracao, tipo=ConferenciaLote.Tipo.VERIFICAR
+            ).exists():
+                continue
+            tentativa = ultima_tentativa(lote)
+            if tentativa is None:
+                ConferenciaLote.objects.create(
+                    lote=lote,
+                    extracao=extracao,
+                    tipo=ConferenciaLote.Tipo.VERIFICAR,
+                    veredito=ConferenciaLote.Veredito.SEM_TENTATIVA,
                 )
-                for ordem, (resumo, e_esta) in enumerate(achadas, start=1)
+                gravadas += 1
+                continue
+            if extracao.importacao.inicio <= tentativa.momento:
+                continue  # a extração não é posterior à tentativa: não prova nada sobre ela
+            tentativas = [
+                regras.TentativaResumo(t.ordem, t.lote, t.requisicao)
+                for t in tentativa.execucao.tentativas.all()
+            ]
+            de, ate = regras.intervalo(tentativas, piso(tentativa.execucao), lote)
+            achadas = regras.candidatas(lidas.values(), lote, de, ate, tentativa.foto)
+            with transaction.atomic():
+                conferencia = ConferenciaLote.objects.create(
+                    lote=lote,
+                    extracao=extracao,
+                    tipo=ConferenciaLote.Tipo.VERIFICAR,
+                    veredito=ConferenciaLote.Veredito.COM_CANDIDATAS
+                    if achadas
+                    else ConferenciaLote.Veredito.INTERVALO_VAZIO,
+                    intervalo_de=de or "",
+                    intervalo_ate=ate or "",
+                    tentativa=tentativa,
+                )
+                Candidata.objects.bulk_create(
+                    Candidata(
+                        conferencia=conferencia,
+                        requisicao_id=por_numero[resumo.requisicao],
+                        e_esta=e_esta,
+                        ordem=ordem,
+                    )
+                    for ordem, (resumo, e_esta) in enumerate(achadas, start=1)
+                )
+            gravadas += 1
+            logger.info(
+                "  %s em verificar: intervalo %s a %s, %d candidata(s)",
+                lote,
+                de or "(aberto)",
+                ate or "(aberto)",
+                len(achadas),
             )
-        gravadas += 1
-        logger.info(
-            "  %s em verificar: intervalo %s a %s, %d candidata(s)",
-            lote,
-            de or "(aberto)",
-            ate or "(aberto)",
-            len(achadas),
-        )
+        except Exception as exc:
+            if falhas is None:
+                raise
+            logger.exception("⚠ não foi possível conferir o lote %s (em verificar)", lote)
+            falhas.append(f"lote {lote} (em verificar): {exc}")
     return gravadas
 
 
@@ -229,14 +236,17 @@ def _veredito_conclusivo(lote: str) -> ConferenciaLote | None:
     )
 
 
-def conciliar_lancados(extracao: ExtracaoOficial) -> dict[str, int]:
+def conciliar_lancados(
+    extracao: ExtracaoOficial, falhas: list[str] | None = None
+) -> dict[str, int]:
     """Grava o veredito de cada lote lançado coberto pela extração (FR-016 a FR-018).
 
     Só conta a extração bem-sucedida que começou depois do lançamento do lote. Enquanto o lote
     não tem conferência conclusiva, a conferência é do tipo `LANCAMENTO` (as `AGUARDANDO` são
     provisórias); depois da primeira conclusiva, as seguintes são `REVISAO`, com o
     "alterado no SCPI depois do lançamento" contra a requisição daquela. Devolve a contagem
-    por veredito. Nunca muda as linhas de saída (FR-021)."""
+    por veredito. Nunca muda as linhas de saída (FR-021). Com `falhas`, o lote que quebra (uma
+    foto malformada, por exemplo) vai para a lista e os seguintes continuam; sem ela, sobe."""
     contagem: dict[str, int] = {}
     if not extracao.bem_sucedida:
         return contagem
@@ -253,88 +263,95 @@ def conciliar_lancados(extracao: ExtracaoOficial) -> dict[str, int]:
     depara = dict(ParDePara.objects.values_list("antigo", "novo"))
     lista_de_centros = centros()
     for lote, linhas in sorted(linhas_por_lote.items()):
-        lancado = max((linha.lancado_em for linha in linhas if linha.lancado_em), default=None)
-        if lancado is None or imp.inicio <= lancado:
-            continue  # a extração começou antes do lançamento: não pode trazê-lo
-        if ConferenciaLote.objects.filter(
-            lote=lote,
-            extracao=extracao,
-            tipo__in=(ConferenciaLote.Tipo.LANCAMENTO, ConferenciaLote.Tipo.REVISAO),
-        ).exists():
-            continue
-        numero = linhas[0].requisicao_scpi
-        # A foto da última tentativa que chegou ao Salvar: a lançada, ou a que ficou em verificar
-        # e foi resolvida à mão com o número (o SCPI salvou e a resposta se perdeu). Sem nenhuma,
-        # o lote é de antes da conciliação, e a entrega se recalcula das linhas.
-        tentativa = (
-            TentativaLancamento.objects.filter(
+        try:
+            lancado = max((linha.lancado_em for linha in linhas if linha.lancado_em), default=None)
+            if lancado is None or imp.inicio <= lancado:
+                continue  # a extração começou antes do lançamento: não pode trazê-lo
+            if ConferenciaLote.objects.filter(
                 lote=lote,
-                foto__isnull=False,
-                resultado__in=(
-                    TentativaLancamento.Resultado.LANCADA,
-                    TentativaLancamento.Resultado.VERIFICAR,
-                ),
+                extracao=extracao,
+                tipo__in=(ConferenciaLote.Tipo.LANCAMENTO, ConferenciaLote.Tipo.REVISAO),
+            ).exists():
+                continue
+            numero = linhas[0].requisicao_scpi
+            # A foto da última tentativa que chegou ao Salvar: a lançada, ou a que ficou em
+            # verificar e foi resolvida à mão com o número (o SCPI salvou e a resposta se perdeu).
+            # Sem nenhuma, o lote é de antes da conciliação, e a entrega se recalcula das linhas.
+            tentativa = (
+                TentativaLancamento.objects.filter(
+                    lote=lote,
+                    foto__isnull=False,
+                    resultado__in=(
+                        TentativaLancamento.Resultado.LANCADA,
+                        TentativaLancamento.Resultado.VERIFICAR,
+                    ),
+                )
+                .order_by("-momento", "-pk")
+                .first()
             )
-            .order_by("-momento", "-pk")
-            .first()
-        )
-        entrega = (
-            entrega_da_foto(tentativa.foto, linhas[0].centro_custo)
-            if tentativa
-            else entrega_das_linhas(linhas, lista_de_centros)
-        )
-        em_outro_lote = (
-            LinhaSaida.objects.filter(requisicao_scpi=numero).exclude(lote=lote).exists()
-        )
-        primeira = _veredito_conclusivo(lote)
-        if primeira is not None and extracao.motivo == ExtracaoOficial.Motivo.ARQUIVO:
-            continue  # um arquivo antigo não revisa um veredito: não se sabe quando foi exportado
-        resultado = regras.veredito(
-            lote,
-            numero,
-            oficiais,
-            entrega,
-            maior=extracao.maior_requisicao,
-            numero_em_outro_lote=em_outro_lote,
-            depara=depara,
-            espera_observacoes=bool(tentativa and tentativa.foto.get("observacoes")),
-            ja_vista=bool(primeira and primeira.requisicao_id),
-        )
-        tipo = ConferenciaLote.Tipo.REVISAO if primeira else ConferenciaLote.Tipo.LANCAMENTO
-        alterado = False
-        diferencas = list(resultado.diferencas)
-        if primeira is not None and primeira.requisicao:
-            if resultado.requisicao:
-                mudou = regras.alteracoes(_oficial(primeira.requisicao), resultado.requisicao)
-            else:  # a requisição conferida no lançamento sumiu do relatório (excluída no SCPI)
-                mudou = [
-                    {
-                        "campo": "requisição",
-                        "antes": primeira.requisicao.requisicao,
-                        "agora": "(ausente no relatório)",
-                    }
-                ]
-            alterado = bool(mudou)
-            diferencas += [{"campo": m["campo"], "esperado": m["antes"], "oficial": m["agora"],
-                            "alteracao": True} for m in mudou]  # fmt: skip
-        ConferenciaLote.objects.create(
-            lote=lote,
-            extracao=extracao,
-            tipo=tipo,
-            veredito=resultado.veredito,
-            requisicao_id=pk_por_numero.get(resultado.requisicao.requisicao)
-            if resultado.requisicao
-            else None,
-            outra_requisicao_id=pk_por_numero.get(resultado.outra.requisicao)
-            if resultado.outra
-            else None,
-            origem_vinculo=resultado.origem,
-            diferencas=diferencas,
-            notas=list(resultado.notas),
-            alterado_depois=alterado,
-            tentativa=tentativa,
-        )
-        contagem[resultado.veredito] = contagem.get(resultado.veredito, 0) + 1
+            entrega = (
+                entrega_da_foto(tentativa.foto, linhas[0].centro_custo)
+                if tentativa
+                else entrega_das_linhas(linhas, lista_de_centros)
+            )
+            em_outro_lote = (
+                LinhaSaida.objects.filter(requisicao_scpi=numero).exclude(lote=lote).exists()
+            )
+            primeira = _veredito_conclusivo(lote)
+            if primeira is not None and extracao.motivo == ExtracaoOficial.Motivo.ARQUIVO:
+                # Um arquivo antigo não revisa um veredito: não se sabe quando foi exportado.
+                continue
+            resultado = regras.veredito(
+                lote,
+                numero,
+                oficiais,
+                entrega,
+                maior=extracao.maior_requisicao,
+                numero_em_outro_lote=em_outro_lote,
+                depara=depara,
+                espera_observacoes=bool(tentativa and tentativa.foto.get("observacoes")),
+                ja_vista=bool(primeira and primeira.requisicao_id),
+            )
+            tipo = ConferenciaLote.Tipo.REVISAO if primeira else ConferenciaLote.Tipo.LANCAMENTO
+            alterado = False
+            diferencas = list(resultado.diferencas)
+            if primeira is not None and primeira.requisicao:
+                if resultado.requisicao:
+                    mudou = regras.alteracoes(_oficial(primeira.requisicao), resultado.requisicao)
+                else:  # a requisição conferida no lançamento sumiu do relatório (excluída no SCPI)
+                    mudou = [
+                        {
+                            "campo": "requisição",
+                            "antes": primeira.requisicao.requisicao,
+                            "agora": "(ausente no relatório)",
+                        }
+                    ]
+                alterado = bool(mudou)
+                diferencas += [{"campo": m["campo"], "esperado": m["antes"], "oficial": m["agora"],
+                                "alteracao": True} for m in mudou]  # fmt: skip
+            ConferenciaLote.objects.create(
+                lote=lote,
+                extracao=extracao,
+                tipo=tipo,
+                veredito=resultado.veredito,
+                requisicao_id=pk_por_numero.get(resultado.requisicao.requisicao)
+                if resultado.requisicao
+                else None,
+                outra_requisicao_id=pk_por_numero.get(resultado.outra.requisicao)
+                if resultado.outra
+                else None,
+                origem_vinculo=resultado.origem,
+                diferencas=diferencas,
+                notas=list(resultado.notas),
+                alterado_depois=alterado,
+                tentativa=tentativa,
+            )
+            contagem[resultado.veredito] = contagem.get(resultado.veredito, 0) + 1
+        except Exception as exc:
+            if falhas is None:
+                raise
+            logger.exception("⚠ não foi possível conferir o lote %s (lançado)", lote)
+            falhas.append(f"lote {lote} (lançado): {exc}")
     return contagem
 
 
@@ -347,8 +364,8 @@ class ConciliacaoEmAndamento(Exception):
 
 
 class ConciliacaoIncompleta(Exception):
-    """Alguma etapa da conciliação falhou; `contagem` é o que ficou gravado desta extração, até
-    a falha inclusive (a etapa que falhou pode ter gravado parte dos lotes)."""
+    """Algum lote, ou alguma etapa, falhou; `contagem` é o que ficou gravado desta extração (os
+    outros lotes seguem gravados; só o que falhou fica de fora)."""
 
     def __init__(self, contagem: dict[str, int], falhas: list[str]):
         self.contagem = contagem
@@ -390,14 +407,15 @@ def _gravadas(extracao: ExtracaoOficial) -> dict[str, int]:
 
 def conciliar(extracao: ExtracaoOficial) -> dict[str, int]:
     """Toda a conciliação de uma extração, sob a trava: primeiro os lotes em verificar (a que
-    protege contra lançar duas vezes), depois os lançados. Uma etapa que falha não impede a outra,
-    mas a falha não fica escondida: no fim, `ConciliacaoIncompleta` leva a contagem parcial e o
-    que falhou. Quem chama decide: o robô só registra no log; os comandos saem com erro."""
+    protege contra lançar duas vezes), depois os lançados. Um lote que falha não impede os outros,
+    nem uma etapa a outra, mas a falha não fica escondida: no fim, `ConciliacaoIncompleta` leva
+    a contagem do que ficou gravado e o que falhou. Quem chama decide: o robô só registra no
+    log; os comandos saem com erro."""
     contagem: dict[str, int] = {}
     falhas: list[str] = []
     with _trava_conciliacao():
         try:
-            verificar = conciliar_verificar(extracao)
+            verificar = conciliar_verificar(extracao, falhas)
         except Exception as exc:
             logger.exception("⚠ não foi possível conferir os lotes em verificar")
             falhas.append(f"lotes em verificar: {exc}")
@@ -405,7 +423,7 @@ def conciliar(extracao: ExtracaoOficial) -> dict[str, int]:
             if verificar:
                 contagem["VERIFICAR"] = verificar
         try:
-            contagem = conciliar_lancados(extracao) | contagem
+            contagem = conciliar_lancados(extracao, falhas) | contagem
         except Exception as exc:
             logger.exception("⚠ não foi possível conferir os lotes lançados")
             falhas.append(f"lotes lançados: {exc}")

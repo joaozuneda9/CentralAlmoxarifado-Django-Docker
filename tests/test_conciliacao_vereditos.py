@@ -417,7 +417,7 @@ def test_etapa_que_falha_nao_some_e_o_comando_sai_com_erro(dois_lotes, scpi, tmp
     p, av = dois_lotes
     lancar(scpi, [p, av])
 
-    def quebra(extracao):
+    def quebra(extracao, falhas=None):
         raise RuntimeError("tabela indisponível")
 
     monkeypatch.setattr(servicos, "conciliar_lancados", quebra)
@@ -460,7 +460,9 @@ def test_lote_resolvido_a_mao_usa_a_foto_da_tentativa_e_nao_o_cadastro_de_hoje(d
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures("journal")
-def test_falha_no_meio_da_etapa_conta_o_que_ficou_gravado(dois_lotes, scpi, monkeypatch):
+def test_lote_que_quebra_nao_impede_os_outros_e_a_contagem_e_a_gravada(
+    dois_lotes, scpi, monkeypatch
+):
     from conciliacao import servicos
     from conciliacao.servicos import ConciliacaoIncompleta
 
@@ -468,17 +470,17 @@ def test_falha_no_meio_da_etapa_conta_o_que_ficou_gravado(dois_lotes, scpi, monk
     lancar(scpi, [p, av])
     ConferenciaLote.objects.all().delete()
     original = regras.veredito
-    chamadas = []
 
-    def quebra_no_segundo(*args, **kwargs):
-        chamadas.append(1)
-        if len(chamadas) > 1:
+    def quebra_no_av(lote, *args, **kwargs):
+        if lote == av:  # uma foto malformada, por exemplo
             raise RuntimeError("tabela indisponível")
-        return original(*args, **kwargs)
+        return original(lote, *args, **kwargs)
 
-    monkeypatch.setattr(servicos.regras, "veredito", quebra_no_segundo)
+    monkeypatch.setattr(servicos.regras, "veredito", quebra_no_av)
     with pytest.raises(ConciliacaoIncompleta) as erro:
         nova_extracao(scpi)
-    # O primeiro lote ficou gravado: a contagem não pode dizer "nada gravado".
+    # O AV vem antes na ordem e quebra; o P segue e fica gravado, e a contagem o diz.
     assert erro.value.contagem == {"COMPROVADO": 1}
-    assert ConferenciaLote.objects.filter(tipo="LANCAMENTO").count() == 1
+    assert erro.value.falhas == [f"lote {av} (lançado): tabela indisponível"]
+    assert [c.veredito for c in conferencias(p)] == ["COMPROVADO"]
+    assert conferencias(av) == []

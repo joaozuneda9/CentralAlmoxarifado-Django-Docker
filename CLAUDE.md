@@ -669,7 +669,7 @@ transações precisam se comportar como no servidor.
   as alterações contra a requisição daquela; o veredito atual é o da última conclusiva. Nunca muda as
   linhas de saída.
   `conciliar` roda sob a trava `almoxarifado:conciliacao` (`GET_LOCK` com espera), primeiro os em
-  verificar e depois os lançados, cada etapa isolada; uma etapa que falha não impede a outra, mas no
+  verificar e depois os lançados, cada etapa e cada lote isolados; um lote ou uma etapa que falha não impede os outros, mas no
   fim sobe `ConciliacaoIncompleta` (com a contagem parcial): o robô só a registra no log, e os comandos
   saem com erro; a contagem dela é lida do banco, porque a etapa que falhou pode ter gravado parte dos
   lotes. A extração de um CSV já
