@@ -15,7 +15,7 @@ from catalogo.models import Importacao
 from conciliacao import regras
 from conciliacao.models import ExtracaoOficial, ItemOficial, RequisicaoOficial
 from scpi.execucao import Resultado, executar
-from scpi.leitura import RequisicaoLida, ler_requisicoes
+from scpi.leitura import ErroImportacao, RequisicaoLida, ler_requisicoes
 
 
 def impressao(conteudo: bytes) -> str:
@@ -38,6 +38,20 @@ def _bruto(conteudo: bytes | None) -> dict:
     if origem is not None:
         return {"impressao": digital, "arquivo": None, "mesmo_arquivo_que": origem}
     return {"impressao": digital, "arquivo": gzip.compress(conteudo)}
+
+
+def _conferir_periodo(lidas: list[RequisicaoLida], periodo: tuple[date, date]) -> None:
+    """A extração diz cobrir `periodo`, e o relatório filtra por DTPAG: uma requisição com DTPAG
+    fora dele (CSV de outro período em `--arquivo`, ou o filtro do SCPI mudou) faz a extração
+    inteira falhar, em vez de guardar o que o período não promete."""
+    de, ate = periodo
+    for lida in lidas:
+        if lida.data_filtro is not None and not de <= lida.data_filtro <= ate:
+            raise ErroImportacao(
+                f"Requisições do SCPI: a requisição {lida.requisicao} tem DTPAG "
+                f"{lida.data_filtro:%d/%m/%Y}, fora do período {de:%d/%m/%Y} a {ate:%d/%m/%Y}; "
+                "nada foi gravado."
+            )
 
 
 def _gravar_requisicoes(extracao: ExtracaoOficial, lidas: list[RequisicaoLida]) -> None:
@@ -95,6 +109,7 @@ def extrair(
 
     def gravar(conteudo: bytes) -> Resultado:
         lidas = ler_requisicoes(conteudo).linhas
+        _conferir_periodo(lidas, periodo)
         extracao = ExtracaoOficial.objects.create(
             importacao=recebido["importacao"],
             motivo=motivo,

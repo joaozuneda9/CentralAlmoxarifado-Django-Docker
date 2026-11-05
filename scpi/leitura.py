@@ -283,10 +283,14 @@ TETO_QUANTIDADE = Decimal(10) ** (14 - CASAS_QUANTIDADE)
 
 
 def _quantidade_que_cabe(valor: Decimal) -> Decimal:
-    """A quantidade como veio, se cabe exata no campo do banco; senão, ValueError."""
-    casas = max(-valor.normalize().as_tuple().exponent, 0)
-    if casas > CASAS_QUANTIDADE or abs(valor) >= TETO_QUANTIDADE:
+    """A quantidade como veio, se cabe exata no campo do banco; senão, ValueError.
+
+    Primeiro a magnitude, depois a precisão: comparar com o valor quantizado a 4 casas é exato
+    (o `normalize()` arredondaria pela precisão do contexto e aceitaria uma fração longa)."""
+    if abs(valor) >= TETO_QUANTIDADE:
         raise ValueError(f"quantidade fora do limite: {valor}")
+    if valor != valor.quantize(Decimal(1).scaleb(-CASAS_QUANTIDADE)):
+        raise ValueError(f"quantidade com mais de {CASAS_QUANTIDADE} casas: {valor}")
     return valor
 
 

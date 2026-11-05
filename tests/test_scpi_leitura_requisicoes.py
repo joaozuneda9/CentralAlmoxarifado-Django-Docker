@@ -140,3 +140,9 @@ def test_quantidade_com_zeros_a_direita_e_no_limite_e_aceita():
     itens = [ItemCSV("1", "1,50000"), ItemCSV("2", "9999999999,9999")]
     (lida,) = ler_requisicoes(relatorio([_req(itens=itens)])).linhas
     assert [i.quantidade for i in lida.itens] == [Decimal("1.5"), Decimal("9999999999.9999")]
+
+
+def test_fracao_longa_que_o_contexto_arredondaria_e_erro():
+    quantidade = "1," + "0" * 34 + "1"  # 36 casas: o normalize() arredondaria para 1
+    with pytest.raises(ErroImportacao, match="quantidade inválida"):
+        ler_requisicoes(relatorio([_req(itens=[ItemCSV("1", quantidade)])]))

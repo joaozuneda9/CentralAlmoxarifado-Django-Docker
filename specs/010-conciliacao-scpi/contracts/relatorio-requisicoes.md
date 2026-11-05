@@ -56,6 +56,11 @@ As demais colunas ficam só no arquivo bruto.
    inventário.
 7. O mesmo código repetido numa requisição é aceito e lido como duas linhas. A comparação conta as
    linhas.
+8. Uma requisição com `DTPAG` fora do período da extração (um CSV de outro período no
+   `--arquivo`, ou o SCPI deixando de filtrar por `DTPAG`) faz a extração inteira falhar, pela regra
+   3: a extração só guarda o que o seu período promete.
+9. Quantidade que não cabe exata em `ItemOficial.quantidade` (10 dígitos inteiros e 4 casas) é
+   erro, como a ilegível: o banco a arredondaria em silêncio.
 
 ## Fixture de teste
 

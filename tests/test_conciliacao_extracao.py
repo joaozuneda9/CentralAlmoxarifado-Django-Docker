@@ -153,3 +153,19 @@ def test_banco_recusa_extracao_de_antes_sem_execucao():
 def test_historico_mostra_o_periodo_da_extracao():
     extracao = _extrair(_csv(3588))
     assert linha_de_importacao(extracao.importacao, set()).modo == "Período 22/10 a 24/10"
+
+
+def test_dtpag_fora_do_periodo_faz_a_extracao_falhar():
+    conteudo = _csv(3588, data_filtro=date(2026, 10, 25))
+    extracao = _extrair(conteudo)
+    extracao.refresh_from_db()
+    assert extracao.importacao.situacao == "FALHA"
+    assert "fora do período 22/10/2026 a 24/10/2026" in extracao.importacao.erro
+    assert not RequisicaoOficial.objects.exists()
+    assert gzip.decompress(bytes(extracao.arquivo)) == conteudo
+
+
+def test_dtpag_nas_pontas_do_periodo_vale():
+    _extrair(_csv(3588, data_filtro=date(2026, 10, 22)))
+    extracao = _extrair(_csv(3589, data_filtro=date(2026, 10, 24)))
+    assert extracao.importacao.situacao == "SUCESSO"
