@@ -122,7 +122,7 @@ def test_comando_com_arquivo(tmp_path, capsys):
     arquivo.write_bytes(_csv(3588, 3589))
     call_command("extrair_requisicoes", desde="22/10/2026", ate="24/10/2026", arquivo=str(arquivo))
     assert "2 requisições, a maior 003589/26" in capsys.readouterr().out
-    assert ExtracaoOficial.objects.get().motivo == "MANUAL"
+    assert ExtracaoOficial.objects.get().motivo == "ARQUIVO"
 
 
 def test_comando_com_falha_sai_com_erro(tmp_path):

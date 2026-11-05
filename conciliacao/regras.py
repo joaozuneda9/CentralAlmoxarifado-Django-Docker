@@ -8,7 +8,7 @@ from dataclasses import dataclass
 from datetime import date, timedelta
 from decimal import Decimal, InvalidOperation
 
-from pedidos.regras import norm_u, qtd_br
+from pedidos.regras import norm_u, saldo_br
 
 RE_REQUISICAO = re.compile(r"^(\d{6})/(\d{2})$")  # número visível do SCPI: 003588/26
 # No máximo 9 dígitos: o lote cabe nos 12 caracteres de `lote_observado` (e da `LinhaSaida`); um
@@ -228,7 +228,11 @@ def _placa(valor: str) -> str:
 
 
 def _itens_texto(itens) -> str:
-    return "; ".join(f"{codigo} × {qtd_br(qtd)}" for codigo, qtd in itens) or "nenhum"
+    return "; ".join(f"{codigo} × {saldo_br(qtd)}" for codigo, qtd in itens) or "nenhum"
+
+
+def _placas_texto(pares) -> str:
+    return ", ".join(f"{codigo} {placa or '(sem placa)'}" for codigo, placa in pares) or "nenhum"
 
 
 def comparar(
@@ -237,8 +241,9 @@ def comparar(
     """As diferenças (campo, esperado, oficial) e as notas entre a entrega e a requisição.
 
     Códigos por `norm_u` e nunca pelo de/para (FR-019b, FR-020): um par só vira nota. O centro
-    é comparado pelo código; o nome diferente é nota (FR-019a). A placa esperada de cada item é
-    a do item ou, sem ela, a do centro (FR-019)."""
+    é comparado pelo código; o nome diferente é nota (FR-019a), e o centro sem código esperado
+    (o lote antigo cujo centro saiu do cadastro) não é conferido. A placa esperada de cada item é
+    a do item ou, sem ela, a do centro (FR-019), conferida também quando os itens divergem."""
     depara = depara or {}
     diferencas: list[dict] = []
     notas: list[dict] = []
@@ -250,7 +255,15 @@ def comparar(
         diferenca("tipo", entrega.tipo, oficial.tipo or "(vazio)")
     if entrega.data != oficial.data:
         diferenca("data", f"{entrega.data:%d/%m/%Y}", f"{oficial.data:%d/%m/%Y}")
-    if _codigo_centro(entrega.cod_ccusto) != _codigo_centro(oficial.cod_ccusto):
+    if not _codigo_centro(entrega.cod_ccusto):
+        notas.append(
+            {
+                "campo": "centro de custo",
+                "texto": f'"{entrega.centro_nome}" não está mais no cadastro de centros; o centro '
+                f"não foi conferido (no SCPI, {oficial.cod_ccusto})",
+            }
+        )
+    elif _codigo_centro(entrega.cod_ccusto) != _codigo_centro(oficial.cod_ccusto):
         diferenca("centro de custo", entrega.cod_ccusto, oficial.cod_ccusto)
     elif (
         entrega.centro_nome
@@ -270,12 +283,21 @@ def comparar(
     esperados = sorted((norm_u(i.codigo), i.qtd) for i in entrega.itens)
     achados = sorted((norm_u(i.codigo), i.qtd) for i in oficial.itens)
     if esperados != achados:
+        # "código" só quando uma linha trocou de código e nada mais: as mesmas quantidades, mas
+        # a contagem de linhas de algum código diferente. O resto (quantidades trocadas entre os
+        # mesmos códigos, item a mais ou a menos) é "itens".
         mesmas_qtds = sorted(q for _, q in esperados) == sorted(q for _, q in achados)
-        campo = "código" if len(esperados) == len(achados) and mesmas_qtds else "itens"
+        trocou_codigo = mesmas_qtds and Counter(c for c, _ in esperados) != Counter(
+            c for c, _ in achados
+        )
         # Só o que difere: o que está só no lote e o que está só no SCPI (contando repetidos).
         so_no_lote = list((Counter(esperados) - Counter(achados)).elements())
         so_no_scpi = list((Counter(achados) - Counter(esperados)).elements())
-        diferenca(campo, _itens_texto(sorted(so_no_lote)), _itens_texto(sorted(so_no_scpi)))
+        diferenca(
+            "código" if trocou_codigo else "itens",
+            _itens_texto(sorted(so_no_lote)),
+            _itens_texto(sorted(so_no_scpi)),
+        )
         codigos_lote = {c for c, _ in esperados} - {c for c, _ in achados}
         codigos_scpi = {c for c, _ in achados} - {c for c, _ in esperados}
         for antigo, novo in sorted(depara.items()):
@@ -285,17 +307,19 @@ def comparar(
                 notas.append(
                     {"campo": "código", "texto": f"de/para: {antigo} → {novo} (só explicação)"}
                 )
-    else:
-        placas_esperadas = sorted(
-            (norm_u(i.codigo), _placa(i.placa or entrega.placa_centro)) for i in entrega.itens
-        )
-        placas_oficiais = sorted((norm_u(i.codigo), _placa(i.placa)) for i in oficial.itens)
-        if placas_esperadas != placas_oficiais:
-            diferenca(
-                "placa",
-                ", ".join(p or "(sem placa)" for _, p in placas_esperadas),
-                ", ".join(p or "(sem placa)" for _, p in placas_oficiais),
-            )
+
+    # A placa, por código, nos códigos que estão dos dois lados (mesmo com os itens divergindo).
+    comuns = {norm_u(i.codigo) for i in entrega.itens} & {norm_u(i.codigo) for i in oficial.itens}
+    placas_esperadas = sorted(
+        (norm_u(i.codigo), _placa(i.placa or entrega.placa_centro))
+        for i in entrega.itens
+        if norm_u(i.codigo) in comuns
+    )
+    placas_oficiais = sorted(
+        (norm_u(i.codigo), _placa(i.placa)) for i in oficial.itens if norm_u(i.codigo) in comuns
+    )
+    if Counter(placas_esperadas) != Counter(placas_oficiais):
+        diferenca("placa", _placas_texto(placas_esperadas), _placas_texto(placas_oficiais))
     return diferencas, notas
 
 
@@ -348,19 +372,43 @@ def veredito(
 
 
 def alteracoes(antes: Oficial, agora: Oficial) -> list[dict]:
-    """O que mudou na requisição entre a conferência do lançamento e uma revisão (FR-017)."""
+    """O que mudou na requisição entre a conferência do lançamento e uma revisão (FR-017).
+
+    Compara os valores, não os textos: uma quantidade que muda na quarta casa é alteração."""
     mudou = []
-    for campo, a, b in (
-        ("tipo", antes.tipo, agora.tipo),
-        ("data", f"{antes.data:%d/%m/%Y}", f"{agora.data:%d/%m/%Y}"),
-        ("centro de custo", _codigo_centro(antes.cod_ccusto), _codigo_centro(agora.cod_ccusto)),
-        ("recebedor", antes.recebedor, agora.recebedor),
-        (
-            "itens",
-            _itens_texto(sorted((norm_u(i.codigo), i.qtd) for i in antes.itens)),
-            _itens_texto(sorted((norm_u(i.codigo), i.qtd) for i in agora.itens)),
-        ),
-    ):
-        if not texto_igual(a, b):
-            mudou.append({"campo": campo, "antes": str(a), "agora": str(b)})
+
+    def itens(oficial):
+        return sorted((norm_u(i.codigo), i.qtd) for i in oficial.itens)
+
+    def placas(oficial):
+        return sorted((norm_u(i.codigo), _placa(i.placa)) for i in oficial.itens)
+
+    if not texto_igual(antes.tipo, agora.tipo):
+        mudou.append({"campo": "tipo", "antes": antes.tipo, "agora": agora.tipo})
+    if antes.data != agora.data:
+        mudou.append(
+            {"campo": "data", "antes": f"{antes.data:%d/%m/%Y}", "agora": f"{agora.data:%d/%m/%Y}"}
+        )
+    if _codigo_centro(antes.cod_ccusto) != _codigo_centro(agora.cod_ccusto):
+        mudou.append(
+            {"campo": "centro de custo", "antes": antes.cod_ccusto, "agora": agora.cod_ccusto}
+        )
+    if not texto_igual(antes.recebedor, agora.recebedor):
+        mudou.append({"campo": "recebedor", "antes": antes.recebedor, "agora": agora.recebedor})
+    if itens(antes) != itens(agora):
+        mudou.append(
+            {
+                "campo": "itens",
+                "antes": _itens_texto(itens(antes)),
+                "agora": _itens_texto(itens(agora)),
+            }
+        )
+    if placas(antes) != placas(agora):
+        mudou.append(
+            {
+                "campo": "placa",
+                "antes": _placas_texto(placas(antes)),
+                "agora": _placas_texto(placas(agora)),
+            }
+        )
     return mudou

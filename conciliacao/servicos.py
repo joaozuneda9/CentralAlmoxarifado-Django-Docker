@@ -2,10 +2,11 @@
 nunca (FR-021, Princípio II)."""
 
 import logging
+from contextlib import contextmanager
 from datetime import datetime
 from decimal import Decimal
 
-from django.db import transaction
+from django.db import Error, connection, transaction
 
 from catalogo.models import Importacao, ParDePara
 from conciliacao import regras
@@ -89,7 +90,9 @@ def conciliar_verificar(extracao: ExtracaoOficial) -> int:
     """Grava, para cada lote em verificar coberto pela extração, a conferência com o intervalo
     e as candidatas (FR-022, FR-023). Só vale a extração bem-sucedida que começou depois da
     tentativa; um lote sem tentativa registrada ganha `SEM_TENTATIVA`. Devolve quantas gravou."""
-    if not extracao.bem_sucedida:
+    if not extracao.bem_sucedida or extracao.motivo == ExtracaoOficial.Motivo.ARQUIVO:
+        # Um arquivo exportado antes do Salvar perdido não traria a requisição: se contasse, o
+        # intervalo sairia vazio e o lote seria relançado (Princípio III).
         return 0
     datas: dict[str, set] = {}
     for lote, data in LinhaSaida.objects.filter(status__in=TRAVADOS).values_list("lote", "data"):
@@ -287,6 +290,8 @@ def conciliar_lancados(extracao: ExtracaoOficial) -> dict[str, int]:
             espera_observacoes=bool(tentativa and tentativa.foto.get("observacoes")),
         )
         primeira = _veredito_conclusivo(lote)
+        if primeira is not None and extracao.motivo == ExtracaoOficial.Motivo.ARQUIVO:
+            continue  # um arquivo antigo não revisa um veredito: não se sabe quando foi exportado
         tipo = ConferenciaLote.Tipo.REVISAO if primeira else ConferenciaLote.Tipo.LANCAMENTO
         alterado = False
         diferencas = list(resultado.diferencas)
@@ -316,10 +321,48 @@ def conciliar_lancados(extracao: ExtracaoOficial) -> dict[str, int]:
     return contagem
 
 
+TRAVA_CONCILIACAO = "almoxarifado:conciliacao"
+ESPERA_TRAVA_S = 120
+
+
+class ConciliacaoEmAndamento(Exception):
+    """Outra conciliação segurou a trava por mais que a espera."""
+
+
+@contextmanager
+def _trava_conciliacao():
+    """Uma conciliação por vez entre processos (`GET_LOCK`, com espera): duas ao mesmo tempo
+    poderiam gravar, cada uma, a conferência do lançamento do mesmo lote."""
+    with connection.cursor() as cursor:
+        cursor.execute("SELECT GET_LOCK(%s, %s)", [TRAVA_CONCILIACAO, ESPERA_TRAVA_S])
+        obtida = cursor.fetchone()[0] == 1
+    if not obtida:
+        raise ConciliacaoEmAndamento("Outra conciliação com o SCPI está em andamento.")
+    try:
+        yield
+    finally:
+        try:
+            with connection.cursor() as cursor:
+                cursor.execute("SELECT RELEASE_LOCK(%s)", [TRAVA_CONCILIACAO])
+        except Error:
+            logger.warning("Não foi possível liberar a trava da conciliação.", exc_info=True)
+
+
 def conciliar(extracao: ExtracaoOficial) -> dict[str, int]:
-    """Toda a conciliação de uma extração: os lotes em verificar e os lançados."""
-    contagem = conciliar_lancados(extracao)
-    verificar = conciliar_verificar(extracao)
-    if verificar:
-        contagem["VERIFICAR"] = verificar
+    """Toda a conciliação de uma extração, sob a trava: primeiro os lotes em verificar (a que
+    protege contra lançar duas vezes), depois os lançados. Uma etapa que falha vai para o log e
+    não impede a outra."""
+    contagem: dict[str, int] = {}
+    with _trava_conciliacao():
+        try:
+            verificar = conciliar_verificar(extracao)
+        except Exception:
+            logger.exception("⚠ não foi possível conferir os lotes em verificar")
+        else:
+            if verificar:
+                contagem["VERIFICAR"] = verificar
+        try:
+            contagem = conciliar_lancados(extracao) | contagem
+        except Exception:
+            logger.exception("⚠ não foi possível conferir os lotes lançados")
     return contagem

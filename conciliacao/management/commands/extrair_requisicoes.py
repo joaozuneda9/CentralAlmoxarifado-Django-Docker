@@ -12,8 +12,8 @@ from scpi.management.comum import data_opcao, obter_csv
 
 class Command(BaseCommand):
     help = (
-        "Extrai do SCPI a Relação de Requisições de saída de todos os tipos no período e a "
-        "guarda (arquivo bruto e requisições), sem conciliar nada. Só lê o SCPI."
+        "Extrai do SCPI a Relação de Requisições de saída de todos os tipos no período, a guarda "
+        "(arquivo bruto e requisições) e concilia os lotes lançados e em verificar. Só lê o SCPI."
     )
 
     def add_arguments(self, parser):
@@ -27,7 +27,7 @@ class Command(BaseCommand):
             raise CommandError("O início do período é depois do fim.")
         try:
             extracao = extrair(
-                ExtracaoOficial.Motivo.MANUAL,
+                ExtracaoOficial.Motivo.ARQUIVO if arquivo else ExtracaoOficial.Motivo.MANUAL,
                 (de, ate),
                 obter_csv(arquivo, lambda: relatorios.baixar_requisicoes(de, ate)),
             )

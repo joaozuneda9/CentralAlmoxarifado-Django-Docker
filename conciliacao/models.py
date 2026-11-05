@@ -18,6 +18,9 @@ class ExtracaoOficial(models.Model):
         DEPOIS = "DEPOIS", "Depois do lançamento"
         DIARIA = "DIARIA", "Diária"
         MANUAL = "MANUAL", "Manual"
+        # Um CSV já baixado (`--arquivo`): não se sabe quando foi exportado. Nunca libera um lote
+        # em verificar nem gera revisão; só dá o primeiro veredito de um lote lançado.
+        ARQUIVO = "ARQUIVO", "Arquivo enviado"
 
     importacao = models.OneToOneField(
         Importacao, on_delete=models.PROTECT, related_name="extracao_oficial"

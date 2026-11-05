@@ -668,6 +668,11 @@ transações precisam se comportar como no servidor.
   `LANCAMENTO` (as `AGUARDANDO` são provisórias); as seguintes são `REVISAO`, com `alterado_depois` e
   as alterações contra a requisição daquela; o veredito atual é o da última conclusiva. Nunca muda as
   linhas de saída.
+  `conciliar` roda sob a trava `almoxarifado:conciliacao` (`GET_LOCK` com espera), primeiro os em
+  verificar e depois os lançados, cada etapa isolada (falha vai para o log). A extração de um CSV já
+  baixado (`--arquivo` nos dois comandos) tem o motivo `ARQUIVO`: não se sabe quando foi exportado, então
+  nunca confere lote em verificar (um arquivo de antes do Salvar perdido liberaria o relançamento) nem
+  revisa um veredito; só dá o primeiro veredito de um lote lançado.
 - `implantacao` (sem modelos nem migrations) guarda o backup, o `robos_em_andamento` e a carga
   do de/para. A migração única das planilhas do Apps Script (`importar_planilhas`, com
   `conversao.py` e `migracao.py`) foi feita e removida; o código fica na tag `v1.0.1`. Do que ela

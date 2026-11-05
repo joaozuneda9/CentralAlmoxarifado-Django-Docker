@@ -10,11 +10,13 @@ from django.core.management import CommandError, call_command
 from django.utils import timezone
 
 from conciliacao import regras
+from conciliacao.consultas import liberacao
 from conciliacao.extracao import extrair
 from conciliacao.models import ConferenciaLote, ExtracaoOficial
 from conciliacao.servicos import conciliar
 from pedidos.models import ExecucaoRobo, LinhaSaida
 from scpi.lancamento import executar_lancamento
+from scpi.requisicoes import ResultadoIncerto
 from tests.relacao_requisicoes import ItemCSV, RequisicaoCSV
 
 Item = regras.ItemConferido
@@ -289,13 +291,89 @@ def test_comando_concilia_um_csv_e_recusa_com_lancamento_em_andamento(
 ):
     p, av = dois_lotes
     lancar(scpi, [p, av])
+    ConferenciaLote.objects.all().delete()  # o arquivo dá o primeiro veredito
     hoje = timezone.localdate()
     arquivo = tmp_path / "requisicoes.csv"
     arquivo.write_bytes(scpi.relatorio(hoje - timedelta(days=40), hoje + timedelta(days=1)))
     call_command("conciliar_lancamentos", arquivo=str(arquivo))
     assert "comprovado" in capsys.readouterr().out
-    assert len(conferencias(p)) == 2  # o lançamento e a revisão desta extração
+    assert len(conferencias(p)) == 1
+    # Um arquivo não sabe quando foi exportado: não revisa o veredito que o lote já tem.
+    call_command("conciliar_lancamentos", arquivo=str(arquivo))
+    assert "nenhum lote a conferir" in capsys.readouterr().out
+    assert len(conferencias(p)) == 1
     ExecucaoRobo.objects.create()  # em andamento
     with pytest.raises(CommandError, match="em andamento"):
         call_command("conciliar_lancamentos", arquivo=str(arquivo))
     assert LinhaSaida.objects.filter(status="LANCADA").count() == 3  # nada mudou nas linhas
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
+def test_revisao_compara_com_o_lancamento_e_nao_com_a_revisao_anterior(dois_lotes, scpi):
+    p, _ = dois_lotes
+    lancar(scpi, [p])
+    scpi.salvas[0].itens.append(ItemCSV("023.001.001", "6"))
+    nova_extracao(scpi)
+    scpi.salvas[0].itens.pop()  # o SCPI volta à requisição do lançamento
+    nova_extracao(scpi)
+    _, primeira_revisao, segunda_revisao = conferencias(p)
+    assert primeira_revisao.alterado_depois
+    assert not segunda_revisao.alterado_depois
+    assert segunda_revisao.veredito == "COMPROVADO"
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
+def test_arquivo_nunca_confere_lote_em_verificar(dois_lotes, scpi, tmp_path):
+    # Um CSV exportado antes do Salvar que se perdeu não traria a requisição: o intervalo
+    # sairia vazio e o lote seria relançado. A extração de arquivo não conta (Princípio III).
+    p, av = dois_lotes
+    scpi.falhas_salvar[p] = ResultadoIncerto("o SCPI não respondeu")
+    lancar(scpi, [p, av])
+    ConferenciaLote.objects.filter(tipo="VERIFICAR").delete()
+    hoje = timezone.localdate()
+    arquivo = tmp_path / "antigo.csv"
+    arquivo.write_bytes(scpi.relatorio(hoje - timedelta(days=40), hoje + timedelta(days=1)))
+    call_command("conciliar_lancamentos", arquivo=str(arquivo))
+    assert not ConferenciaLote.objects.filter(lote=p, tipo="VERIFICAR").exists()
+    assert not liberacao(p).permitida
+
+
+def test_quantidades_trocadas_entre_os_mesmos_codigos_sao_itens():
+    lote = entrega(itens=(Item("A", Decimal("1")), Item("B", Decimal("2"))))
+    scpi = oficial(itens=(Item("A", Decimal("2")), Item("B", Decimal("1"))))
+    assert campos(regras.comparar(lote, scpi)[0]) == ["itens"]
+
+
+def test_placa_errada_aparece_mesmo_com_os_itens_divergindo():
+    lote = entrega(itens=(Item("A", Decimal("1"), "ABC1D23"), Item("B", Decimal("2"))))
+    scpi = oficial(itens=(Item("A", Decimal("1"), "XYZ9K99"), Item("B", Decimal("3"))))
+    assert campos(regras.comparar(lote, scpi)[0]) == ["itens", "placa"]
+
+
+def test_quantidade_na_quarta_casa_e_alteracao_e_aparece_no_texto():
+    antes = oficial(itens=(Item("A", Decimal("1.0001")),))
+    agora = oficial(itens=(Item("A", Decimal("1.0002")),))
+    (mudou,) = regras.alteracoes(antes, agora)
+    assert (mudou["antes"], mudou["agora"]) == ("A × 1,0001", "A × 1,0002")
+
+
+def test_placa_editada_no_scpi_e_alteracao():
+    antes = oficial(itens=(Item("A", Decimal("1"), "ABC1D23"),))
+    agora = oficial(itens=(Item("A", Decimal("1"), "XYZ9K99"),))
+    assert [m["campo"] for m in regras.alteracoes(antes, agora)] == ["placa"]
+
+
+def test_centro_que_saiu_do_cadastro_nao_e_conferido_e_vira_nota():
+    diferencas, notas = regras.comparar(entrega(cod_ccusto=""), oficial())
+    assert diferencas == [] and campos(notas) == ["centro de custo"]
+
+
+@pytest.mark.django_db
+def test_comando_recusa_periodo_invertido_e_arquivo_que_nao_abre(tmp_path):
+    with pytest.raises(CommandError, match="depois do fim"):
+        call_command("conciliar_lancamentos", desde="24/10/2026", ate="22/10/2026")
+    with pytest.raises(CommandError, match="Não foi possível ler"):
+        call_command("conciliar_lancamentos", arquivo=str(tmp_path / "nao-existe.csv"))
+    assert not ExtracaoOficial.objects.exists()

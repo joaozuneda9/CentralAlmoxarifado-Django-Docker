@@ -52,17 +52,21 @@ class Command(BaseCommand):
             raise CommandError("Informe --desde e --ate juntos.")
         if desde:
             periodo = (data_opcao(desde), data_opcao(ate))
+            if periodo[0] > periodo[1]:
+                raise CommandError("O início do período é depois do fim.")
         elif arquivo:
             try:
                 periodo = periodo_do_arquivo(arquivo)
             except ErroImportacao as exc:
                 raise CommandError(str(exc)) from None
+            except OSError as exc:
+                raise CommandError(f"Não foi possível ler {arquivo}: {exc.strerror}.") from None
         else:
             periodo = periodo_padrao(timezone.localdate())
         de, ate = periodo
         try:
             extracao = extrair(
-                ExtracaoOficial.Motivo.MANUAL,
+                ExtracaoOficial.Motivo.ARQUIVO if arquivo else ExtracaoOficial.Motivo.MANUAL,
                 periodo,
                 obter_csv(arquivo, lambda: relatorios.baixar_requisicoes(de, ate)),
             )
@@ -73,5 +77,5 @@ class Command(BaseCommand):
         contagem = conciliar(extracao)
         self.stdout.write(
             f"Requisições do SCPI ({de:%d/%m/%Y} a {ate:%d/%m/%Y}): {extracao.requisicoes}. "
-            f"Conciliação: {resumo_da_contagem(contagem) or 'nenhum lote coberto'}."
+            f"Conciliação: {resumo_da_contagem(contagem) or 'nenhum lote a conferir'}."
         )

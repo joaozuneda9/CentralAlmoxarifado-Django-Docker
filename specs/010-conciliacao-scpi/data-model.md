@@ -31,7 +31,7 @@ por tipo (`trava_importacao`) passam a valer para a extração sem nenhuma outra
 | Campo | Tipo | Regra |
 |---|---|---|
 | `importacao` | OneToOne → `Importacao` | situação, início, fim, erro e período vêm daqui |
-| `motivo` | choices `ANTES`, `DEPOIS`, `DIARIA`, `MANUAL` | `ANTES` e `DEPOIS` exigem `execucao` |
+| `motivo` | choices `ANTES`, `DEPOIS`, `DIARIA`, `MANUAL`, `ARQUIVO` | `ANTES` e `DEPOIS` exigem `execucao`; `ARQUIVO` (um CSV já baixado, sem data de exportação conhecida) nunca confere lote em verificar nem revisa veredito |
 | `execucao` | FK → `pedidos.ExecucaoRobo`, nula, `PROTECT` | a execução real que a pediu |
 | `impressao` | char(64) | SHA-256 dos bytes recebidos |
 | `arquivo` | `BinaryField`, nulo | gzip do bruto; vazio se igual ao anterior ou depois de 60 dias |
