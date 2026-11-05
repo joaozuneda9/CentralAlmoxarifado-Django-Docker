@@ -69,8 +69,10 @@ A ordem de uma execução **real** é:
 2. A seleção dos lotes (como hoje). Sem lote válido, termina sem extrair.
 3. A **extração de antes**: o período de R9, até 3 tentativas. Se falhar, a execução termina `FALHA`
    ("não foi possível extrair as requisições do SCPI antes de lançar"), sem abrir o navegador do
-   lançamento e sem mudar nenhuma linha (FR-009). Cada tentativa que falha fica registrada como uma
-   `ExtracaoOficial` `ANTES` com a `Importacao` em `FALHA` e o motivo, que a tela mostra.
+   lançamento e sem mudar nenhuma linha (FR-009). Cada tentativa que falha no download ou na leitura
+   fica registrada como uma `ExtracaoOficial` `ANTES` com a `Importacao` em `FALHA` e o motivo, que a
+   tela mostra. A tentativa recusada por `ImportacaoEmAndamento` não cria registro: só vai para o log
+   e conta entre as 3.
 4. O piso = `maior_requisicao` da extração de antes.
 5. O laço `_lancar_um` como hoje, com a `TentativaLancamento` criada no `_travar` e fechada no
    `_gravar` (data-model).
