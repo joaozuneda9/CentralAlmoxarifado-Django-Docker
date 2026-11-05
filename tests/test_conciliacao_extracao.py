@@ -13,6 +13,7 @@ from conciliacao.extracao import extrair
 from conciliacao.models import ExtracaoOficial, ItemOficial, RequisicaoOficial
 from pedidos.models import ExecucaoRobo
 from scpi.execucao import ImportacaoEmAndamento
+from scpi.leitura import NadaAExibir
 from tests.relacao_requisicoes import ItemCSV, RequisicaoCSV, relatorio
 
 pytestmark = pytest.mark.django_db
@@ -169,3 +170,18 @@ def test_dtpag_nas_pontas_do_periodo_vale():
     _extrair(_csv(3588, data_filtro=date(2026, 10, 22)))
     extracao = _extrair(_csv(3589, data_filtro=date(2026, 10, 24)))
     assert extracao.importacao.situacao == "SUCESSO"
+
+
+def test_arquivo_vazio_sem_o_aviso_do_scpi_e_falha():
+    extracao = _extrair(b"")
+    assert extracao.importacao.situacao == "FALHA"
+    assert "arquivo veio vazio" in extracao.importacao.erro
+
+
+def test_nada_a_exibir_sem_lote_lancado_no_periodo_vale_como_extracao_vazia():
+    def nada():
+        raise NadaAExibir("Requisições do SCPI: nada a exibir.")
+
+    extracao = extrair(ExtracaoOficial.Motivo.MANUAL, PERIODO, nada)
+    assert extracao.bem_sucedida
+    assert (extracao.requisicoes, extracao.maior_requisicao) == (0, None)

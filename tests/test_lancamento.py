@@ -7,6 +7,7 @@ from django.db import DatabaseError, InterfaceError, connection, connections
 from django.db.models.query import QuerySet
 
 from catalogo.models import CentroCusto
+from conciliacao.models import TentativaLancamento
 from pedidos.models import TRAVA_LANCAMENTO, ExecucaoRobo, LinhaSaida
 from scpi import lancamento
 from scpi.lancamento import LancamentoEmAndamento, executar_lancamento
@@ -360,3 +361,24 @@ def test_robo_trava_antes_e_a_edicao_e_recusada(dois_lotes, scpi):
     assert set(LinhaSaida.objects.filter(lote=p).values_list("status", "recebedor")) == {
         ("LANCADA", "João")
     }
+
+
+def test_tentativa_existe_em_verificar_quando_o_salvar_e_clicado(dois_lotes, scpi):
+    vistas = []
+    scpi.ao_salvar = lambda: vistas.append(
+        list(TentativaLancamento.objects.values_list("lote", "resultado"))
+    )
+    lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
+    p, av = dois_lotes
+    assert vistas[0] == [(p, "VERIFICAR")]
+
+
+def test_falha_ao_registrar_a_tentativa_desfaz_a_trava_e_nao_salva(dois_lotes, scpi, monkeypatch):
+    def quebrado(*args, **kwargs):
+        raise DatabaseError("tabela de tentativas indisponível")
+
+    monkeypatch.setattr(lancamento.robo, "registrar_tentativa", quebrado)
+    with pytest.raises(FalhaCritica, match="não foi possível travar"):
+        lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
+    assert set(LinhaSaida.objects.values_list("status", flat=True)) == {"PENDENTE"}
+    assert ("salvar", dois_lotes[0]) not in scpi.chamadas

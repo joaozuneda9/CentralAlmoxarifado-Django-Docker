@@ -19,6 +19,12 @@ class ErroImportacao(Exception):
     """Falha esperada de uma importação; a mensagem vai para a saúde do catálogo."""
 
 
+class NadaAExibir(ErroImportacao):
+    """O SCPI não gerou o relatório: avisou "Nada a exibir" (nenhum registro no filtro). Na
+    "Relação de Requisições" sem filtro, quem baixa decide se isso vale (spec 010); um arquivo
+    vazio, sem esse aviso, nunca vale."""
+
+
 @dataclass(frozen=True)
 class Leitura:
     linhas: list = field(default_factory=list)

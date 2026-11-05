@@ -93,10 +93,17 @@ def extrair_antes(execucao, periodo: tuple[date, date], baixar: Extrair) -> Extr
 
 
 def extrair_depois(execucao, periodo: tuple[date, date], baixar: Extrair) -> None:
-    """A extração de depois, uma tentativa. Falha só vai para o log: os lotes ficam aguardando
-    conferência, e a situação da execução não piora (FR-012)."""
+    """A extração de depois, uma tentativa. Qualquer falha, inclusive do banco ao registrá-la,
+    só vai para o log: os lotes já lançados ficam aguardando conferência, e a situação da
+    execução não piora (FR-012)."""
     logger.info("→ extraindo as requisições do SCPI depois do lançamento")
-    extracao = _uma_extracao(ExtracaoOficial.Motivo.DEPOIS, periodo, baixar, execucao)
+    try:
+        extracao = _uma_extracao(ExtracaoOficial.Motivo.DEPOIS, periodo, baixar, execucao)
+    except Exception:
+        logger.exception(
+            "⚠ extração de depois não pôde ser registrada; os lotes ficam aguardando conferência"
+        )
+        return
     if extracao is None:
         return
     if extracao.importacao.situacao == Importacao.Situacao.SUCESSO:

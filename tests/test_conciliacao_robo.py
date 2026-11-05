@@ -5,6 +5,7 @@ from datetime import date, timedelta
 
 import pytest
 from django.core.management import CommandError, call_command
+from django.db import DatabaseError
 from django.utils import timezone
 
 from catalogo.models import Importacao
@@ -231,3 +232,17 @@ def test_ponto_e_virgula_na_obs_nao_desloca_as_colunas_do_relatorio(dois_lotes, 
     lida = RequisicaoOficial.objects.get(extracao=depois)
     assert (lida.lote_observado, lida.tipo) == (p, "BALCÃO")
     assert {i.codigo for i in lida.itens.all()} == {"023.001.002", "008.001.002"}
+
+
+def test_erro_de_banco_na_extracao_de_depois_nao_piora_a_execucao(dois_lotes, scpi, monkeypatch):
+    original = robo.extrair
+
+    def quebra_no_depois(motivo, *args, **kwargs):
+        if motivo == "DEPOIS":
+            raise DatabaseError("o banco caiu ao registrar a extração")
+        return original(motivo, *args, **kwargs)
+
+    monkeypatch.setattr(robo, "extrair", quebra_no_depois)
+    execucao = lancar(scpi, list(dois_lotes))
+    assert execucao.situacao == "SUCESSO" and status() == {"LANCADA"}
+    assert "não pôde ser registrada" in execucao.log

@@ -21,7 +21,7 @@ from datetime import date
 from django.conf import settings
 
 from scpi.browser import abrir_sessao, frame_compras, interceptar_csv, orm_liberado
-from scpi.leitura import ErroImportacao
+from scpi.leitura import ErroImportacao, NadaAExibir
 
 # Início do período de cadastro pedido ao SCPI: antes de qualquer material (os mais antigos
 # têm DTAINSERE 01/01/2014), para o relatório trazer o cadastro inteiro.
@@ -308,10 +308,12 @@ def _relacao_de_requisicoes(
             if tipo is None:
                 # Sem filtro de tipo, "Nada a exibir" é um período sem nenhuma requisição: a
                 # extração decide se isso vale (conciliacao.extracao._vazio).
-                return b""
+                raise NadaAExibir(f"{rotulo}: nada a exibir de {_br(de)} a {_br(ate)}.")
             raise ErroImportacao(
                 f"{rotulo}: nenhuma requisição de saída de {_br(de)} a {_br(ate)}."
             )
         conteudo = interceptar_csv(sessao.page, frame, perfil)
+        if not conteudo:
+            raise ErroImportacao(f"{rotulo}: o SCPI entregou um CSV vazio.")
         _fechar_relatorio(frame)
         return conteudo

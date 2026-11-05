@@ -14,6 +14,7 @@ from contextlib import contextmanager
 from datetime import date, datetime
 
 from conciliacao.regras import texto_observacoes
+from scpi.leitura import NadaAExibir
 from scpi.requisicoes import ResultadoIncerto
 from tests.relacao_requisicoes import ItemCSV, RequisicaoCSV, relatorio
 
@@ -91,14 +92,16 @@ class SCPISimulado:
         return numero
 
     def relatorio(self, de: date, ate: date) -> bytes:
-        """A "Relação de Requisições" sem filtro, filtrada por DTPAG; "Nada a exibir" vira bytes
-        vazios, como em `relatorios.baixar_requisicoes`."""
+        """A "Relação de Requisições" sem filtro, filtrada por DTPAG; sem nenhuma requisição,
+        `NadaAExibir`, como em `relatorios.baixar_requisicoes`."""
         self.relatorios.append((de, ate))
         if self.falhas_relatorio:
             self.falhas_relatorio -= 1
             raise RuntimeError("SCPI fora do ar")
         no_periodo = [r for r in self.salvas if de <= (r.data_filtro or r.data) <= ate]
-        return relatorio(no_periodo) if no_periodo else b""
+        if not no_periodo:
+            raise NadaAExibir("Requisições do SCPI: nada a exibir.")
+        return relatorio(no_periodo)
 
     def depois_de_salvar(self) -> None:
         self.chamadas.append(("depois_de_salvar", self._lote))

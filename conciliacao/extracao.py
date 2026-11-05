@@ -17,7 +17,7 @@ from conciliacao.models import ExtracaoOficial, ItemOficial, RequisicaoOficial
 from pedidos.models import LinhaSaida
 from pedidos.regras import LANCADA
 from scpi.execucao import Resultado, executar
-from scpi.leitura import ErroImportacao, RequisicaoLida, ler_requisicoes
+from scpi.leitura import ErroImportacao, NadaAExibir, RequisicaoLida, ler_requisicoes
 
 
 def impressao(conteudo: bytes) -> str:
@@ -57,7 +57,7 @@ def _conferir_periodo(lidas: list[RequisicaoLida], periodo: tuple[date, date]) -
 
 
 def _vazio(periodo: tuple[date, date]) -> list[RequisicaoLida]:
-    """O SCPI respondeu "Nada a exibir" (o download devolve bytes vazios). Num período sem
+    """O SCPI respondeu "Nada a exibir" (o download levanta `NadaAExibir`). Num período sem
     nenhum lote lançado isso é possível e vale como extração sem requisições; num período com
     lote lançado, o relatório não pode estar vazio, e a extração falha (FR-005)."""
     de, ate = periodo
@@ -118,12 +118,22 @@ def extrair(
     recebido: dict[str, object] = {}
 
     def baixar() -> bytes:
-        conteudo = obter_csv()
+        try:
+            conteudo = obter_csv()
+        except NadaAExibir:
+            # O SCPI não gerou o relatório; só esse aviso faz o vazio valer (`_vazio`).
+            recebido["nada_a_exibir"] = True
+            conteudo = b""
         recebido["conteudo"] = conteudo
         return conteudo
 
     def gravar(conteudo: bytes) -> Resultado:
-        lidas = ler_requisicoes(conteudo).linhas if conteudo else _vazio(periodo)
+        if conteudo:
+            lidas = ler_requisicoes(conteudo).linhas
+        elif recebido.get("nada_a_exibir"):
+            lidas = _vazio(periodo)
+        else:
+            raise ErroImportacao("Requisições do SCPI: o arquivo veio vazio; nada foi gravado.")
         _conferir_periodo(lidas, periodo)
         extracao = ExtracaoOficial.objects.create(
             importacao=recebido["importacao"],
