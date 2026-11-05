@@ -43,6 +43,7 @@ INSTALLED_APPS = [
     "scpi",
     "automacoes",
     "implantacao",
+    "conciliacao",
 ]
 
 MIDDLEWARE = [

@@ -24,6 +24,7 @@ ROBOS = [
     ("lancamento", "Lançamento no SCPI"),
     *((robo.chave, robo.rotulo) for robo in robos_catalogo.ROBOS),
     ("depara", "Pares de/para"),
+    ("requisicoes", "Requisições do SCPI"),
 ]
 ROTULO_DO_TIPO = {chave.upper(): rotulo for chave, rotulo in ROBOS if chave != "lancamento"}
 SITUACOES = [

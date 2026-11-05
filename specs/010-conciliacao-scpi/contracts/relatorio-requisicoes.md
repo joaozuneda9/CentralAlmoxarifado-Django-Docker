@@ -49,7 +49,7 @@ As demais colunas ficam só no arquivo bruto.
 4. Relatório cortado: depois da recolagem, um registro (em geral o último) fica com **menos campos
    que o cabeçalho**. A detecção é só por essa contagem. A quebra de linha no fim do arquivo é
    opcional: um CSV válido pode terminar sem ela, e a falta dela sozinha nunca é erro. É
-   `ErroImportacao` com a posição (linha física onde o registro começa), e vale a regra 3.
+   `ErroImportacao` com a posição (o número do registro depois do cabeçalho), e vale a regra 3.
 5. Um campo de cabeçalho que varia entre as linhas da mesma requisição: `ErroImportacao`. No CSV real,
    isso nunca acontece.
 6. Quantidade ilegível: `ErroImportacao`. Quantidade 0 é aceita, porque aparece nos ajustes de

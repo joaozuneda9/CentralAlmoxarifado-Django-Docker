@@ -17,6 +17,7 @@ NOMES = {
     Importacao.Tipo.CADASTRO: "cadastro",
     Importacao.Tipo.ESTOQUE: "estoque",
     Importacao.Tipo.SAIDAS: "saídas do SCPI",
+    Importacao.Tipo.REQUISICOES: "requisições do SCPI",
 }
 
 

@@ -10,6 +10,7 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 from decimal import Decimal, InvalidOperation
 
+from conciliacao.regras import chave
 from pedidos.regras import norm_u
 from scpi.normalizadores import registros_produtos, registros_saidas
 
@@ -109,9 +110,22 @@ def _registros_da_planilha(texto: str) -> list[list[str]]:
     ]
 
 
-def _tabela(conteudo: bytes, rotulo: str, registros, inicio_cabecalho: str, colunas: list[str]):
+def _tabela(
+    conteudo: bytes,
+    rotulo: str,
+    registros,
+    inicio_cabecalho: str,
+    colunas: list[str],
+    *,
+    opcionais: tuple[str, ...] = (),
+    completos: bool = False,
+):
     """Linhas do CSV como dicionários {coluna pedida → texto}. Aceita o CSV do SCPI (";") e o
-    mesmo relatório salvo por uma planilha (",")."""
+    mesmo relatório salvo por uma planilha (",").
+
+    `opcionais` são colunas lidas quando existem (vazias quando faltam). Com `completos`, um
+    registro com menos campos que o cabeçalho (relatório cortado) é `ErroImportacao`; sem ele, os
+    campos que faltam viram vazios."""
     try:
         texto = conteudo.decode("utf-8-sig")
     except UnicodeDecodeError:
@@ -137,12 +151,19 @@ def _tabela(conteudo: bytes, rotulo: str, registros, inicio_cabecalho: str, colu
     faltando = [c for c in colunas if c not in cabecalho]
     if faltando:
         raise ErroImportacao(f"{rotulo}: cabeçalho(s) ausente(s): {', '.join(faltando)}")
-    indices = {c: cabecalho.index(c) for c in colunas}
+    indices = {c: cabecalho.index(c) for c in (*colunas, *opcionais) if c in cabecalho}
     tabela = []
-    for linha in corpo:
+    for numero, linha in enumerate(corpo, start=1):
         if not any(c.strip() for c in linha):
             continue
-        tabela.append({c: (linha[i].strip() if i < len(linha) else "") for c, i in indices.items()})
+        if completos and len(linha) < len(cabecalho):
+            raise ErroImportacao(
+                f"{rotulo}: o relatório está cortado no registro {numero} "
+                f"({len(linha)} de {len(cabecalho)} campos); nada foi gravado."
+            )
+        registro = {c: (linha[i].strip() if i < len(linha) else "") for c, i in indices.items()}
+        registro.update({c: "" for c in opcionais if c not in indices})
+        tabela.append(registro)
     return tabela
 
 
@@ -223,3 +244,139 @@ def ler_saidas(conteudo: bytes) -> Leitura:
     if sem_chave:
         avisos.append(f"Linhas sem requisição ou código ignoradas: {sem_chave}.")
     return Leitura(linhas, avisos)
+
+
+@dataclass(frozen=True)
+class ItemLido:
+    """Um item de uma requisição da "Relação de Requisições", na ordem do relatório."""
+
+    codigo: str
+    quantidade: Decimal
+    unidade: str
+    placa: str
+
+
+@dataclass(frozen=True)
+class RequisicaoLida:
+    """Uma requisição da "Relação de Requisições" sem filtro de tipo (spec 010)."""
+
+    requisicao: str  # número visível, 003588/26
+    ano: int
+    numero: int
+    id_requi: int
+    data: date  # DTLAN
+    data_filtro: date | None  # DTPAG, a data pela qual o período do relatório filtra
+    tipo: str
+    cod_ccusto: str
+    centro_nome: str
+    recebedor: str
+    observacoes: str
+    responsavel: str
+    entrada: bool
+    itens: tuple[ItemLido, ...]
+
+
+# Colunas do cabeçalho de uma requisição: repetidas em cada linha, iguais em todas.
+CABECALHO_REQUISICAO = (
+    "ID_REQUI",
+    "DTLAN",
+    "DTPAG",
+    "TPREQUI",
+    "CODCCUSTO",
+    "CCUSTO",
+    "RECEBE",
+    "OBS_CABECALHO",
+    "ENTR",
+    "RESPONSA",
+)
+
+
+def ler_requisicoes(conteudo: bytes) -> Leitura:
+    """Relação de Requisições de saída sem filtro de tipo → `RequisicaoLida`, uma por número.
+
+    Tudo ou nada (contrato `specs/010-conciliacao-scpi/contracts/relatorio-requisicoes.md`):
+    qualquer linha ilegível, relatório cortado ou cabeçalho que varia dentro de uma requisição é
+    `ErroImportacao`, e nada da leitura é aproveitado."""
+    rotulo = "Requisições do SCPI"
+    obrigatorias = [
+        "REQUI",
+        "ID_REQUI",
+        "DTLAN",
+        "DTPAG",
+        "TPREQUI",
+        "CODCCUSTO",
+        "RECEBE",
+        "OBS_CABECALHO",
+        "CADPRO",
+        "QUAN2",
+    ]
+    opcionais = ("CCUSTO", "PLACA", "UNID1", "ENTR", "RESPONSA")
+    tabela = _tabela(
+        conteudo,
+        rotulo,
+        registros_saidas,
+        "GRUPO",
+        obrigatorias,
+        opcionais=opcionais,
+        completos=True,
+    )
+    if not tabela:
+        raise ErroImportacao(f"{rotulo}: o relatório não tem nenhuma requisição; nada foi gravado.")
+
+    grupos: dict[str, list[dict]] = {}
+    for posicao, r in enumerate(tabela, start=1):
+        try:
+            chave(r["REQUI"])
+        except ValueError:
+            raise ErroImportacao(
+                f"{rotulo}: número de requisição inválido na linha {posicao} ('{r['REQUI']}')."
+            ) from None
+        grupos.setdefault(r["REQUI"], []).append(r)
+
+    requisicoes = []
+    for numero_visivel, linhas in grupos.items():
+        primeira = linhas[0]
+        for coluna in CABECALHO_REQUISICAO:
+            if any(linha.get(coluna, "") != primeira.get(coluna, "") for linha in linhas):
+                raise ErroImportacao(
+                    f"{rotulo}: a requisição {numero_visivel} tem valores diferentes de "
+                    f"{coluna} entre as suas linhas."
+                )
+        try:
+            id_requi = int(primeira["ID_REQUI"])
+            data = data_br(primeira["DTLAN"])
+            data_filtro = data_br(primeira["DTPAG"]) if primeira["DTPAG"] else None
+        except ValueError:
+            raise ErroImportacao(
+                f"{rotulo}: identificador ou data inválidos na requisição {numero_visivel}."
+            ) from None
+        itens = []
+        for linha in linhas:
+            try:
+                quantidade = decimal_br(linha["QUAN2"])
+            except ValueError:
+                raise ErroImportacao(
+                    f"{rotulo}: quantidade inválida na requisição {numero_visivel}, "
+                    f"{linha['CADPRO']} ('{linha['QUAN2']}')."
+                ) from None
+            itens.append(ItemLido(linha["CADPRO"], quantidade, linha["UNID1"], linha["PLACA"]))
+        ano, numero = chave(numero_visivel)
+        requisicoes.append(
+            RequisicaoLida(
+                requisicao=numero_visivel,
+                ano=ano,
+                numero=numero,
+                id_requi=id_requi,
+                data=data,
+                data_filtro=data_filtro,
+                tipo=primeira["TPREQUI"],
+                cod_ccusto=primeira["CODCCUSTO"],
+                centro_nome=primeira["CCUSTO"],
+                recebedor=primeira["RECEBE"],
+                observacoes=primeira["OBS_CABECALHO"],
+                responsavel=primeira["RESPONSA"],
+                entrada=primeira["ENTR"].upper() == "S",
+                itens=tuple(itens),
+            )
+        )
+    return Leitura(requisicoes, [])

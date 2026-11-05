@@ -60,13 +60,19 @@ def executar(
     obter_csv: Callable[[], bytes],
     gravar: Callable[[bytes], Resultado],
     periodo: tuple[date | None, date | None] = (None, None),
+    *,
+    ao_criar: Callable[[Importacao], None] | None = None,
 ) -> Importacao:
+    """`ao_criar` recebe a `Importacao` assim que ela é criada, antes do download: quem grava
+    um registro ligado a ela (a extração da conciliação) precisa dela dentro de `gravar`."""
     with trava(trava_importacao(tipo)) as obtida:
         if not obtida:
             raise ImportacaoEmAndamento(tipo)
         importacao = Importacao.objects.create(
             tipo=tipo, periodo_de=periodo[0], periodo_ate=periodo[1]
         )
+        if ao_criar is not None:
+            ao_criar(importacao)
         try:
             conteudo = obter_csv()
             with transaction.atomic():

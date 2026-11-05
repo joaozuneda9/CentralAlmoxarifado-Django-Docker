@@ -596,6 +596,25 @@ transações precisam se comportar como no servidor.
   `lancar_saidas` recusa sem `--dry-run`, a aba Lançamento no SCPI recusa o modo "Lançar" (só
   "Simular") e o painel avisa que está bloqueado. O `settings_test` o liga, porque os testes do
   robô lançam no SCPI simulado; os testes do bloqueio o desligam com o fixture `settings`.
+- Conciliação com o SCPI (spec `specs/010-conciliacao-scpi/`, entregue em PRs empilhados; o
+  plano diz o que cada um traz). O app `conciliacao` guarda o registro oficial: cada extração da
+  "Relação de Requisições" de saída **sem filtro de tipo** (`scpi.relatorios.baixar_requisicoes`, a
+  mesma navegação de `baixar_saidas` sem escolher o tipo; o período filtra por `DTPAG`) é uma
+  `Importacao` do tipo `REQUISICOES` com uma `ExtracaoOficial` (motivo, execução do robô quando
+  houver, bruto gzip no banco com a impressão SHA-256, `maior_requisicao`) e as
+  `RequisicaoOficial`/`ItemOficial` lidas, uma foto por extração. `conciliacao.extracao.extrair`
+  (sobre `scpi.execucao.executar`, que ganhou o `ao_criar`) é a única camada que grava a extração,
+  também na falha (sem requisições, `maior_requisicao` nulo, bruto guardado se chegou a ser
+  baixado); o sinal é a situação da `Importacao`, e só `ImportacaoEmAndamento` sobe. Impressão igual
+  a uma extração que ainda tem os bytes aponta para ela (`mesmo_arquivo_que`) em vez de guardar
+  outra cópia. `scpi.leitura.ler_requisicoes` é tudo ou nada (relatório cortado, pela contagem de
+  campos depois da recolagem, número fora do formato, cabeçalho que varia dentro da requisição e
+  quantidade ilegível são `ErroImportacao`); `conciliacao/regras.py` (puro) tem a chave de ordem do
+  número (`003588/26` → (2026, 3588), o ano decide na virada), o período (dia anterior à data mais
+  antiga até o dia seguinte a hoje) e o lote nas observações ("Central Almoxarifado <lote>").
+  `extrair_requisicoes --desde --ate [--arquivo]` só extrai e guarda, sem conciliar. Os testes usam
+  CSV sintético no formato real (`tests/relacao_requisicoes.py`); o CSV real tem nomes de pessoas e
+  nunca entra no repositório. `SaidaSCPI` e o importador das saídas BALCÃO não mudam.
 - `implantacao` (sem modelos nem migrations) guarda o backup, o `robos_em_andamento` e a carga
   do de/para. A migração única das planilhas do Apps Script (`importar_planilhas`, com
   `conversao.py` e `migracao.py`) foi feita e removida; o código fica na tag `v1.0.1`. Do que ela

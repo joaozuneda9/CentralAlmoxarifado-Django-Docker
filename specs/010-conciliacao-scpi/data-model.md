@@ -66,19 +66,19 @@ novo em cada extração que a cobre.
 | `ano`, `numero` | small int, int | derivados de `REQUI` (chave de ordem, R6) |
 | `id_requi` | int | `ID_REQUI` |
 | `data` | date | `DTLAN` |
-| `data_filtro` | date | `DTPAG` |
+| `data_filtro` | date, nula | `DTPAG` |
 | `tipo` | char | `TPREQUI` |
 | `cod_ccusto` | char | `CODCCUSTO` |
 | `centro_nome` | char | `CCUSTO` |
 | `recebedor` | char | `RECEBE` |
-| `placa` | char | `PLACA` |
 | `observacoes` | text | `OBS_CABECALHO` |
 | `lote_observado` | char(12), indexado | o lote achado nas observações (R5), ou vazio |
 | `responsavel` | char | `RESPONSA` (só exibição, não prova autoria) |
 | `entrada` | bool | `ENTR == "S"` (ajustes e transferências) |
 
 `ItemOficial` tem `requisicao` (FK, `CASCADE`), `ordem`, `codigo` (`CADPRO`), `quantidade` (`Decimal`
-com 3 casas, de `QUAN2`) e `unidade` (`UNID1`).
+com 4 casas, de `QUAN2`), `unidade` (`UNID1`) e `placa` (`PLACA`). A placa fica no item, como no
+formulário do SCPI e na `LinhaSaida`: numa requisição, cada item pode ter a sua.
 
 **Unicidade**: (`extracao`, `ano`, `numero`).
 
