@@ -141,7 +141,8 @@ Só uma extração `SUCESSO` grava `ConferenciaLote`. O "Aguardando conferência
 é o estado de um lote lançado que ainda não tem **conferência conclusiva** depois do lançamento. Isso
 cobre três casos:
 - nenhuma extração depois do lançamento;
-- só extrações com falha, que não gravam nada;
+- só extrações com falha, que ficam registradas (`ExtracaoOficial` com a `Importacao` em `FALHA`) mas
+  não gravam `RequisicaoOficial` nem `ConferenciaLote` e não entram em veredito nem em liberação;
 - só extrações bem-sucedidas com `veredito=AGUARDANDO`, que ainda não trazem a requisição nem um
   número maior (a latência do SC-008).
 
@@ -168,7 +169,8 @@ tipo `LANCAMENTO`, inclusive as `AGUARDANDO`, que são provisórias. A **primeir
 ```text
 VERIFICAR ──► SEM_TENTATIVA       (só informar o número ou não lançar)
           ──► COM_CANDIDATAS      (só informar o número, "é esta" ou não lançar)
-          ──► INTERVALO_VAZIO     (liberar permitido, com "Conferi no SCPI")
+          ──► INTERVALO_VAZIO     (liberar permitido, com "Conferi no SCPI", só se nenhuma extração
+                                   posterior à tentativa registrou candidata; R17, FR-024)
 ```
 
 Sem extração posterior à tentativa, não existe conferência `VERIFICAR`, e a liberação é recusada.

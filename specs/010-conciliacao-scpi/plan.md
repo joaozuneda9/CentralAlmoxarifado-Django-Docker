@@ -213,7 +213,8 @@ apresentação, na aba que já existe.
   - gerador de CSV sintético (`tests/relacao_requisicoes.py`).
 - **Não muda**: robô, `SaidaSCPI`, telas.
 - **Testes**:
-  - leitura: colunas obrigatórias, registro quebrado, planilha, cabeçalho variando, vazio, quantidade 0;
+  - leitura: colunas obrigatórias, registro quebrado (recolado), relatório cortado (falha), planilha,
+    cabeçalho variando, vazio, quantidade 0;
   - extração: sucesso, falha (sem requisições gravadas e com `maior_requisicao` nulo), impressão igual
     (aponta para a origem), impressão igual a uma origem já sem bytes (guarda o seu), trava ocupada;
   - chave na virada do ano.

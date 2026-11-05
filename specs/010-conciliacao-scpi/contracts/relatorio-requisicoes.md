@@ -46,11 +46,13 @@ As demais colunas ficam só no arquivo bruto.
 3. `REQUI` fora do formato: `ErroImportacao` com a linha. Nenhuma `RequisicaoOficial` é gravada; a
    `ExtracaoOficial` fica registrada, sem requisições e com `maior_requisicao` nulo, e a `Importacao`
    termina `FALHA` com o motivo. Vale para todo `ErroImportacao` desta lista.
-4. Um campo de cabeçalho que varia entre as linhas da mesma requisição: `ErroImportacao`. No CSV real,
+4. Relatório cortado: o arquivo termina no meio de um registro (a recolagem não completa os campos do
+   cabeçalho) ou sem a última linha inteira. É `ErroImportacao` com a posição, e vale a regra 3.
+5. Um campo de cabeçalho que varia entre as linhas da mesma requisição: `ErroImportacao`. No CSV real,
    isso nunca acontece.
-5. Quantidade ilegível: `ErroImportacao`. Quantidade 0 é aceita, porque aparece nos ajustes de
+6. Quantidade ilegível: `ErroImportacao`. Quantidade 0 é aceita, porque aparece nos ajustes de
    inventário.
-6. O mesmo código repetido numa requisição é aceito e lido como duas linhas. A comparação conta as
+7. O mesmo código repetido numa requisição é aceito e lido como duas linhas. A comparação conta as
    linhas.
 
 ## Fixture de teste
