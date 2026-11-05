@@ -17,6 +17,7 @@ from catalogo.models import Importacao
 from conciliacao import regras
 from conciliacao.extracao import extrair
 from conciliacao.models import ExtracaoOficial, TentativaLancamento
+from conciliacao.servicos import conciliar_verificar
 from pedidos.models import LinhaSaida
 from pedidos.regras import EM_LANCAMENTO, VERIFICAR
 from scpi.execucao import ImportacaoEmAndamento
@@ -108,6 +109,10 @@ def extrair_depois(execucao, periodo: tuple[date, date], baixar: Extrair) -> Non
         return
     if extracao.importacao.situacao == Importacao.Situacao.SUCESSO:
         logger.info("✔ %d requisições no SCPI depois do lançamento", extracao.requisicoes)
+        try:
+            conciliar_verificar(extracao)
+        except Exception:
+            logger.exception("⚠ não foi possível conferir os lotes em verificar")
     else:
         logger.warning(
             "⚠ extração de depois falhou (%s); os lotes ficam aguardando conferência",

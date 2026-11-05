@@ -3,6 +3,7 @@ from django.core.management import BaseCommand, CommandError
 from catalogo.models import Importacao
 from conciliacao.extracao import extrair
 from conciliacao.models import ExtracaoOficial
+from conciliacao.servicos import conciliar_verificar
 from scpi import relatorios
 from scpi.execucao import ImportacaoEmAndamento
 from scpi.management.comum import data_opcao, obter_csv
@@ -39,3 +40,6 @@ class Command(BaseCommand):
             f"Requisições do SCPI ({de:%d/%m/%Y} a {ate:%d/%m/%Y}): {extracao.requisicoes} "
             f"requisições, a maior {maior}."
         )
+        conferidos = conciliar_verificar(extracao)
+        if conferidos:
+            self.stdout.write(f"  Lotes em verificar conferidos: {conferidos}.")

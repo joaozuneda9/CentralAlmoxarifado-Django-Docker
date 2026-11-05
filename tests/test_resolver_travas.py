@@ -8,6 +8,7 @@ from pedidos.models import ExecucaoRobo, LinhaSaida
 from pedidos.regras import requisicao_valida
 from pedidos.servicos import resolver_lote
 from tests.cenario import criar_pedido
+from tests.conciliacao_cenario import liberacao_comprovada
 
 pytestmark = pytest.mark.django_db
 
@@ -48,6 +49,10 @@ def test_numero_fora_do_formato_e_recusado(usuario, numero):
 def test_liberar_verificar_exige_conferencia(usuario):
     n = lote("VERIFICAR")
     assert not resolver_lote(n, "liberar", usuario=usuario).ok
+    # Spec 010: sem a tentativa e uma extração posterior sem candidatas, nem com a caixa marcada.
+    r = resolver_lote(n, "liberar", usuario=usuario, conferido=True)
+    assert not r.ok and "tentativa registrada" in r.mensagem
+    liberacao_comprovada(n)
     assert resolver_lote(n, "liberar", usuario=usuario, conferido=True).ok
     assert LinhaSaida.objects.get(lote=n).status == "PENDENTE"
 
@@ -123,6 +128,7 @@ def test_mensagem_da_linha_registra_quem_quando_e_o_estado_anterior(usuario):
 def test_liberar_apaga_numero_e_data_de_lancamento(usuario):
     n = lote("VERIFICAR")
     LinhaSaida.objects.filter(lote=n).update(requisicao_scpi="003354/26", lancado_em=timezone.now())
+    liberacao_comprovada(n)
     assert resolver_lote(n, "liberar", usuario=usuario, conferido=True).ok
     linha = LinhaSaida.objects.get(lote=n)
     assert (linha.status, linha.requisicao_scpi, linha.lancado_em) == ("PENDENTE", "", None)

@@ -2,7 +2,14 @@ from django.contrib import admin
 
 from catalogo.admin import SoLeituraAdmin
 
-from .models import ExtracaoOficial, ItemOficial, RequisicaoOficial, TentativaLancamento
+from .models import (
+    Candidata,
+    ConferenciaLote,
+    ExtracaoOficial,
+    ItemOficial,
+    RequisicaoOficial,
+    TentativaLancamento,
+)
 
 
 @admin.register(ExtracaoOficial)
@@ -38,3 +45,23 @@ class TentativaLancamentoAdmin(SoLeituraAdmin):
     list_filter = ("resultado", "historica")
     list_select_related = ("execucao",)
     search_fields = ("lote", "requisicao")
+
+
+class CandidataInline(admin.TabularInline):
+    model = Candidata
+    extra = 0
+    can_delete = False
+    fields = ("ordem", "requisicao", "e_esta")
+    readonly_fields = fields
+
+    def has_add_permission(self, request, obj=None):
+        return False
+
+
+@admin.register(ConferenciaLote)
+class ConferenciaLoteAdmin(SoLeituraAdmin):
+    list_display = ("lote", "tipo", "veredito", "requisicao", "extracao", "criada_em")
+    list_filter = ("tipo", "veredito")
+    list_select_related = ("requisicao", "extracao__importacao")
+    search_fields = ("lote",)
+    inlines = [CandidataInline]

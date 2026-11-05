@@ -638,6 +638,22 @@ transações precisam se comportar como no servidor.
   extração sem requisições; com lote lançado, falha. Bytes vazios sem esse aviso sempre são falha. O `SCPISimulado` guarda cada requisição salva (`salvas`) e tem as falhas da
   conciliação: `falhas_relatorio`, `salva_e_falha` (grava e perde a resposta), `perde_tipo`,
   `perde_observacoes` e `requisicao_manual`.
+  **Lote em verificar** (PR 3): toda extração bem-sucedida (a de depois do robô e a do
+  `extrair_requisicoes`) chama `conciliacao.servicos.conciliar_verificar`, que grava, para cada lote
+  `VERIFICAR`/`EM_LANCAMENTO` coberto, uma `ConferenciaLote` `VERIFICAR` (só se a extração começou
+  depois da tentativa mais recente do lote; sem tentativa, `SEM_TENTATIVA`) com o intervalo
+  (`regras.intervalo`: exclusivo, do piso ou do número anterior da execução até o primeiro número
+  posterior, aberto sem ele) e as `Candidata` (`regras.candidatas`: toda requisição no intervalo,
+  seja qual for o tipo, menos a que tem outro lote nas observações; a com este lote é "é esta"
+  mesmo fora do intervalo; ordem pela semelhança com a foto). `servicos.piso` é o da extração de
+  antes ou, numa execução histórica, o maior número lançado antes do início. **Liberar** um lote com
+  linha `VERIFICAR` ou `EM_LANCAMENTO` (`pedidos.servicos._resolver_com_a_trava`, além do "Conferi no
+  SCPI") exige `conciliacao.consultas.liberacao`: tentativa registrada, ao menos uma conferência dela
+  e nenhuma candidata em nenhuma (uma candidata vista uma vez continua bloqueando). "É esta" é a ação
+  `lancada` de sempre com o número da candidata. `importar_tentativas --journal <jsonl> [--dry-run]`
+  cria as tentativas históricas (`historica`) a partir do journal, idempotente por execução; em
+  produção, só a pedido do usuário. Nos testes, `tests/conciliacao_cenario.py`
+  (`tentativa_em_verificar`, `liberacao_comprovada`).
 - `implantacao` (sem modelos nem migrations) guarda o backup, o `robos_em_andamento` e a carga
   do de/para. A migração única das planilhas do Apps Script (`importar_planilhas`, com
   `conversao.py` e `migracao.py`) foi feita e removida; o código fica na tag `v1.0.1`. Do que ela

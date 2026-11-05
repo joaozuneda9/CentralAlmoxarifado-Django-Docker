@@ -36,8 +36,9 @@ Linhas novas na lista curta do painel e na visão geral de Automações:
 
 ## Mensagens de recusa (textos)
 
-- Liberar sem extração: "Ainda não há uma extração do SCPI feita depois desta tentativa. Use
-  'Conferir agora' e tente de novo."
+- Liberar sem extração: "Ainda não há uma extração do SCPI feita depois desta tentativa. Extraia as
+  requisições do SCPI e tente de novo." (no PR 3; o PR 5 troca o fim por "Use 'Conferir agora' e
+  tente de novo.", quando o botão existir)
 - Liberar com candidata: "Há N requisições no SCPI que podem ser deste lote: <números>. Confira e
   informe o número, ou marque para não lançar."
 - Liberar sem tentativa registrada: "Este lote não tem a tentativa registrada; não dá para provar que

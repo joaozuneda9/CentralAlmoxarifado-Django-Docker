@@ -1402,6 +1402,16 @@ def _resolver_com_a_trava(lote, acao, usuario, requisicao, conferido, agora) -> 
                     "marque a confirmação."
                 ),
             )
+        if acao == "liberar" and any(
+            linha.status in (VERIFICAR, EM_LANCAMENTO) for linha in linhas
+        ):
+            # Spec 010 (FR-024): o SCPI pode ter salvo. Só volta para a fila com uma extração
+            # posterior à tentativa e nenhuma requisição candidata.
+            from conciliacao.consultas import liberacao
+
+            permitida = liberacao(lote)
+            if not permitida.permitida:
+                return Resposta(ok=False, mensagem=permitida.motivo)
         if acao == "lancada":
             novo, feito = LANCADA, f"Requisição {requisicao} informada"
             final = f"Lote {lote}: requisição {requisicao} registrada."

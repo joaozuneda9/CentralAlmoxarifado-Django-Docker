@@ -162,3 +162,103 @@ class TentativaLancamento(models.Model):
 
     def __str__(self):
         return f"#{self.execucao_id}.{self.ordem} {self.lote} · {self.get_resultado_display()}"
+
+
+class ConferenciaLote(models.Model):
+    """O resultado de um lote numa extração bem-sucedida (spec 010, entidade "Conferência de
+    lote"). Uma extração com falha nunca grava conferência. Os vereditos dos lotes lançados vêm
+    no PR 4; o PR 3 grava só as de `VERIFICAR`, com as candidatas."""
+
+    class Tipo(models.TextChoices):
+        LANCAMENTO = "LANCAMENTO", "Lançamento"
+        REVISAO = "REVISAO", "Revisão"
+        VERIFICAR = "VERIFICAR", "Verificar no SCPI"
+
+    class Veredito(models.TextChoices):
+        AGUARDANDO = "AGUARDANDO", "Aguardando conferência"
+        COMPROVADO = "COMPROVADO", "Comprovado"
+        DIVERGENTE = "DIVERGENTE", "Divergente"
+        NAO_ENCONTRADO = "NAO_ENCONTRADO", "Não encontrado"
+        DUPLICADO = "DUPLICADO", "Duplicado"
+        CONFLITO = "CONFLITO", "Vínculo em conflito"
+        INTERVALO_VAZIO = "INTERVALO_VAZIO", "Nenhuma requisição no intervalo"
+        COM_CANDIDATAS = "COM_CANDIDATAS", "Com candidatas"
+        SEM_TENTATIVA = "SEM_TENTATIVA", "Sem tentativa registrada"
+
+    class Origem(models.TextChoices):
+        OBSERVACOES = "OBSERVACOES", "Lote nas observações"
+        NUMERO = "NUMERO", "Número gravado"
+        AMBOS = "AMBOS", "Observações e número"
+
+    lote = models.CharField(max_length=12, db_index=True)
+    extracao = models.ForeignKey(
+        ExtracaoOficial, on_delete=models.PROTECT, related_name="conferencias"
+    )
+    tipo = models.CharField(max_length=12, choices=Tipo.choices)
+    veredito = models.CharField(max_length=16, choices=Veredito.choices)
+    requisicao = models.ForeignKey(
+        RequisicaoOficial,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="conferencias",
+        verbose_name="requisição ligada",
+    )
+    outra_requisicao = models.ForeignKey(
+        RequisicaoOficial,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="+",
+        verbose_name="outra requisição",
+    )
+    origem_vinculo = models.CharField(
+        "origem do vínculo", max_length=12, choices=Origem.choices, blank=True
+    )
+    diferencas = models.JSONField("diferenças", default=list, blank=True)
+    notas = models.JSONField(default=list, blank=True)
+    alterado_depois = models.BooleanField("alterado no SCPI depois", default=False)
+    intervalo_de = models.CharField("intervalo de", max_length=9, blank=True)
+    intervalo_ate = models.CharField("intervalo até", max_length=9, blank=True)
+    tentativa = models.ForeignKey(
+        TentativaLancamento,
+        null=True,
+        blank=True,
+        on_delete=models.PROTECT,
+        related_name="conferencias",
+    )
+    criada_em = models.DateTimeField(auto_now_add=True)
+
+    class Meta:
+        ordering = ["-criada_em", "-pk"]
+        verbose_name = "conferência de lote"
+        verbose_name_plural = "conferências de lote"
+        constraints = [
+            models.UniqueConstraint(
+                fields=["lote", "extracao", "tipo"], name="conferencia_lote_unica"
+            )
+        ]
+
+    def __str__(self):
+        return f"{self.lote} · {self.get_veredito_display()}"
+
+
+class Candidata(models.Model):
+    """Uma requisição oficial que pode ser do lote em verificar (FR-022, FR-023)."""
+
+    conferencia = models.ForeignKey(
+        ConferenciaLote, on_delete=models.CASCADE, related_name="candidatas"
+    )
+    requisicao = models.ForeignKey(
+        RequisicaoOficial, on_delete=models.PROTECT, related_name="candidaturas"
+    )
+    e_esta = models.BooleanField("é esta (lote nas observações)", default=False)
+    ordem = models.PositiveSmallIntegerField()
+
+    class Meta:
+        ordering = ["conferencia", "ordem"]
+        verbose_name = "candidata"
+        verbose_name_plural = "candidatas"
+
+    def __str__(self):
+        return f"{self.conferencia.lote} → {self.requisicao}"
