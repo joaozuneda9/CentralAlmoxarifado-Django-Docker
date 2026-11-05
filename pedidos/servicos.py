@@ -1441,3 +1441,95 @@ def _resolver_com_a_trava(lote, acao, usuario, requisicao, conferido, agora) -> 
             campos += ["requisicao_scpi", "lancado_em"]
         LinhaSaida.objects.bulk_update(linhas, campos)
     return Resposta(ok=True, mensagem=final)
+
+
+VEREDITOS_CORRIGIVEIS = ("NAO_ENCONTRADO", "CONFLITO")
+
+
+def corrigir_requisicao(
+    lote: str, requisicao: str, *, usuario, agora: datetime | None = None
+) -> Resposta:
+    """Corrige o número de um lote **lançado** cujo veredito atual é Não encontrado ou Vínculo
+    em conflito (spec 010, FR-026, research R16): só informando o número certo, nunca relançando.
+    O status e o `lancado_em` das linhas não mudam; a `CorrecaoVinculo` guarda quem, quando, o
+    número anterior e o novo, e o lote volta a "Aguardando" até a extração seguinte."""
+    agora = agora or timezone.now()
+    if ExecucaoRobo.em_andamento(agora).exists():
+        return Resposta(ok=False, mensagem=MENSAGEM_LANCAMENTO_EM_ANDAMENTO)
+    requisicao = texto(requisicao)
+    if not requisicao_valida(requisicao):
+        return Resposta(ok=False, mensagem="Informe o número da requisição no formato 000000/00.")
+    with trava(TRAVA_LANCAMENTO) as obtida:
+        if not obtida:
+            return Resposta(ok=False, mensagem=MENSAGEM_LANCAMENTO_EM_ANDAMENTO)
+        return _corrigir_com_a_trava(lote, requisicao, usuario, agora)
+
+
+def _corrigir_com_a_trava(lote, requisicao, usuario, agora) -> Resposta:
+    from conciliacao.servicos import registrar_correcao, veredito_atual
+
+    with transaction.atomic():
+        linhas = list(
+            LinhaSaida.objects.select_for_update().filter(lote=lote, status=LANCADA).order_by("seq")
+        )
+        if not linhas:
+            return Resposta(ok=False, mensagem=f"{lote} não tem materiais lançados.")
+        conferencia = veredito_atual(lote)
+        if conferencia is None or conferencia.veredito not in VEREDITOS_CORRIGIVEIS:
+            return Resposta(
+                ok=False,
+                mensagem=(
+                    "Só a requisição lançada com o veredito Não encontrado ou Vínculo em conflito "
+                    "tem o número corrigido."
+                ),
+            )
+        anterior = linhas[0].requisicao_scpi
+        if requisicao == anterior:
+            return Resposta(
+                ok=False, mensagem=f"A requisição {requisicao} já é o número gravado em {lote}."
+            )
+        if conferencia.veredito == "CONFLITO":
+            apontadas = {
+                r.requisicao
+                for r in (conferencia.requisicao, conferencia.outra_requisicao)
+                if r is not None
+            }
+            if requisicao not in apontadas:
+                return Resposta(
+                    ok=False,
+                    mensagem=(
+                        "No vínculo em conflito, escolha uma das requisições apontadas: "
+                        f"{', '.join(sorted(apontadas))}."
+                    ),
+                )
+        outro = (
+            LinhaSaida.objects.filter(requisicao_scpi=requisicao)
+            .exclude(lote=lote)
+            .values_list("lote", flat=True)
+            .first()
+        )
+        if outro:
+            return Resposta(
+                ok=False, mensagem=f"A requisição {requisicao} do SCPI já está em {outro}."
+            )
+        quando = data_hora(agora)
+        de = anterior or "(sem número)"
+        for linha in linhas:
+            anterior_msg = linha.mensagem.strip()
+            historico = f" Antes: {anterior_msg}" if anterior_msg else ""
+            linha.mensagem = (
+                f"Requisição corrigida de {de} para {requisicao} por {usuario.username} em "
+                f"{quando}.{historico}"
+            )
+            linha.requisicao_scpi = requisicao
+        LinhaSaida.objects.bulk_update(linhas, ["requisicao_scpi", "mensagem"])
+        registrar_correcao(
+            lote, anterior, requisicao, conferencia=conferencia, usuario=usuario, quando=agora
+        )
+    return Resposta(
+        ok=True,
+        mensagem=(
+            f"{lote}: requisição corrigida para {requisicao}. A próxima conferência confere "
+            "o número novo."
+        ),
+    )

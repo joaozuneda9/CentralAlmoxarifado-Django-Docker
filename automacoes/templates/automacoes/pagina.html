@@ -37,6 +37,7 @@ view escolhe o trecho pelo cabeçalho HX-Target; os formulários ficam fora dela
   </section>
   <section role="tabpanel" id="painel-lancamento" class="aba-painel{% if aba == 'lancamento' %} aba-painel-ativo{% endif %}" aria-labelledby="aba-lancamento">
     {% include "pedidos/_lancamentos.html" %}
+    {% include "conciliacao/_conciliacao.html" %}
   </section>
   {% for item in robos %}
   <section role="tabpanel" id="painel-{{ item.robo.chave }}" class="aba-painel{% if aba == item.robo.chave %} aba-painel-ativo{% endif %}" aria-labelledby="aba-{{ item.robo.chave }}">

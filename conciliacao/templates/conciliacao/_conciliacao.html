@@ -1,0 +1,111 @@
+{% load interface_extras %}
+{% comment %}
+Conferência com o SCPI (spec 010, PR 5), na aba Lançamento no SCPI, fora da região que o HTMX
+recarrega durante o lançamento (os formulários de correção não perdem o que se digitou). Mostra a
+última extração, o "Conferir agora" e o veredito atual de cada lote lançado, com o filtro por
+links (`?veredito=`, que fica na URL): as divergências primeiro, os comprovados à parte.
+{% endcomment %}
+<section id="conciliacao" class="cartao pilha" aria-labelledby="conciliacao-titulo">
+  <div class="andamento-topo">
+    <h2 class="cartao-titulo" id="conciliacao-titulo">Conferência com o SCPI</h2>
+    <form method="post" action="{% url 'automacoes:conferir' %}">
+      {% csrf_token %}
+      {% if conferir_motivo %}
+      <span class="dica-flutuante dica-flutuante-fim">
+        <button type="button" class="botao botao-secundario" aria-disabled="true" aria-describedby="dica-conferir">{% include "interface/_icone.html" with nome="atualizar" %}Conferir agora</button>
+        <span class="dica-flutuante-texto" role="tooltip" id="dica-conferir">{{ conferir_motivo }}</span>
+      </span>
+      {% else %}
+      <button type="submit" class="botao botao-secundario">{% include "interface/_icone.html" with nome="atualizar" %}Conferir agora</button>
+      {% endif %}
+    </form>
+  </div>
+  {% with extracao=conciliacao.ultima_extracao %}
+  <p class="texto-secundario">
+    {% if extracao %}
+    {% with imp=extracao.importacao %}
+    Última extração do SCPI: {{ imp.inicio|date:"d/m" }} às {{ imp.inicio|date:"H:i" }}{% if imp.situacao == "SUCESSO" %}, {{ extracao.requisicoes }} {{ extracao.requisicoes|pluralize:"requisição,requisições" }} lidas.{% elif imp.situacao == "FALHA" %}. <span class="selo selo-erro">Falhou</span> {{ imp.erro|truncatechars:160 }}{% else %}. <span class="selo selo-info">Em andamento</span>{% endif %}
+    {% endwith %}
+    {% else %}
+    Nenhuma extração do SCPI ainda. “Conferir agora” extrai as requisições e confere as que o robô lançou.
+    {% endif %}
+  </p>
+  {% endwith %}
+  {% if conferir_motivo %}<p class="texto-secundario texto-pequeno">{{ conferir_motivo }}</p>{% endif %}
+
+  <nav aria-label="Filtrar as requisições lançadas pelo veredito">
+    <ul class="conciliacao-filtros">
+      {% for chave, rotulo, quantos in conciliacao.filtros %}
+      <li><a class="conciliacao-filtro" href="?aba=lancamento&amp;veredito={{ chave }}#conciliacao"{% if chave == conciliacao.filtro %} aria-current="page"{% endif %}>{{ rotulo }} <span class="conciliacao-filtro-numero">{{ quantos }}</span></a></li>
+      {% endfor %}
+    </ul>
+  </nav>
+
+  {% if conciliacao.lotes %}
+  <ul class="conciliacao-lista">
+    {% for item in conciliacao.lotes %}
+    <li class="conciliacao-lote">
+      <div class="conciliacao-lote-topo">
+        <h3 class="conciliacao-lote-titulo">Nº <a class="mono" href="{% url 'pedidos:detalhe' item.lote %}">{{ item.lote }}</a></h3>
+        <span class="selo selo-{{ item.selo }}">{{ item.rotulo }}</span>
+        {% if item.conferencia.alterado_depois %}<span class="selo selo-aviso">Alterado no SCPI depois do lançamento</span>{% endif %}
+      </div>
+      <dl class="dados">
+        <div><dt>Requisição</dt><dd><span class="mono">{{ item.numero|default:"—" }}</span>{% if item.vinculo %} <span class="texto-secundario">ligada {{ item.vinculo }}</span>{% endif %}</dd></div>
+        <div><dt>Data</dt><dd>{{ item.data|date:"d/m/Y" }}</dd></div>
+        <div><dt>Centro de custo</dt><dd>{{ item.centro }}</dd></div>
+        <div><dt>Conferido em</dt><dd>{% if item.conferencia %}{{ item.conferencia.extracao.importacao.inicio|date:"d/m" }} às {{ item.conferencia.extracao.importacao.inicio|date:"H:i" }}{% else %}—{% endif %}</dd></div>
+      </dl>
+      {% if item.conferencia.diferencas %}
+      <ul class="conciliacao-diferencas">
+        {% for d in item.conferencia.diferencas %}
+        <li>{% if d.alteracao %}<strong>{{ d.campo|capfirst }}</strong> mudou no SCPI: antes <span class="mono">{{ d.esperado }}</span>, agora <span class="mono">{{ d.oficial }}</span>{% else %}<strong>{{ d.campo|capfirst }}</strong>: esperado <span class="mono">{{ d.esperado }}</span>, no SCPI <span class="mono">{{ d.oficial }}</span>{% endif %}</li>
+        {% endfor %}
+      </ul>
+      {% endif %}
+      {% if item.conferencia.notas %}
+      <ul class="conciliacao-notas texto-secundario texto-pequeno">
+        {% for n in item.conferencia.notas %}<li>{{ n.campo|capfirst }}: {{ n.texto }}</li>{% endfor %}
+      </ul>
+      {% endif %}
+      {% if item.correcao and not item.conferencia %}
+      <p class="texto-secundario texto-pequeno">Número corrigido de <span class="mono">{{ item.correcao.anterior|default:"(sem número)" }}</span> para <span class="mono">{{ item.correcao.novo }}</span> por {{ item.correcao.usuario.username }} em {{ item.correcao.quando|date:"d/m/Y" }} às {{ item.correcao.quando|date:"H:i" }}. A próxima conferência confere o número novo.</p>
+      {% endif %}
+      {% if item.corrigivel %}
+      <details class="conciliacao-corrigir">
+        <summary class="botao botao-texto">Corrigir o número…</summary>
+        <form method="post" action="{% url 'automacoes:corrigir' item.lote %}" class="resolucao">
+          {% csrf_token %}
+          {% if item.conflito_com %}
+          <fieldset class="pilha-curta">
+            <legend class="campo-rotulo">Qual das duas é a requisição certa no SCPI?</legend>
+            {% for numero in item.conflito_com %}
+            <label class="campo-check"><input type="radio" name="requisicao" value="{{ numero }}" required><span class="mono">{{ numero }}</span></label>
+            {% endfor %}
+          </fieldset>
+          <div class="acoes"><button type="submit" class="botao botao-secundario">Corrigir o número</button></div>
+          {% else %}
+          <div class="resolucao-requisicao">
+            <label class="campo-rotulo" for="corrigir-{{ item.lote }}">Nº da requisição no SCPI</label>
+            <div class="resolucao-linha">
+              <input id="corrigir-{{ item.lote }}" class="campo-entrada mono" type="text" name="requisicao" placeholder="000000/00" maxlength="9" autocomplete="off" required aria-describedby="corrigir-dica-{{ item.lote }}">
+              <button type="submit" class="botao botao-secundario">Corrigir o número</button>
+            </div>
+            <p class="campo-dica" id="corrigir-dica-{{ item.lote }}">O número que você achou no SCPI, ou o da requisição que você lançou à mão. O robô nunca relança uma requisição lançada.</p>
+          </div>
+          {% endif %}
+        </form>
+      </details>
+      {% endif %}
+    </li>
+    {% endfor %}
+  </ul>
+  {% if conciliacao.cortada %}<p class="texto-secundario texto-pequeno">Mostrando os {{ conciliacao.lotes|length }} lançamentos mais recentes de {{ conciliacao.total }}.</p>{% endif %}
+  {% elif conciliacao.filtro == "problemas" %}
+  <p class="texto-secundario">Nenhuma divergência: toda requisição conferida está como no SCPI.</p>
+  {% elif conciliacao.filtro == "aguardando" %}
+  <p class="texto-secundario">Nenhuma requisição aguardando conferência.</p>
+  {% else %}
+  <p class="texto-secundario">Nenhuma requisição lançada foi conferida ainda.</p>
+  {% endif %}
+</section>

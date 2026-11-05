@@ -458,6 +458,39 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 .andamento-frase { margin: 0; font-size: 1.0625em; font-weight: 500; color: var(--texto); }
 .contadores { display: flex; flex-wrap: wrap; gap: var(--esp-meio) var(--esp-1); margin: 0; padding: 0; list-style: none; }
 .pilha-curta { display: grid; gap: var(--esp-meio); min-width: 0; }
+/* Conferência com o SCPI (spec 010): o filtro por veredito em links, a lista dos lotes lançados
+   separada por linhas (não um cartão por lote) e as candidatas do lote em verificar. */
+#conciliacao { margin-top: var(--esp-3); }
+.conciliacao-filtros { display: flex; flex-wrap: wrap; gap: var(--esp-1); margin: 0; padding: 0; list-style: none; }
+.conciliacao-filtro {
+  display: inline-flex; align-items: center; gap: var(--esp-1); min-height: 36px;
+  padding: var(--esp-meio) var(--esp-2); border: 1px solid var(--borda); border-radius: 100px;
+  color: var(--texto-secundario); text-decoration: none; font-weight: 500;
+  transition: background 0.18s ease, color 0.18s ease, border-color 0.18s ease;
+}
+.conciliacao-filtro:hover { background: var(--superficie); color: var(--texto); }
+.conciliacao-filtro[aria-current="page"] { background: var(--destaque-superficie); border-color: var(--destaque); color: var(--info-texto); }
+.conciliacao-filtro-numero { font-variant-numeric: tabular-nums; }
+.conciliacao-lista, .verificacao-candidatas { margin: 0; padding: 0; list-style: none; }
+.conciliacao-lote { display: grid; gap: var(--esp-2); padding: var(--esp-3) 0; border-top: 1px solid var(--borda); }
+.conciliacao-lote:last-child { padding-bottom: 0; }
+.conciliacao-lote-topo { display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-1); }
+.conciliacao-lote-titulo { margin: 0; font-size: 1em; }
+.conciliacao-diferencas { margin: 0; padding-left: var(--esp-3); display: grid; gap: var(--esp-meio); }
+.conciliacao-notas { margin: 0; padding-left: var(--esp-3); }
+.conciliacao-corrigir > summary { width: fit-content; list-style: none; cursor: pointer; }
+.conciliacao-corrigir > summary::-webkit-details-marker { display: none; }
+.conciliacao-corrigir[open] > summary { margin-bottom: var(--esp-1); }
+.conciliacao-corrigir fieldset { margin: 0; padding: 0; border: 0; }
+.verificacao { padding-top: var(--esp-2); border-top: 1px solid var(--borda); }
+.verificacao-candidata { display: grid; gap: var(--esp-meio); padding: var(--esp-2) 0; border-top: 1px solid var(--borda); }
+.verificacao-candidata:first-child { border-top: 0; }
+.verificacao-candidata p { margin: 0; overflow-wrap: anywhere; }
+.verificacao-candidata form { margin-top: var(--esp-meio); }
+.verificacao-numero { font-weight: 500; }
+@media (max-width: 767px) {
+  .conciliacao-filtro { min-height: 44px; }
+}
 .pilha-curta p { margin: 0; overflow-wrap: anywhere; }
 .detalhe-tecnico > summary { width: fit-content; cursor: pointer; color: var(--texto-secundario); font-size: 0.875em; }
 .detalhe-tecnico[open] > summary { margin-bottom: var(--esp-1); }

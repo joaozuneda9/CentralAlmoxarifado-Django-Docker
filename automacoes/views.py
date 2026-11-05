@@ -23,6 +23,7 @@ from catalogo.curva import INICIO_DADOS_CONFIAVEIS
 from catalogo.forms import ROBOS, ROBOS_POR_CHAVE
 from catalogo.models import Importacao
 from catalogo.saude import situacao_do_catalogo
+from conciliacao.consultas import conciliacao_da_aba, verificacoes
 from interface.htmx import regiao_pedida, render_regiao
 from pedidos import andamento
 from pedidos.consultas import (
@@ -33,10 +34,11 @@ from pedidos.consultas import (
 )
 from pedidos.forms import LancamentoForm
 from pedidos.models import ExecucaoRobo
-from pedidos.servicos import resolver_lote
+from pedidos.servicos import corrigir_requisicao, resolver_lote
 from scpi.disparo import (
     guardar_csv_enviado,
     iniciar_atualizacao,
+    iniciar_conciliacao,
     iniciar_importacao,
     iniciar_lancamento,
 )
@@ -126,6 +128,9 @@ def contexto_lancamento() -> dict:
     em_andamento = ExecucaoRobo.em_andamento(agora).exists()
     fila = fila_do_robo()
     travados = lotes_travados()
+    por_lote = verificacoes(trava.lote for trava in travados if trava.conferir)
+    for trava in travados:
+        trava.verificacao = por_lote.get(trava.lote)
     interrompida = bool(execucao and execucao.interrompida)
     resumo = None
     if execucao:
@@ -205,6 +210,17 @@ def _contexto_acompanhamento(request) -> dict:
     }
 
 
+def _motivo_para_nao_conferir() -> str:
+    """Por que o "Conferir agora" está desabilitado agora (vazio: pode conferir)."""
+    if ExecucaoRobo.em_andamento().exists():
+        return "Há um lançamento em andamento. Confira quando ele terminar."
+    if Importacao.em_andamento().filter(tipo=Importacao.Tipo.REQUISICOES).exists():
+        return "A conferência com o SCPI está em andamento."
+    if Importacao.em_andamento().exists():
+        return "Há uma importação em andamento. Confira quando ela terminar."
+    return ""
+
+
 def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
     """Tudo o que a página mostra; também usado quando o formulário de um robô volta com erro
     (`formularios`: o formulário de cada robô com o que a pessoa já preencheu)."""
@@ -227,6 +243,8 @@ def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
     return {
         **_contexto_historico(request),
         **situacao,
+        "conciliacao": conciliacao_da_aba(request.GET.get("veredito", "")),
+        "conferir_motivo": _motivo_para_nao_conferir(),
         "robos": robos,
         "aba": aba,
         "abas": [(chave, rotulo, estados.get(chave)) for chave, rotulo in ABAS],
@@ -377,3 +395,31 @@ def resolver(request, lote):
     mensagem = messages.success if resposta.ok else messages.error
     mensagem(request, resposta.mensagem)
     return redirect(destino)
+
+
+@login_required
+@require_POST
+def conferir(request):
+    """ "Conferir agora": extração e conciliação fora do lançamento (spec 010, FR-029)."""
+    destino = url_da_aba("lancamento")
+    if ExecucaoRobo.em_andamento().exists():
+        messages.warning(request, "Há um lançamento em andamento. Confira quando ele terminar.")
+    elif not iniciar_conciliacao():
+        messages.warning(request, JA_EM_ANDAMENTO)
+    else:
+        messages.success(
+            request,
+            "Conferência iniciada: o robô extrai as requisições do SCPI e confere os lotes. "
+            "Recarregue a aba em alguns instantes.",
+        )
+    return redirect(destino)
+
+
+@login_required
+@require_POST
+def corrigir(request, lote):
+    """Corrige o número de um lote lançado Não encontrado ou em Vínculo em conflito (FR-026)."""
+    resposta = corrigir_requisicao(lote, request.POST.get("requisicao", ""), usuario=request.user)
+    mensagem = messages.success if resposta.ok else messages.error
+    mensagem(request, resposta.mensagem)
+    return redirect(url_da_aba("lancamento"))

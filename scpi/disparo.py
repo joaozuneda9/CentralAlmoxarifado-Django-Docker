@@ -87,6 +87,18 @@ def iniciar_importacao(
     return True
 
 
+def iniciar_conciliacao() -> bool:
+    """Inicia `manage.py conciliar_lancamentos` (o "Conferir agora" da aba Lançamento no SCPI):
+    uma extração sem filtro do período padrão e a conciliação, num processo separado.
+
+    Devolve False, sem iniciar nada, com lançamento ou importação em andamento; o comando recusa
+    de novo, pelas travas, se outro começar entre a checagem e a partida."""
+    if ExecucaoRobo.em_andamento().exists() or Importacao.em_andamento().exists():
+        return False
+    _iniciar_comando(["conciliar_lancamentos"], "conciliar_lancamentos.log", "Conferir agora")
+    return True
+
+
 def iniciar_lancamento(usuario, *, simulacao: bool, lotes: list[str]) -> ExecucaoRobo | None:
     """Cria a `ExecucaoRobo` e inicia `manage.py lancar_saidas` num processo separado.
 

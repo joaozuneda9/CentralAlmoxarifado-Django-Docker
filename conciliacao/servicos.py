@@ -13,6 +13,7 @@ from conciliacao import regras
 from conciliacao.models import (
     Candidata,
     ConferenciaLote,
+    CorrecaoVinculo,
     ExtracaoOficial,
     RequisicaoOficial,
     TentativaLancamento,
@@ -225,14 +226,49 @@ def entrega_das_linhas(linhas: list[LinhaSaida], lista_de_centros) -> regras.Ent
     )
 
 
+def ultima_correcao(lote: str) -> CorrecaoVinculo | None:
+    return CorrecaoVinculo.objects.filter(lote=lote).order_by("-quando", "-pk").first()
+
+
+def _conclusivas(lote: str):
+    """As conferências conclusivas do lote lançado que ainda valem: depois de uma correção do
+    número (FR-026), só as de extrações começadas depois dela; o número novo começa do zero."""
+    conferencias = ConferenciaLote.objects.filter(
+        lote=lote, tipo__in=(ConferenciaLote.Tipo.LANCAMENTO, ConferenciaLote.Tipo.REVISAO)
+    ).exclude(veredito=ConferenciaLote.Veredito.AGUARDANDO)
+    correcao = ultima_correcao(lote)
+    if correcao is not None:
+        conferencias = conferencias.filter(extracao__importacao__inicio__gt=correcao.quando)
+    return conferencias.select_related("requisicao")
+
+
 def _veredito_conclusivo(lote: str) -> ConferenciaLote | None:
     """A conferência do lançamento: a primeira conclusiva (FR-017, data-model)."""
     return (
-        ConferenciaLote.objects.filter(lote=lote, tipo=ConferenciaLote.Tipo.LANCAMENTO)
-        .exclude(veredito=ConferenciaLote.Veredito.AGUARDANDO)
-        .select_related("requisicao")
+        _conclusivas(lote)
+        .filter(tipo=ConferenciaLote.Tipo.LANCAMENTO)
         .order_by("criada_em", "pk")
         .first()
+    )
+
+
+def veredito_atual(lote: str) -> ConferenciaLote | None:
+    """A última conferência conclusiva do lote (o veredito atual); None é "Aguardando"."""
+    return _conclusivas(lote).order_by("-criada_em", "-pk").first()
+
+
+def registrar_correcao(
+    lote: str, anterior: str, novo: str, *, conferencia: ConferenciaLote, usuario, quando
+) -> CorrecaoVinculo:
+    """Grava a correção do número (R16). Só `pedidos.servicos.corrigir_requisicao` chama, na
+    mesma transação em que troca o número das linhas."""
+    return CorrecaoVinculo.objects.create(
+        lote=lote,
+        anterior=anterior,
+        novo=novo,
+        conferencia=conferencia,
+        usuario=usuario,
+        quando=quando,
     )
 
 
@@ -267,6 +303,9 @@ def conciliar_lancados(
             lancado = max((linha.lancado_em for linha in linhas if linha.lancado_em), default=None)
             if lancado is None or imp.inicio <= lancado:
                 continue  # a extração começou antes do lançamento: não pode trazê-lo
+            correcao = ultima_correcao(lote)
+            if correcao is not None and imp.inicio <= correcao.quando:
+                continue  # nem a correção do número: o número novo espera a extração seguinte
             if ConferenciaLote.objects.filter(
                 lote=lote,
                 extracao=extracao,

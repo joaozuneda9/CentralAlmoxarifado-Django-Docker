@@ -676,6 +676,20 @@ transações precisam se comportar como no servidor.
   baixado (`--arquivo` nos dois comandos) tem o motivo `ARQUIVO`: não se sabe quando foi exportado, então
   nunca confere lote em verificar (um arquivo de antes do Salvar perdido liberaria o relançamento) nem
   revisa um veredito; só dá o primeiro veredito de um lote lançado.
+  **Tela e correção** (PR 5): a aba Lançamento no SCPI ganha, fora da região que o HTMX recarrega, o
+  cartão "Conferência com o SCPI" (`conciliacao/_conciliacao.html`): a última extração, o botão
+  "Conferir agora" (`automacoes:conferir` → `scpi.disparo.iniciar_conciliacao`, que roda
+  `conciliar_lancamentos` em processo separado; desabilitado com lançamento ou importação em
+  andamento) e o veredito atual de cada requisição lançada (`conciliacao.consultas.lotes_conferidos`:
+  a última conferência conclusiva que ainda vale), com o filtro em links `?veredito=` (Divergências,
+  o padrão, Aguardando, Comprovados, Todos; 50 por vez). No cartão de cada trava em verificar,
+  `conciliacao/_verificacao.html` mostra as candidatas, com "É esta" (a ação `lancada` de sempre).
+  O lote **lançado** Não encontrado ou em Vínculo em conflito tem o número corrigido em
+  `automacoes:corrigir` → `pedidos.servicos.corrigir_requisicao` (sob a `TRAVA_LANCAMENTO`; no conflito,
+  só uma das duas apontadas; recusa o número de outro lote), que troca só `requisicao_scpi` e `mensagem`
+  e grava a `CorrecaoVinculo`: daí em diante só valem as conferências de extrações começadas depois
+  dela, e a próxima é de novo `LANCAMENTO`. Os avisos de saúde (`conciliacao/saude.py`) entram no
+  `catalogo.saude._demais`. Na interface, a saída do Central é "requisição", nunca "lote".
 - `implantacao` (sem modelos nem migrations) guarda o backup, o `robos_em_andamento` e a carga
   do de/para. A migração única das planilhas do Apps Script (`importar_planilhas`, com
   `conversao.py` e `migracao.py`) foi feita e removida; o código fica na tag `v1.0.1`. Do que ela

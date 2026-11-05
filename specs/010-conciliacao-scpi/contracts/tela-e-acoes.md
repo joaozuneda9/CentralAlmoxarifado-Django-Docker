@@ -27,20 +27,27 @@ funcionam por formulário comum.
 
 ## Avisos de saúde (PR 5, FR-028)
 
-Linhas novas na lista curta do painel e na visão geral de Automações:
+Linhas novas na lista curta do painel e na visão geral de Automações (`conciliacao/saude.py`, chamado
+pelo `catalogo.saude._demais`). Na interface, a saída do Central se chama "requisição", nunca "lote"
+(`tests/test_pagina_lancamentos.py`):
 
-- "N lotes lançados com divergência no SCPI" (Divergente, Duplicado, Vínculo em conflito)
-- "N lotes lançados não encontrados no SCPI"
-- "N lotes aguardando conferência há mais de um dia útil"
-- "Última extração de requisições falhou" (com o motivo resumido)
+- "N requisições lançadas com divergência no SCPI: <números>." (Divergente, Duplicado, Vínculo em
+  conflito)
+- "N requisições lançadas não encontradas no SCPI: <números>."
+- "N requisições aguardando conferência há mais de um dia útil: <números>." (desde o lançamento ou a
+  correção do número; sábado e domingo não contam)
+- "Requisições do SCPI: a última extração falhou em <quando>: <motivo resumido>"
 
 ## Mensagens de recusa (textos)
 
-- Liberar sem extração: "Ainda não há uma extração do SCPI feita depois desta tentativa. Extraia as
-  requisições do SCPI e tente de novo." (no PR 3; o PR 5 troca o fim por "Use 'Conferir agora' e
-  tente de novo.", quando o botão existir)
-- Liberar com candidata: "Há N requisições no SCPI que podem ser deste lote: <números>. Confira e
-  informe o número, ou marque para não lançar."
-- Liberar sem tentativa registrada: "Este lote não tem a tentativa registrada; não dá para provar que
-  nada foi salvo. Informe o número ou marque para não lançar."
-- Corrigir com número de outro lote: "A requisição <n> já está no lote <lote>."
+- Liberar sem extração: "Ainda não há uma extração do SCPI feita depois desta tentativa. Use
+  “Conferir agora” e tente de novo."
+- Liberar com candidata: "Há N requisições no SCPI que podem ser esta: <números>. Confira e informe o
+  número, ou marque para não lançar."
+- Liberar sem tentativa registrada: "Esta requisição não tem a tentativa registrada; não dá para provar
+  que o SCPI não a salvou. Informe o número ou marque para não lançar."
+- Corrigir com número de outro lote: "A requisição <n> do SCPI já está em <lote>."
+- Corrigir fora de Não encontrado ou Vínculo em conflito: "Só a requisição lançada com o veredito Não
+  encontrado ou Vínculo em conflito tem o número corrigido."
+- Corrigir o conflito com um número que não é nenhum dos dois: "No vínculo em conflito, escolha uma das
+  requisições apontadas: <números>."

@@ -10,4 +10,6 @@ urlpatterns = [
     path("importar/<str:robo>/", views.importar, name="importar"),
     path("lancar/", views.lancar, name="lancar"),
     path("lancamento/<str:lote>/resolver/", views.resolver, name="resolver"),
+    path("lancamento/conferir/", views.conferir, name="conferir"),
+    path("lancamento/<str:lote>/corrigir/", views.corrigir, name="corrigir"),
 ]

@@ -5,6 +5,7 @@ Cada extração da "Relação de Requisições" sem filtro de tipo é uma `Impor
 requisições lidas. Os modelos de `pedidos` não mudam (Princípio II).
 """
 
+from django.conf import settings
 from django.db import models
 
 from catalogo.models import Importacao
@@ -265,3 +266,31 @@ class Candidata(models.Model):
 
     def __str__(self):
         return f"{self.conferencia.lote} → {self.requisicao}"
+
+
+class CorrecaoVinculo(models.Model):
+    """A correção do número de um lote lançado que ficou "Não encontrado" ou com "Vínculo em
+    conflito" (FR-026, research R16). O lote volta a "Aguardando" até a próxima extração que
+    começar depois dela."""
+
+    lote = models.CharField(max_length=12, db_index=True)
+    anterior = models.CharField("número anterior", max_length=9)
+    novo = models.CharField("número novo", max_length=9)
+    conferencia = models.ForeignKey(
+        ConferenciaLote,
+        on_delete=models.PROTECT,
+        related_name="correcoes",
+        verbose_name="conferência de origem",
+    )
+    usuario = models.ForeignKey(
+        settings.AUTH_USER_MODEL, on_delete=models.PROTECT, related_name="+"
+    )
+    quando = models.DateTimeField()
+
+    class Meta:
+        ordering = ["-quando", "-pk"]
+        verbose_name = "correção de vínculo"
+        verbose_name_plural = "correções de vínculo"
+
+    def __str__(self):
+        return f"{self.lote}: {self.anterior or '(sem número)'} → {self.novo}"

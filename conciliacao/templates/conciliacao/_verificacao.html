@@ -1,0 +1,38 @@
+{% load interface_extras %}
+{% comment %}
+O que a conciliação sabe de um lote em verificar (spec 010, FR-022 a FR-025), dentro do cartão da
+trava: a extração usada, o intervalo e as candidatas. "É esta" informa o número da candidata pela
+ação `lancada` de sempre. `v` é a `conciliacao.consultas.Verificacao`; `lote`, o número do lote.
+{% endcomment %}
+<div class="verificacao pilha-curta">
+  {% if v.candidatas %}
+  <div class="aviso aviso-atencao">{% include "interface/_icone.html" with nome="alerta" %}<p>{{ v.liberacao.motivo }}</p></div>
+  <ul class="verificacao-candidatas">
+    {% for c in v.candidatas %}
+    {% with r=c.requisicao %}
+    <li class="verificacao-candidata">
+      <div class="conciliacao-lote-topo">
+        <span class="mono verificacao-numero">{{ r.requisicao }}</span>
+        {% if c.e_esta %}<span class="selo selo-info">Tem <span class="mono">{{ lote }}</span> nas observações</span>{% endif %}
+      </div>
+      <p class="texto-secundario texto-pequeno">{{ r.data|date:"d/m/Y" }}, {{ r.tipo|default:"tipo vazio" }}, {{ r.centro_nome|default:"sem centro" }}{% if r.recebedor %}, {{ r.recebedor }}{% endif %}</p>
+      <p class="texto-pequeno">{% for item in r.itens.all %}<span class="mono">{{ item.codigo }}</span> × {{ item.quantidade|quantidade }}{% if not forloop.last %}; {% endif %}{% endfor %}</p>
+      {% if not lancamento_em_andamento %}
+      <form method="post" action="{% url 'automacoes:resolver' lote %}">
+        {% csrf_token %}
+        <input type="hidden" name="acao" value="lancada">
+        <input type="hidden" name="requisicao" value="{{ r.requisicao }}">
+        <button type="submit" class="botao botao-secundario">É esta: {{ r.requisicao }}</button>
+      </form>
+      {% endif %}
+    </li>
+    {% endwith %}
+    {% endfor %}
+  </ul>
+  {% elif v.liberacao.permitida %}
+  <div class="aviso aviso-ok">{% include "interface/_icone.html" with nome="check" %}<p>Nenhuma requisição no intervalo{% if v.conferencia.intervalo_de or v.conferencia.intervalo_ate %} (depois de <span class="mono">{{ v.conferencia.intervalo_de|default:"início" }}</span>{% if v.conferencia.intervalo_ate %} e antes de <span class="mono">{{ v.conferencia.intervalo_ate }}</span>{% endif %}){% endif %}: o SCPI não salvou esta requisição. Dá para liberar para relançar.</p></div>
+  {% else %}
+  <div class="aviso aviso-info">{% include "interface/_icone.html" with nome="info" %}<p>{{ v.liberacao.motivo }}</p></div>
+  {% endif %}
+  {% if v.conferencia %}<p class="texto-secundario texto-pequeno">Conferido na extração de {{ v.conferencia.extracao.importacao.inicio|date:"d/m" }} às {{ v.conferencia.extracao.importacao.inicio|date:"H:i" }}.</p>{% endif %}
+</div>

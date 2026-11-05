@@ -5,6 +5,7 @@ from catalogo.admin import SoLeituraAdmin
 from .models import (
     Candidata,
     ConferenciaLote,
+    CorrecaoVinculo,
     ExtracaoOficial,
     ItemOficial,
     RequisicaoOficial,
@@ -65,3 +66,10 @@ class ConferenciaLoteAdmin(SoLeituraAdmin):
     list_select_related = ("requisicao", "extracao__importacao")
     search_fields = ("lote",)
     inlines = [CandidataInline]
+
+
+@admin.register(CorrecaoVinculo)
+class CorrecaoVinculoAdmin(SoLeituraAdmin):
+    list_display = ("lote", "anterior", "novo", "usuario", "quando")
+    search_fields = ("lote", "anterior", "novo")
+    list_select_related = ("usuario",)

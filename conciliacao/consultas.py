@@ -1,18 +1,27 @@
 """Leituras da conciliação para as outras partes do sistema (spec 010)."""
 
 from dataclasses import dataclass, field
+from datetime import date, datetime
 
 from conciliacao import regras
-from conciliacao.models import Candidata, ConferenciaLote
+from conciliacao.models import (
+    Candidata,
+    ConferenciaLote,
+    CorrecaoVinculo,
+    ExtracaoOficial,
+    TentativaLancamento,
+)
 from conciliacao.servicos import ultima_tentativa
+from pedidos.models import LinhaSaida
+from pedidos.regras import LANCADA
 
 SEM_TENTATIVA = (
-    "Este lote não tem a tentativa registrada; não dá para provar que nada foi salvo. "
+    "Esta requisição não tem a tentativa registrada; não dá para provar que o SCPI não a salvou. "
     "Informe o número ou marque para não lançar."
 )
 SEM_EXTRACAO = (
-    "Ainda não há uma extração do SCPI feita depois desta tentativa. Extraia as requisições do "
-    "SCPI e tente de novo."
+    "Ainda não há uma extração do SCPI feita depois desta tentativa. Use “Conferir agora” e "
+    "tente de novo."
 )
 
 
@@ -47,10 +56,234 @@ def liberacao(lote: str) -> Liberacao:
     )
     if numeros:
         quantas = "uma requisição" if len(numeros) == 1 else f"{len(numeros)} requisições"
+        verbo = "pode" if len(numeros) == 1 else "podem"
         return Liberacao(
             False,
-            f"Há {quantas} no SCPI que podem ser deste lote: {', '.join(numeros)}. Confira e "
+            f"Há {quantas} no SCPI que {verbo} ser esta: {', '.join(numeros)}. Confira e "
             "informe o número, ou marque para não lançar.",
             numeros,
         )
     return Liberacao(True)
+
+
+# --- A aba Lançamento no SCPI (FR-027) ---
+
+Veredito = ConferenciaLote.Veredito
+PROBLEMAS = (Veredito.DIVERGENTE, Veredito.DUPLICADO, Veredito.CONFLITO, Veredito.NAO_ENCONTRADO)
+FILTROS = (
+    ("problemas", "Divergências"),
+    ("aguardando", "Aguardando"),
+    ("comprovados", "Comprovados"),
+    ("todos", "Todos"),
+)
+FILTRO_PADRAO = "problemas"
+SELOS = {
+    Veredito.COMPROVADO: "ok",
+    Veredito.DIVERGENTE: "aviso",
+    Veredito.DUPLICADO: "erro",
+    Veredito.CONFLITO: "erro",
+    Veredito.NAO_ENCONTRADO: "erro",
+}
+VINCULOS = {
+    ConferenciaLote.Origem.OBSERVACOES: "pelas observações",
+    ConferenciaLote.Origem.NUMERO: "pelo número gravado",
+    ConferenciaLote.Origem.AMBOS: "pelas observações e pelo número gravado",
+}
+LIMITE_DA_LISTA = 50
+
+
+@dataclass
+class LoteConferido:
+    """Um lote lançado e o seu veredito atual: a última conferência conclusiva que ainda vale
+    (depois de uma correção do número, só as de extrações posteriores a ela). Sem nenhuma, o lote
+    está "Aguardando"."""
+
+    lote: str
+    data: date
+    centro: str
+    recebedor: str
+    numero: str
+    lancado_em: datetime | None
+    conferencia: ConferenciaLote | None = None
+    correcao: CorrecaoVinculo | None = None
+
+    @property
+    def rotulo(self) -> str:
+        if self.conferencia is None:
+            return "Aguardando conferência"
+        return self.conferencia.get_veredito_display()
+
+    @property
+    def selo(self) -> str:
+        """O sufixo da classe do selo (o texto vai sempre junto: nunca só a cor)."""
+        if self.conferencia is None:
+            return "neutro"
+        return SELOS.get(self.conferencia.veredito, "neutro")
+
+    @property
+    def vinculo(self) -> str:
+        if self.conferencia is None or not self.conferencia.origem_vinculo:
+            return ""
+        return VINCULOS.get(self.conferencia.origem_vinculo, "")
+
+    @property
+    def grupo(self) -> str:
+        if self.conferencia is None:
+            return "aguardando"
+        return "problemas" if self.conferencia.veredito in PROBLEMAS else "comprovados"
+
+    @property
+    def corrigivel(self) -> bool:
+        return self.conferencia is not None and self.conferencia.veredito in (
+            Veredito.NAO_ENCONTRADO,
+            Veredito.CONFLITO,
+        )
+
+    @property
+    def conflito_com(self) -> list[str]:
+        """No vínculo em conflito, as requisições entre as quais a pessoa escolhe."""
+        if self.conferencia is None or self.conferencia.veredito != Veredito.CONFLITO:
+            return []
+        return [
+            r.requisicao
+            for r in (self.conferencia.requisicao, self.conferencia.outra_requisicao)
+            if r is not None
+        ]
+
+    @property
+    def esperando_desde(self) -> datetime | None:
+        """Desde quando o lote espera um veredito: o lançamento ou a correção do número."""
+        if self.correcao is not None:
+            return self.correcao.quando
+        return self.lancado_em
+
+
+def lotes_conferidos() -> list[LoteConferido]:
+    """Os lotes lançados que a conciliação acompanha (com conferência, correção ou lançados pelo
+    robô desde a conciliação), do lançamento mais recente para o mais antigo. Um lote antigo, de
+    antes da conciliação e fora de qualquer extração, não entra: nada o conferiria."""
+    correcoes: dict[str, CorrecaoVinculo] = {}
+    for correcao in CorrecaoVinculo.objects.select_related("usuario").order_by("quando", "pk"):
+        correcoes[correcao.lote] = correcao
+    lotes = set(correcoes)
+    atuais: dict[str, ConferenciaLote] = {}
+    conferencias = (
+        ConferenciaLote.objects.filter(
+            tipo__in=(ConferenciaLote.Tipo.LANCAMENTO, ConferenciaLote.Tipo.REVISAO)
+        )
+        .select_related("requisicao", "outra_requisicao", "extracao__importacao")
+        .order_by("criada_em", "pk")
+    )
+    for conferencia in conferencias:
+        lotes.add(conferencia.lote)
+        if conferencia.veredito == Veredito.AGUARDANDO:
+            continue
+        correcao = correcoes.get(conferencia.lote)
+        if correcao is not None and conferencia.extracao.importacao.inicio <= correcao.quando:
+            continue
+        atuais[conferencia.lote] = conferencia
+    lotes |= set(
+        TentativaLancamento.objects.filter(
+            resultado=TentativaLancamento.Resultado.LANCADA, historica=False
+        ).values_list("lote", flat=True)
+    )
+    por_lote: dict[str, LoteConferido] = {}
+    for linha in LinhaSaida.objects.filter(lote__in=lotes, status=LANCADA).order_by("lote", "seq"):
+        item = por_lote.get(linha.lote)
+        if item is None:
+            por_lote[linha.lote] = LoteConferido(
+                lote=linha.lote,
+                data=linha.data,
+                centro=linha.centro_custo,
+                recebedor=linha.recebedor,
+                numero=linha.requisicao_scpi,
+                lancado_em=linha.lancado_em,
+                conferencia=atuais.get(linha.lote),
+                correcao=correcoes.get(linha.lote),
+            )
+        elif linha.lancado_em and (item.lancado_em is None or linha.lancado_em > item.lancado_em):
+            item.lancado_em = linha.lancado_em
+    return sorted(
+        por_lote.values(),
+        key=lambda item: (item.lancado_em is not None, item.lancado_em, item.lote),
+        reverse=True,
+    )
+
+
+@dataclass
+class Conciliacao:
+    """O que a aba mostra da conciliação dos lançados."""
+
+    ultima_extracao: ExtracaoOficial | None
+    filtro: str
+    contagens: dict[str, int]
+    lotes: list[LoteConferido]
+    total: int  # quantos lotes o filtro pegaria sem o limite
+
+    @property
+    def filtros(self) -> list[tuple[str, str, int]]:
+        return [(chave, rotulo, self.contagens[chave]) for chave, rotulo in FILTROS]
+
+    @property
+    def cortada(self) -> bool:
+        return self.total > len(self.lotes)
+
+
+def ultima_extracao() -> ExtracaoOficial | None:
+    return (
+        ExtracaoOficial.objects.select_related("importacao")
+        .order_by("-importacao__inicio", "-pk")
+        .first()
+    )
+
+
+def conciliacao_da_aba(filtro: str = FILTRO_PADRAO) -> Conciliacao:
+    filtro = filtro if filtro in dict(FILTROS) else FILTRO_PADRAO
+    todos = lotes_conferidos()
+    contagens = {chave: 0 for chave, _ in FILTROS}
+    for item in todos:
+        contagens[item.grupo] += 1
+    contagens["todos"] = len(todos)
+    escolhidos = todos if filtro == "todos" else [i for i in todos if i.grupo == filtro]
+    return Conciliacao(
+        ultima_extracao=ultima_extracao(),
+        filtro=filtro,
+        contagens=contagens,
+        lotes=escolhidos[:LIMITE_DA_LISTA],
+        total=len(escolhidos),
+    )
+
+
+@dataclass
+class Verificacao:
+    """O que a conciliação sabe de um lote em verificar, para o painel de resolução (FR-027)."""
+
+    liberacao: Liberacao
+    conferencia: ConferenciaLote | None  # a mais recente da tentativa atual
+    candidatas: list[Candidata]  # todas as vistas, uma por requisição ("é esta" primeiro)
+
+
+def verificacoes(lotes) -> dict[str, Verificacao]:
+    """Uma `Verificacao` por lote em verificar (são poucos: a consulta é por lote)."""
+    resultado = {}
+    for lote in lotes:
+        tentativa = ultima_tentativa(lote)
+        conferencias = (
+            ConferenciaLote.objects.filter(
+                lote=lote, tipo=ConferenciaLote.Tipo.VERIFICAR, tentativa=tentativa
+            )
+            .select_related("extracao__importacao")
+            .order_by("-criada_em", "-pk")
+            if tentativa is not None
+            else ConferenciaLote.objects.none()
+        )
+        vistas: dict[str, Candidata] = {}
+        for candidata in (
+            Candidata.objects.filter(conferencia__in=conferencias)
+            .select_related("requisicao")
+            .prefetch_related("requisicao__itens")
+            .order_by("-e_esta", "ordem", "-conferencia__criada_em")
+        ):
+            vistas.setdefault(candidata.requisicao.requisicao, candidata)
+        resultado[lote] = Verificacao(liberacao(lote), conferencias.first(), list(vistas.values()))
+    return resultado

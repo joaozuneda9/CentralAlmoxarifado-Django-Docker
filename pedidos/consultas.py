@@ -311,6 +311,9 @@ class LoteTravado:
     lote: str
     linhas: list[LinhaSaida]
     conferir: bool  # alguma linha `VERIFICAR` ou `EM_LANCAMENTO`: o SCPI pode ter gravado
+    # O que a conciliação sabe do lote em verificar (`conciliacao.consultas.Verificacao`); a aba
+    # o preenche.
+    verificacao: object | None = None
 
 
 def lotes_travados() -> list[LoteTravado]:
