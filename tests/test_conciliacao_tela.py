@@ -277,7 +277,8 @@ def test_corrigir_espera_a_conciliacao_em_andamento(dois_lotes, scpi, pessoa, mo
     p, av = dois_lotes
     lancar(scpi, [p, av])
     ConferenciaLote.objects.filter(lote=p).update(veredito="NAO_ENCONTRADO")
-    monkeypatch.setattr(servicos, "ESPERA_TRAVA_S", 0)
+    monkeypatch.setattr(servicos, "ESPERA_CORRECAO_S", 0)  # a da correção, não a padrão
+    assert servicos.ESPERA_TRAVA_S == 120
     outra = connections.create_connection("default")
     try:
         with outra.cursor() as cursor:

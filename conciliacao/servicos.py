@@ -396,6 +396,9 @@ def conciliar_lancados(
 
 TRAVA_CONCILIACAO = "almoxarifado:conciliacao"
 ESPERA_TRAVA_S = 120
+# A correção do número espera pouco: roda numa requisição da tela e segura a trava do lançamento
+# enquanto espera (o robô não começa); uma conciliação comum termina em menos de um segundo.
+ESPERA_CORRECAO_S = 10
 
 
 class ConciliacaoEmAndamento(Exception):
@@ -413,11 +416,13 @@ class ConciliacaoIncompleta(Exception):
 
 
 @contextmanager
-def trava_conciliacao():
+def trava_conciliacao(espera: int | None = None):
     """Uma conciliação por vez entre processos (`GET_LOCK`, com espera): duas ao mesmo tempo
-    poderiam gravar, cada uma, a conferência do lançamento do mesmo lote."""
+    poderiam gravar, cada uma, a conferência do lançamento do mesmo lote. `espera` em segundos;
+    sem ela, `ESPERA_TRAVA_S`."""
+    espera = ESPERA_TRAVA_S if espera is None else espera
     with connection.cursor() as cursor:
-        cursor.execute("SELECT GET_LOCK(%s, %s)", [TRAVA_CONCILIACAO, ESPERA_TRAVA_S])
+        cursor.execute("SELECT GET_LOCK(%s, %s)", [TRAVA_CONCILIACAO, espera])
         obtida = cursor.fetchone()[0] == 1
     if not obtida:
         raise ConciliacaoEmAndamento("Outra conciliação com o SCPI está em andamento.")

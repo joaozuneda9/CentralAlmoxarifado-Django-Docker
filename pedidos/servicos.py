@@ -1459,7 +1459,7 @@ def corrigir_requisicao(
     requisicao = texto(requisicao)
     if not requisicao_valida(requisicao):
         return Resposta(ok=False, mensagem="Informe o número da requisição no formato 000000/00.")
-    from conciliacao.servicos import ConciliacaoEmAndamento, trava_conciliacao
+    from conciliacao import servicos as conciliacao
 
     with trava(TRAVA_LANCAMENTO) as obtida:
         if not obtida:
@@ -1469,9 +1469,9 @@ def corrigir_requisicao(
             # conciliação), nenhuma conciliação lê o lote enquanto o número muda, e o momento da
             # correção é tomado aqui dentro: a extração que começar depois dele só é conciliada
             # depois do commit, já com o número novo; a que começou antes não conta para o lote.
-            with trava_conciliacao():
+            with conciliacao.trava_conciliacao(espera=conciliacao.ESPERA_CORRECAO_S):
                 return _corrigir_com_a_trava(lote, requisicao, usuario, explicito or timezone.now())
-        except ConciliacaoEmAndamento:
+        except conciliacao.ConciliacaoEmAndamento:
             return Resposta(
                 ok=False,
                 mensagem="Há uma conferência com o SCPI em andamento. Tente de novo em instantes.",
