@@ -68,6 +68,17 @@ def test_aba_mostra_veredito_diferencas_e_filtro(client, pessoa, dois_lotes, scp
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures("journal")
+def test_veredito_atual_e_a_conclusiva_mais_recente(dois_lotes, scpi):
+    p, av = dois_lotes
+    lancar(scpi, [p, av])  # a extração de depois dá o LANCAMENTO
+    nova_extracao(scpi)  # e a seguinte, a REVISAO
+    revisao = ConferenciaLote.objects.get(lote=p, tipo="REVISAO")
+    assert atual(p).conferencia == revisao
+    assert len(conciliacao_da_aba("todos").lotes) == 2  # uma linha por lote
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
 def test_trava_mostra_as_candidatas_e_o_e_esta(client, pessoa, dois_lotes, scpi):
     p, av = dois_lotes
     scpi.salva_e_falha.add(p)  # o SCPI salvou a 000001/26 e a resposta se perdeu

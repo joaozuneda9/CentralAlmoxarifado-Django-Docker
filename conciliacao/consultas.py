@@ -4,6 +4,8 @@ from dataclasses import dataclass, field
 from datetime import date, datetime
 
 from django.core.paginator import Page, Paginator
+from django.db.models import F, OuterRef, Q, Subquery, Window
+from django.db.models.functions import RowNumber
 
 from conciliacao import regras
 from conciliacao.models import (
@@ -171,19 +173,32 @@ def lotes_conferidos() -> list[LoteConferido]:
         tipo__in=(ConferenciaLote.Tipo.LANCAMENTO, ConferenciaLote.Tipo.REVISAO)
     )
     lotes = set(correcoes) | set(do_lancamento.values_list("lote", flat=True).distinct())
-    atuais: dict[str, ConferenciaLote] = {}
+    # O veredito atual de cada lote sai do banco, uma linha por lote: a conclusiva mais recente
+    # entre as que ainda valem (depois de uma correção, só as de extrações começadas depois dela).
+    ultima_correcao = (
+        CorrecaoVinculo.objects.filter(lote=OuterRef("lote"))
+        .order_by("-quando", "-pk")
+        .values("quando")[:1]
+    )
     conferencias = (
         do_lancamento.exclude(veredito=Veredito.AGUARDANDO)
+        .annotate(corrigido_em=Subquery(ultima_correcao))
+        .filter(
+            Q(corrigido_em__isnull=True) | Q(extracao__importacao__inicio__gt=F("corrigido_em"))
+        )
+        .annotate(
+            posicao=Window(
+                RowNumber(),
+                partition_by=[F("lote")],
+                order_by=[F("criada_em").desc(), F("pk").desc()],
+            )
+        )
+        .filter(posicao=1)
         .select_related("requisicao", "outra_requisicao", "extracao__importacao")
         # O bruto gzip da extração não serve à tela e viria em cada conferência.
         .defer("extracao__arquivo")
-        .order_by("criada_em", "pk")
     )
-    for conferencia in conferencias:
-        correcao = correcoes.get(conferencia.lote)
-        if correcao is not None and conferencia.extracao.importacao.inicio <= correcao.quando:
-            continue
-        atuais[conferencia.lote] = conferencia
+    atuais = {conferencia.lote: conferencia for conferencia in conferencias}
     # A tentativa em verificar que a pessoa resolveu informando o número também é um lançamento a
     # acompanhar; o filtro das linhas lançadas, abaixo, deixa de fora a que segue travada.
     lotes |= set(
