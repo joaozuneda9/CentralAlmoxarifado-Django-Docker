@@ -120,9 +120,30 @@ def test_cabecalho_da_conferencia_se_recarrega_so_enquanto_bloqueado(client, pes
     trecho = client.get(reverse("automacoes:pagina"), headers=alvo).content.decode()
     assert 'id="conferir-agora"' in trecho and 'hx-trigger="every 5s"' in trecho
     assert 'aria-disabled="true"' in trecho and "Conferência com o SCPI" in trecho
+    assert 'id="conferir-agora-botao"' in trecho  # o mesmo id bloqueado e liberado: o foco volta
     ExecucaoRobo.objects.filter(pk=execucao.pk).update(fim=timezone.now(), situacao="SUCESSO")
     trecho = client.get(reverse("automacoes:pagina"), headers=alvo).content.decode()
     assert "hx-trigger" not in trecho and 'type="submit"' in trecho
+    assert 'id="conferir-agora-botao"' in trecho
+
+
+@pytest.mark.django_db
+def test_falha_inesperada_da_extracao_aparece_resumida_em_portugues(client, pessoa):
+    from catalogo.models import Importacao
+    from scpi.execucao import PREFIXO_FALHA_INESPERADA
+
+    imp = Importacao.objects.create(
+        tipo=Importacao.Tipo.REQUISICOES,
+        situacao=Importacao.Situacao.FALHA,
+        fim=timezone.now(),
+        erro=f"{PREFIXO_FALHA_INESPERADA} TimeoutError: page.click: Timeout 30000ms exceeded",
+    )
+    ExtracaoOficial.objects.create(importacao=imp, motivo=ExtracaoOficial.Motivo.MANUAL)
+    pagina = client.get(ABA).content.decode()
+    # O texto técnico fica só no "Detalhe técnico" do histórico; o cabeçalho mostra a frase.
+    cabecalho = pagina.split('id="conferir-agora"')[1].split("</p>")[0]
+    assert "O SCPI demorou demais para responder" in cabecalho
+    assert "Timeout 30000ms" not in cabecalho
 
 
 # --- Correção do número (FR-026) ---

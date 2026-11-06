@@ -22,7 +22,7 @@ from automacoes.visao_geral import linha_lancamento
 from catalogo.curva import INICIO_DADOS_CONFIAVEIS
 from catalogo.forms import ROBOS, ROBOS_POR_CHAVE
 from catalogo.models import Importacao
-from catalogo.saude import situacao_do_catalogo
+from catalogo.saude import resumo_do_erro, situacao_do_catalogo
 from conciliacao.consultas import conciliacao_da_aba, ultima_extracao, verificacoes
 from interface.htmx import regiao_pedida, render_regiao
 from pedidos import andamento
@@ -221,9 +221,16 @@ def _motivo_para_nao_conferir() -> str:
     return ""
 
 
-def _contexto_conferir(request=None) -> dict:
-    """O cabeçalho da conferência com o SCPI (`div#conferir-agora`)."""
-    return {"conferir_motivo": _motivo_para_nao_conferir(), "ultima_extracao": ultima_extracao()}
+def _contexto_conferir() -> dict:
+    """O cabeçalho da conferência com o SCPI (`div#conferir-agora`). A falha da última extração
+    vem resumida em português (`resumo_do_erro`), como na visão geral."""
+    extracao = ultima_extracao()
+    falha = extracao is not None and extracao.importacao.situacao == Importacao.Situacao.FALHA
+    return {
+        "conferir_motivo": _motivo_para_nao_conferir(),
+        "ultima_extracao": extracao,
+        "erro_extracao": resumo_do_erro(extracao.importacao.erro) if falha else "",
+    }
 
 
 def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
@@ -251,7 +258,7 @@ def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
         "conciliacao": conciliacao_da_aba(
             request.GET.get("veredito", ""), request.GET.get("pagina_conciliacao", 1)
         ),
-        **_contexto_conferir(request),
+        **_contexto_conferir(),
         "robos": robos,
         "aba": aba,
         "abas": [(chave, rotulo, estados.get(chave)) for chave, rotulo in ABAS],
@@ -269,7 +276,7 @@ REGIOES = {
     "section#situacao-catalogo": ("catalogo/_situacao.html", _contexto_situacao),
     "section#lancamentos": ("pedidos/_lancamentos.html", lambda request: contexto_lancamento()),
     "div#historico": ("automacoes/_historico.html", _contexto_regiao_historico),
-    "div#conferir-agora": ("conciliacao/_conferir.html", _contexto_conferir),
+    "div#conferir-agora": ("conciliacao/_conferir.html", lambda request: _contexto_conferir()),
 }
 
 
