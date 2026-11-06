@@ -1,162 +1,161 @@
 # Ambientes no Docker Desktop compartilhado
 
-## Destinos e situação atual
+## Situação atual
 
-| | Atual → desenvolvimento (somente após virada) | Nova produção |
+Conferida no servidor em 06/11/2026, com `docker ps`, os rótulos do Compose e os
+arquivos de cada pasta.
+
+| | Produção | Desenvolvimento |
 |---|---|---|
-| Pasta | `C:\Users\laboratorio\Desktop\CentralAlmoxarifado-Django-Docker` | `C:\docker\almoxarifado-prod` |
-| Projeto | `almoxarifado` (preservado deliberadamente) | `almoxarifado-prod` |
-| Git | `develop` | Tag aprovada de `main`, HEAD destacado |
-| Imagem | `central-almoxarifado-dev:<SHA>` | GHCR com digest e label de revisão |
-| Banco | `almoxarifado_banco-dados` | `almoxarifado-prod_banco-dados` |
-| Perfil SCPI | `almoxarifado_perfil-navegador` | `almoxarifado-prod_perfil-navegador` |
-| Porta | Loopback, por exemplo `127.0.0.1:8012` | Preparação em `127.0.0.1:8011` |
+| Pasta | `C:\docker\producao` | `C:\Users\laboratorio\Desktop\CentralAlmoxarifado-Django-Docker` |
+| Projeto Compose | `almoxarifado_prod` | `almoxarifado` |
+| Arquivos Compose | `compose.ambientes.yaml` + `compose.producao.yaml` (veja "Passagem única") | `compose.ambientes.yaml` + `compose.desenvolvimento.yaml` |
+| Git | Tag de `main`, HEAD destacado | `develop` |
+| Imagem | GHCR por digest, com label de revisão | `central-almoxarifado-dev:<SHA>` (build local) |
+| Containers | `almoxarifado_prod` (web), `almoxarifado_prod-agendador-1`, `almoxarifado_prod-banco-1` | `almoxarifado-web-1`, `-agendador-1`, `-banco-1` (parados) |
+| Banco | Volume `almoxarifado_prod_banco-dados` | Volume `almoxarifado_banco-dados` |
+| Perfil SCPI | Volume `almoxarifado_prod_perfil-navegador` | Volume `almoxarifado_perfil-navegador` |
+| Porta | `0.0.0.0:8012`, HTTP direto na rede (`PORTA_WEB`, padrão 8012) | `127.0.0.1:8011` (`PORTA_WEB`, padrão 8011) |
+| Marcador `.deploy-ambiente` | `producao` | `desenvolvimento` |
+| Operação real | `LANCAMENTO_REAL=1`, SCPI e Telegram preenchidos, agendador ligado | Integrações forçadas vazias pelo overlay, agendador nunca sobe |
 
-As portas propostas ainda precisam ser conferidas no Windows antes de usar.
-Volumes são prefixados pelo projeto. Bind mounts `./dados` ficam em cada clone.
-O perfil antigo não é compartilhado com produção; novo perfil exige novo login
-no SCPI e conferência das automações. O journal em `dados/logs` precisa ser
-preservado na migração, especialmente se houver lançamento a conferir.
+Volumes são prefixados pelo projeto, por isso o nome do projeto é o que escolhe
+o banco: o mesmo projeto rodado de outra pasta usaria o mesmo banco com outro
+`.env` e outra `dados/`. O `atualizar.ps1` recusa quando os containers do
+projeto foram criados noutra pasta (rótulo `com.docker.compose.project.working_dir`).
+Bind mounts `./dados` ficam em cada pasta: logs (com o journal do lançamento),
+backups e `.xlsx` de carga.
 
-O marcador local `.deploy-ambiente` é uma confirmação operacional. **Não criá-lo
-na instalação atual enquanto ela for produção.** O script de desenvolvimento
-reutiliza intencionalmente o nome e os volumes antigos; esse marcador só pode ser
-criado após o encerramento da produção antiga. As proteções do script não
-impedem um administrador de executar Docker diretamente com alvo incorreto.
+### Topologia de acesso: HTTP direto, sem proxy
+
+Não há Apache, proxy nem HTTPS. O waitress publica na porta 8012 de todas as
+interfaces do Windows (`192.168.0.241`), e o acesso externo chega por
+encaminhamento do MikroTik (a regra exata é conferida com o André). Por isso:
+
+- o waitress **não** usa `--trusted-proxy` (`compose.producao.yaml` substitui o
+  comando da base): com a porta aberta na rede, qualquer cliente forjaria
+  `x-forwarded-for` (que divide o limite por IP dos formulários) e
+  `x-forwarded-proto`;
+- o `.env` de produção tem `USAR_HTTPS=0` e `PROXY_HTTPS=0`. Com `USAR_HTTPS=0`,
+  o `settings.py` silencia só os quatro avisos do `check --deploy` que são a
+  consequência dessa decisão (W004, W008, W012, W016); os demais continuam
+  barrando a atualização;
+- o `atualizar.ps1` recusa produção com `USAR_HTTPS` ou `PROXY_HTTPS` diferentes
+  de `0` e porta aberta na rede com `--trusted-proxy`. Desenvolvimento continua
+  só em loopback.
+
+Quando houver proxy HTTPS, o caminho de volta é: porta em `127.0.0.1`, o
+comando da base (com `--trusted-proxy`), `USAR_HTTPS=1` e `PROXY_HTTPS=1` no
+`.env`, e as verificações do script invertidas no mesmo PR.
+
+### Pastas que não são ambiente
+
+- `C:\docker\almoxarifado-prod`: clone da preparação de outubro (tag `v1.0.1`,
+  marcador `producao`, volumes `almoxarifado-prod_*` de 20/10/2026). **Não é a
+  produção** e nunca entrou em operação. Não rode o `atualizar.ps1` nele: o
+  projeto de produção (`almoxarifado_prod`) foi criado em `C:\docker\producao`, e
+  o script recusa. Retire o marcador `.deploy-ambiente` dessa pasta; apagar a
+  pasta e os volumes `almoxarifado-prod_*` é decisão à parte, depois de conferir
+  que nada dali é necessário.
+- `C:\docker\resguardo-producao-20261023-163939`: o que foi guardado na virada de
+  23/10/2026 (dump do banco antes da troca, o `.env` anterior, o `compose.yaml` e
+  o script de importação). Contém segredos: não versionar nem enviar ao chat.
 
 ## Arquivos e comandos
 
-`compose.yaml` é legado e permanece intacto para não alterar o projeto em uso.
-Os novos comandos combinam explicitamente `compose.ambientes.yaml` com um único
-overlay (`compose.desenvolvimento.yaml` ou `compose.producao.yaml`). Não há
-`compose.override.yaml` implícito. Sempre usar o script no clone de destino.
+`compose.yaml` é legado e não se altera; nenhum ambiente o usa depois da
+passagem única. Os comandos combinam explicitamente `compose.ambientes.yaml` com
+um único overlay (`compose.desenvolvimento.yaml` ou `compose.producao.yaml`).
+Não há `compose.override.yaml` implícito. Sempre usar o script na pasta do
+ambiente.
 
 `deploy/atualizar.ps1` funciona em PowerShell 5.1 ou superior e **planeja por
 padrão**. Valida checkout limpo, marcador, branch/tag remota, imagem/projeto,
-contexto Docker `desktop-linux`, porta loopback e variáveis herdadas do terminal.
-Não imprime a configuração resolvida, pois ela contém senhas. Não usar
-`docker compose config` para enviar configuração completa ao chat.
+pasta de origem do projeto, contexto Docker `desktop-linux`, porta e topologia
+de acesso e variáveis herdadas do terminal. Não imprime a configuração
+resolvida, pois ela contém senhas. Não usar `docker compose config` para enviar
+configuração completa ao chat.
 
 Somente com `-Aplicar` executa pull/build, conferência da revisão da imagem,
-banco com espera de saúde, backup por container temporário (mesmo com web parado), check de produção, migrations
-e subida dos serviços selecionados. Para produção já existente, exige também
-`-ManutencaoConfirmada`. Isso **não pausa as gravações**: a janela e o bloqueio
-de acesso/tarefas são coordenados separadamente. Checar robôs não impede que
-outro usuário comece um depois; nunca atualizar com operação em andamento.
+banco com espera de saúde, backup por container temporário (mesmo com web
+parado), check de produção, migrations e subida dos serviços selecionados. Para
+produção já existente, exige também `-ManutencaoConfirmada`. Isso **não pausa as
+gravações**: a janela e o bloqueio de acesso/tarefas são coordenados
+separadamente. Checar robôs não impede que outro usuário comece um depois; nunca
+atualizar com operação em andamento.
 
 Nenhum comando faz `down`, prune, remove volumes, reinicia daemon ou altera GIS.
-Uma migration pode alterar o banco e recriar web interrompe suas requisições:
-`-Aplicar` não é uma operação apenas de consulta.
+Uma migration pode alterar o banco e recriar web interrompe suas requisições
+(e mata os robôs, filhos do waitress): `-Aplicar` não é uma operação apenas de
+consulta.
 
-## Preparar produção nova (após merge e release)
+## Atualizar a produção
 
-Não executar esta seção sobre a pasta antiga. Clonar o repositório para
-`C:\docker\almoxarifado-prod`, preferencialmente com credencial somente leitura.
-Conferir `git status`, fazer fetch de `main` e tags e checkout destacado da tag
-escolhida. Exemplo, com versão já publicada:
-
-```powershell
-git -C C:\docker\almoxarifado-prod fetch origin --tags
-git -C C:\docker\almoxarifado-prod switch --detach v1.1.1
-```
-
-Criar `.env` a partir de `.env.example`, `.env.banco` a partir de
-`.env.banco.example` e restringir acesso às contas administradoras no Windows.
-Criar o marcador **somente no clone novo** com conteúdo `producao`.
-Usar chaves/senhas novas, sem copiar `.env` de produção para desenvolvimento.
-
-| Variável no `.env` de produção | Preparação |
-|---|---|
-| `SECRET_KEY` | Chave forte exclusiva; manter estável após a virada |
-| `DEBUG` | `0` |
-| `ALLOWED_HOSTS` | Host real planejado e host usado na validação local, sem `*` |
-| `CSRF_TRUSTED_ORIGINS` | Origem HTTPS real, com esquema |
-| `USAR_HTTPS`, `PROXY_HTTPS` | `1`, `1` |
-| `PREFIXO_URL` | Vazio se acesso na raiz; não copiar `/almoxarifado` sem decisão |
-| `PORTA_WEB` | `8011` após conferir disponibilidade; somente o número, sem IP |
-| `DB_NAME`, `DB_USER` | `almoxarifado`, `almox` (banco isolado pelo volume/rede) |
-| `DB_PASSWORD` | Senha nova, diferente da instalação antiga |
-| `LANCAMENTO_REAL` | `0` |
-| `SAEP_USER`, `SAEP_PASS`, `TELEGRAM_TOKEN`, `TELEGRAM_CHAT_ID`, `TELEGRAM_CHAT_ID_SEGURANCA` | Vazios |
-
-Em `.env.banco`, preencher apenas `MARIADB_ROOT_PASSWORD`, outra senha forte.
-Senhas contendo `$` devem usar aspas simples nos arquivos dotenv. Mudar os
-arquivos depois da criação do banco não altera automaticamente suas senhas.
-Criar `dados/logs`, `dados/backups`, `dados/importacao`. O container usa UID 1000;
-validar escrita pelos containers no Docker Desktop antes de considerar pronto.
-
-`PORTA_PUBLICADA` pertence apenas ao Compose legado, que não foi alterado para
-preservar a instalação atual. Nos novos ambientes, o Compose fixa `127.0.0.1`;
-`PORTA_WEB` escolhe somente o número da porta (desenvolvimento: `8012`). Um valor
-com IP é inválido, inclusive na execução direta do Compose.
-
-No clone novo, usando o digest do resumo do workflow (substituir os placeholders):
+Pré-requisitos: tag `vX.Y.Z` em `main` e a imagem aprovada do workflow **Imagem
+de release** (`ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:...`),
+conforme [FLUXO_GIT.md](FLUXO_GIT.md). Num terminal PowerShell limpo, em
+`C:\docker\producao`:
 
 ```powershell
-.\deploy\atualizar.ps1 -Ambiente producao -Versao v1.1.1 -Imagem 'ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:<digest>'
+git fetch origin --tags
+git switch --detach vX.Y.Z
+git status   # precisa estar limpo
+$imagem = 'ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:<digest>'
+.\deploy\atualizar.ps1 -Ambiente producao -Versao vX.Y.Z -Imagem $imagem
 ```
 
-Sem `-Aplicar`, não cria pasta, imagem ou container. A verificação da label da
-imagem só ocorre durante aplicação, após pull. O planejamento faz consultas ao
-GitHub e ao Docker, por isso precisa de acesso de leitura aos dois.
+Revisar o plano. Na janela combinada (sem usuários gravando nem robôs
+rodando), parar **só o agendador deste projeto** e aplicar. A produção tem
+integrações preenchidas, então toda aplicação usa `-AtivarOperacao`, que também
+religa o agendador no fim:
 
-Aplicar sem `-AtivarOperacao` sobe somente banco/web e exige credenciais de
-integração vazias. Agendador não sobe. Apenas `LANCAMENTO_REAL=0` não basta para
-bloquear Telegram e importações, por isso há verificações adicionais.
+```powershell
+docker compose -p almoxarifado_prod stop agendador
+.\deploy\atualizar.ps1 -Ambiente producao -Versao vX.Y.Z -Imagem $imagem `
+    -Aplicar -AtivarOperacao -ManutencaoConfirmada
+```
 
-O HTTPS ainda depende de decisão e configuração de domínio/certificado/proxy.
-O script exige essas opções, mas não instala proxy nem confirma TLS. Para
-validação local por HTTP do backend, é possível enviar `X-Forwarded-Proto: https`
-com Host permitido, somente via loopback. Isso não é HTTPS para usuários.
-Não publicar o backend diretamente na rede: o waitress confia nos headers do
-proxy. O MikroTik deve encaminhar ao proxy HTTPS, não à porta loopback 8011.
+Depois: abrir o painel, conferir login, a página Automações e
+`dados/logs`. O script não acompanha a saúde HTTP. Se falhar, ele para no
+comando que falhou: não continuar cegamente nem apagar dados/volumes; religar o
+agendador (`docker compose -p almoxarifado_prod start agendador`) só com a versão
+anterior ou a nova inteira no ar.
 
-## Copiar dados sem afetar a instalação atual
+## Passagem única: do `compose.yaml` editado ao script
 
-Esta seção é um roteiro; os comandos de restauração serão preparados para os
-nomes e arquivos efetivos, revisados antes de executados no Windows.
+Até a `v1.3.0`, a produção rodou do `compose.yaml` legado **editado à mão no
+servidor** (projeto `almoxarifado_prod`, imagem por digest, `container_name`,
+porta `0.0.0.0:8012`, sem `--trusted-proxy`), com o checkout sujo e sem
+marcador; o `atualizar.ps1` recusava essa pasta. O `compose.producao.yaml`
+passou a descrever exatamente essa instalação, com o mesmo projeto e os mesmos
+volumes. A passagem é feita uma vez, na primeira versão que traz esta mudança,
+dentro de uma janela de manutenção:
 
-1. Copiar um `.sql.gz` existente para a pasta de backups nova, preservando o original.
-   Não copiar `/var/lib/mysql` de um banco em execução.
-2. Na produção nova, parar **somente seus serviços web/agendador**, se já criados,
-   e restaurar o dump no seu banco. Conferir o projeto/volume antes de qualquer
-   operação destrutiva. Nunca apontar o cliente de restauração ao banco antigo.
-3. Subir a versão nova com migrations aplicadas ao banco restaurado, operação
-   real bloqueada. Conferir quantidades, últimos pedidos, atendimentos e saídas
-   contra a origem; testar logins, painel, permissões e backup/restauração.
-4. Copiar os arquivos necessários de `dados/logs` (incluindo journal), backups
-   e importações úteis. Não reutilizar o volume de perfil SCPI nem credenciais.
-5. Coordenar janela de virada: bloquear novas gravações/robôs e desativar o
-   agendador **apenas do projeto antigo**, esperar tarefas concluírem, gerar
-   dump final consistente e copiar os arquivos finais. Não reiniciar Docker.
-6. Repetir restauração/conferência no destino. O dump inicial não contém pedidos
-   feitos após sua geração e não serve como cópia final.
-7. Configurar acesso HTTPS e, com André, trocar o encaminhamento externo. Manter
-   a origem sem gravações; não deixar duas instalações atendendo usuários.
-8. Preencher credenciais de operação apenas na nova produção; usar explicitamente
-   `-Aplicar -AtivarOperacao -ManutencaoConfirmada` após conferir que o agendador e
-   lançamentos da origem estão bloqueados. A ativação sobe o agendador com seus
-   horários; só liberar `LANCAMENTO_REAL=1` depois da conferência do SCPI.
-9. Testar primeiro lançamento controlado e backup. Guardar registro da versão,
-   imagem/digest, horário do dump e do último pedido migrado.
+1. Guardar uma cópia do `compose.yaml` editado (por exemplo em
+   `C:\docker\resguardo-producao-<data>\compose.yaml`) e conferir que o `.env`
+   tem `USAR_HTTPS=0` e `PROXY_HTTPS=0`. `PORTA_PUBLICADA` deixa de ser lida;
+   `PORTA_WEB` só precisa existir se a porta mudar de 8012.
+2. Desfazer a edição local (`git restore compose.yaml`), trocar para a tag nova
+   (`git switch --detach vX.Y.Z`) e conferir `git status` limpo.
+3. Criar o marcador: `Set-Content .deploy-ambiente producao` (ignorado pelo Git).
+4. Planejar e aplicar como em "Atualizar a produção". Os containers são
+   recriados a partir dos arquivos novos, com os mesmos nomes e volumes; o
+   banco pode ser recriado (o volume fica). O Compose pode avisar que o projeto
+   foi criado com outros arquivos: é esperado nesta passagem.
+5. Conferir que `docker compose ls` mostra `almoxarifado_prod` com
+   `compose.ambientes.yaml,compose.producao.yaml` e que o volume em uso é
+   `almoxarifado_prod_banco-dados` (os dados de antes continuam lá).
 
-## Converter a instalação antiga em desenvolvimento
+Rollback da passagem: o `compose.yaml` guardado no passo 1 e `docker compose -f
+compose.yaml up -d` na pasta, como antes. Voltar a imagem não desfaz migrations.
 
-Só depois da virada concluída. Preservar antes alterações locais e a referência
-da versão anterior. Parar o agendador antigo em janela específica. Preparar o
-clone na `develop` aprovada, trocar credenciais do banco de testes de maneira
-coordenada (editar `.env` sozinho não troca a senha já persistida no MariaDB),
-remover credenciais reais do SCPI/Telegram e manter `LANCAMENTO_REAL=0`.
+## Desenvolvimento
 
-O overlay de desenvolvimento força integrações vazias mesmo se o arquivo `.env`
-contiver valores antigos. Não exportar segredos reais para essa pasta. Restringir
-a porta a loopback e removê-la do encaminhamento externo. Manter dados de teste
-controlados, reduzindo os dados pessoais copiados quando possível.
-
-Criar então o marcador `desenvolvimento` na pasta antiga. O projeto continua
-`almoxarifado` e preserva seus volumes, mas usa a imagem exclusiva de dev. O
-script recusa aplicação se detectar agendador antigo ativo; não o para sozinho.
-Planejar e, após revisar, aplicar:
+O projeto continua `almoxarifado` e preserva seus volumes, mas usa a imagem
+exclusiva de dev. O overlay força integrações vazias mesmo se o `.env` contiver
+valores antigos; não exportar segredos reais para essa pasta. O script recusa
+aplicação se detectar agendador ativo; não o para sozinho. Planejar e, após
+revisar, aplicar:
 
 ```powershell
 .\deploy\atualizar.ps1 -Ambiente desenvolvimento
@@ -166,23 +165,31 @@ Planejar e, após revisar, aplicar:
 
 Atualizar o clone para `develop` por fast-forward antes de cada validação; nada
 é enviado a produção por esse comando. O agendador de desenvolvimento permanece
-desligado. O perfil Compose não é uma barreira de permissão: iniciar explicitamente
-esse serviço pelo Docker pode ativá-lo. Usar sempre o script e não ligar
-agendamentos de testes que possam competir com produção.
+desligado. O perfil Compose não é uma barreira de permissão: iniciar
+explicitamente esse serviço pelo Docker pode ativá-lo. Usar sempre o script e
+não ligar agendamentos de testes que possam competir com produção.
 
-## Atualizações de produção e recuperação
-
-Preparar tag/digest aprovados em clone limpo, conferir backup e janela sem
-usuários/tarefas, planejar e aplicar explicitamente com os switches necessários.
-O script não bloqueia usuários, não acompanha a saúde HTTP e não muda o MikroTik.
-Se falhar, para no comando; não continuar cegamente nem apagar dados/volumes.
+## Recuperação
 
 Voltar a imagem anterior não desfaz migrations. Verificar compatibilidade e
 preparar restauração específica antes de rollback do banco; restaurar um backup
-antigo perde gravações posteriores. O ambiente antigo com novos dados de teste
-não é uma origem segura para recuperação da produção nova.
+antigo perde gravações posteriores. O banco de desenvolvimento não é uma origem
+segura para recuperação da produção.
 
-Copiar backups para fora dessa máquina e testar restauração. Isolamento de projeto
-não isola memória/CPU: build de desenvolvimento e Chromium continuam compartilhando
-recursos com GIS. Não executar carga/robôs simultâneos durante operação crítica.
-Recuperação após reinício continua pendente de validação, sem reiniciar a máquina.
+Copiar backups para fora dessa máquina e testar restauração. Isolamento de
+projeto não isola memória/CPU: build de desenvolvimento e Chromium continuam
+compartilhando recursos com GIS. Não executar carga/robôs simultâneos durante
+operação crítica. Recuperação após reinício continua pendente de validação, sem
+reiniciar a máquina.
+
+## Histórico
+
+- Out/2026: preparada uma produção nova em `C:\docker\almoxarifado-prod`
+  (projeto `almoxarifado-prod`, loopback 8011 atrás de um proxy HTTPS que nunca
+  foi instalado). Não entrou em operação.
+- 23/10/2026: virada para `C:\docker\producao`, projeto `almoxarifado_prod`,
+  com o `compose.yaml` legado editado no servidor e HTTP direto na 8012. A
+  instalação do Desktop virou o desenvolvimento. Resguardo em
+  `C:\docker\resguardo-producao-20261023-163939`.
+- 11/2026: `compose.producao.yaml` e `atualizar.ps1` passaram a descrever essa
+  produção; a edição local acaba na passagem única.

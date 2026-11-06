@@ -100,6 +100,28 @@ def test_check_deploy_sem_avisos():
     assert r.returncode == 0, r.stdout + r.stderr
 
 
+def test_check_deploy_sem_avisos_em_http_direto():
+    """Produção em HTTP direto (USAR_HTTPS=0, deploy/AMBIENTES.md): o atualizar.ps1 roda o check
+    com --fail-level WARNING e não pode parar nos avisos que são a própria decisão."""
+    r = rodar(
+        ["manage.py", "check", "--deploy", "--fail-level", "WARNING"],
+        **{**PRODUCAO, "USAR_HTTPS": "0"},
+    )
+    assert r.returncode == 0, r.stdout + r.stderr
+
+
+def test_http_direto_so_silencia_os_avisos_de_https():
+    codigo = (
+        "import django; django.setup(); from django.conf import settings; "
+        "print(sorted(settings.SILENCED_SYSTEM_CHECKS))"
+    )
+    com = rodar(["-c", codigo], **PRODUCAO)
+    sem = rodar(["-c", codigo], **{**PRODUCAO, "USAR_HTTPS": "0"})
+    assert "security.W008" not in com.stdout, com.stderr
+    for aviso in ("security.W004", "security.W008", "security.W012", "security.W016"):
+        assert aviso in sem.stdout, sem.stderr
+
+
 def test_proxy_https_liga_cabecalho_do_proxy():
     codigo = (
         "import django; django.setup(); from django.conf import settings; "

@@ -9,6 +9,10 @@ $global:AlmoxTesteServicos = @()
 $global:AlmoxTesteFalhar = ''
 $global:AlmoxTesteToken = ''
 $global:AlmoxTesteChatSeguranca = ''
+$global:AlmoxTesteHttps = '0'
+$global:AlmoxTesteProxy = '--listen=0.0.0.0:8010'
+$global:AlmoxTestePortaDev = '127.0.0.1'
+$global:AlmoxTestePastaProjeto = ''
 $global:AlmoxTesteDigest = 'ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:' + ('a' * 64)
 
 function docker {
@@ -21,15 +25,27 @@ function docker {
     }
     if ($linha.Contains('ps --status running --services')) { return $global:AlmoxTesteServicos }
     if ($linha -eq 'context show') { return 'desktop-linux' }
+    if ($linha.StartsWith('ps -a --filter label=com.docker.compose.project=')) {
+        return $global:AlmoxTestePastaProjeto
+    }
     if ($linha.Contains('config --format json')) {
-        $vars = @{ LANCAMENTO_REAL = '0'; DEBUG = '0'; USAR_HTTPS = '1'; PROXY_HTTPS = '1'
+        $vars = @{ LANCAMENTO_REAL = '0'; DEBUG = '0'
+            USAR_HTTPS = $global:AlmoxTesteHttps; PROXY_HTTPS = $global:AlmoxTesteHttps
             TELEGRAM_TOKEN = $global:AlmoxTesteToken
             TELEGRAM_CHAT_ID_SEGURANCA = $global:AlmoxTesteChatSeguranca }
+        # Producao: HTTP direto na rede (compose.producao.yaml); desenvolvimento: loopback.
+        if ($env:AMBIENTE_DEPLOY -eq 'producao') {
+            $porta = @{host_ip = '0.0.0.0'; published = '8012'; target = 8010}
+            $comando = @('python', '-m', 'waitress', $global:AlmoxTesteProxy, 'config.wsgi:application')
+        } else {
+            $porta = @{host_ip = $global:AlmoxTestePortaDev; published = '8012'; target = 8010}
+            $comando = @('python', '-m', 'waitress', '--trusted-proxy=*', 'config.wsgi:application')
+        }
         return (@{
             name = $env:PROJETO_COMPOSE
             services = @{
-                web = @{ image = $env:IMAGEM_APP; environment = $vars
-                    ports = @(@{host_ip = '127.0.0.1'; published = '8011'; target = 8010}) }
+                web = @{ image = $env:IMAGEM_APP; environment = $vars; command = $comando
+                    ports = @($porta) }
                 agendador = @{ environment = $vars }
             }
         } | ConvertTo-Json -Depth 8 -Compress)
@@ -100,7 +116,7 @@ try {
     Recusa { Executar } 'destacado'
     Git-Teste checkout -q --detach v1.0.0
     Executar
-    if ($global:AlmoxTesteChamadas | Where-Object { $_ -notmatch ' ps --status running --services$|config --format json$|^context show$' }) {
+    if ($global:AlmoxTesteChamadas | Where-Object { $_ -notmatch ' ps --status running --services$|config --format json$|^context show$|^ps -a --filter label=com\.docker\.compose\.project=almoxarifado_prod ' }) {
         throw 'Planejamento deve apenas consultar os servicos do projeto.'
     }
     # -notmatch ignora maiusculas: digest e versao precisam da comparacao exata.
@@ -109,6 +125,20 @@ try {
     Recusa { Executar } 'GHCR'
     $global:AlmoxTesteDigest = $digestValido
     Recusa { Executar -Versao V1.0.0 } 'vMAJOR'
+    # Producao e HTTP direto: HTTPS ou proxy ligados quebrariam o acesso ou abririam forja.
+    $global:AlmoxTesteHttps = '1'
+    Recusa { Executar } 'HTTP direto'
+    $global:AlmoxTesteHttps = '0'
+    $global:AlmoxTesteProxy = '--trusted-proxy=*'
+    Recusa { Executar } 'trusted-proxy'
+    $global:AlmoxTesteProxy = '--listen=0.0.0.0:8010'
+    # O mesmo projeto (e banco) a partir de outro clone, como o abandonado almoxarifado-prod.
+    $global:AlmoxTestePastaProjeto = @('C:\docker\almoxarifado-prod')
+    Recusa { Executar } 'noutra pasta'
+    # A mesma pasta, com barras e maiusculas diferentes, e linha vazia: aceita.
+    $global:AlmoxTestePastaProjeto = @(($global:AlmoxTesteDestino.Replace('\', '/').ToUpperInvariant() + '/'), '')
+    Executar
+    $global:AlmoxTestePastaProjeto = ''
     # Compose no Windows pode emitir uma linha vazia quando nao ha servicos.
     foreach ($saidaVazia in @('', " `t")) {
         $global:AlmoxTesteServicos = @($saidaVazia)
@@ -191,6 +221,9 @@ try {
     Git-Teste checkout -q develop
     'desenvolvimento' | Set-Content (Join-Path $global:AlmoxTesteDestino '.deploy-ambiente')
     Executar -Ambiente desenvolvimento
+    $global:AlmoxTestePortaDev = '0.0.0.0'
+    Recusa { Executar -Ambiente desenvolvimento } '127.0.0.1'
+    $global:AlmoxTestePortaDev = '127.0.0.1'
     Recusa { Executar -Ambiente desenvolvimento -AtivarOperacao } 'operacao real'
     $env:COMPOSE_PROJECT_NAME = 'gis-stack'
     Recusa { Executar -Ambiente desenvolvimento } 'herdada'

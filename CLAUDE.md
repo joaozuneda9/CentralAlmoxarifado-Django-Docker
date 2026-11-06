@@ -32,7 +32,8 @@ e `deploy/atualizar.ps1`). Resumo que vale para todo agente que trabalha aqui (C
   **Nunca** faça commit, push, merge
   local, rebase, force push, `reset --hard`, `clean -fd` nem troca de branch para apagar
   divergência em `main`, `develop` ou numa tag, nem na instalação de produção (clone em
-  `C:\docker\almoxarifado-prod`, HEAD destacado numa tag, somente leitura). Essas branches só
+  `C:\docker\producao`, projeto `almoxarifado_prod`, HEAD destacado numa tag, somente leitura;
+  `C:\docker\almoxarifado-prod` é uma preparação abandonada, não a produção). Essas branches só
   mudam pelo merge de um PR, e o merge é do usuário ou por ele autorizado; o agente não o faz por
   conta própria. Trazer `develop` para a sua branch (merge ou rebase dela) é permitido.
 - Promoção só por PR. O fluxo normal é `claude/*` ou `codex/*` → `develop` → `main`. Squash é aceito
@@ -155,9 +156,12 @@ transações precisam se comportar como no servidor.
   `--trusted-proxy=<proxy> --trusted-proxy-headers="x-forwarded-proto x-forwarded-for"`
   (no compose, `<proxy>` é `*`: o proxy chega por um IP interno do Docker que muda, e isso só é
   seguro porque a porta publicada fica em loopback e só o proxy a alcança; nunca publique o
-  backend direto na rede) junto com `PROXY_HTTPS=1`: sem o primeiro cabeçalho o redirecionamento
-  para https entra em laço; sem o segundo, todo pedido parece vir do proxy e divide um único
-  limite por IP.
+  backend direto na rede com `--trusted-proxy`) junto com `PROXY_HTTPS=1`: sem o primeiro
+  cabeçalho o redirecionamento para https entra em laço; sem o segundo, todo pedido parece vir do
+  proxy e divide um único limite por IP. **A produção atual não tem proxy**: HTTP direto na porta
+  8012 de todas as interfaces, e por isso o `compose.producao.yaml` tira os `--trusted-proxy` e o
+  `.env` tem `USAR_HTTPS=0` e `PROXY_HTTPS=0` (o `atualizar.ps1` confere; com `USAR_HTTPS=0` o
+  `settings.py` silencia só os avisos W004, W008, W012 e W016 do `check --deploy`).
 - `contas.Usuario` é o `AUTH_USER_MODEL`: `AbstractUser` com o `username` rotulado
   "matrícula". O login (`/painel/entrar/`) e o login do admin usam formulários próprios
   (`contas/forms.py`) só para a recusa sair em português correto.
@@ -737,11 +741,14 @@ transações precisam se comportar como no servidor.
   serviços `web` (waitress com `--url-prefix=${PREFIXO_URL}` e `--trusted-proxy=*`) e `agendador`
   (supercronic com `deploy/crontab`, que chama `deploy/tarefa.sh`, saída em
   `dados/logs/agendador.log`); o `banco` é o MariaDB 11.4, sem porta publicada. O `compose.yaml`
-  é **legado** (instalação atual, publicado em `${PORTA_PUBLICADA}`) e não se altera. Os ambientes
-  novos combinam `compose.ambientes.yaml` com um único overlay, `compose.desenvolvimento.yaml` ou
-  `compose.producao.yaml`, sem `compose.override.yaml` implícito, em projetos e volumes separados
-  (`almoxarifado` e `almoxarifado-prod`); a porta fica fixa em `127.0.0.1` e `PORTA_WEB` só
-  escolhe o número. O Compose força `DB_HOST`, `SCPI_HEADLESS=1`, `MYSQLDUMP=mariadb-dump` e as
+  é **legado** (nenhum ambiente o usa depois da passagem única de `deploy/AMBIENTES.md`) e não se
+  altera. Os ambientes combinam `compose.ambientes.yaml` com um único overlay,
+  `compose.desenvolvimento.yaml` ou `compose.producao.yaml`, sem `compose.override.yaml`
+  implícito, em projetos e volumes separados: `almoxarifado` (desenvolvimento, pasta do Desktop,
+  `127.0.0.1:8011`) e `almoxarifado_prod` (produção, `C:\docker\producao`, container web
+  `almoxarifado_prod`, `0.0.0.0:8012` em HTTP direto); o overlay fixa o endereço e `PORTA_WEB`
+  só escolhe o número. O nome do projeto escolhe o banco: o script recusa o projeto criado
+  noutra pasta. O Compose força `DB_HOST`, `SCPI_HEADLESS=1`, `MYSQLDUMP=mariadb-dump` e as
   pastas (`/dados/logs`, `/dados/backups`, `/dados/perfil`) por cima do `.env`; `dados/` do
   host guarda logs, backups e os `.xlsx` de carga (`dados/importacao`). Os robôs da página são filhos do waitress
   no container `web` (`disparo.py` abre sessão própria fora do Windows), então recriar o `web`

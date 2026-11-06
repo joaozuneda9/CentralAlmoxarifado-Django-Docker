@@ -92,9 +92,10 @@ atualizações no ambiente errado. Os novos ambientes usam Compose e PowerShell
 com alvo explícito, sem deploy automático ao fazer push.
 
 O sistema usa Docker Compose: `banco` (MariaDB), `web` (waitress e robôs da página)
-e `agendador` (supercronic com `deploy/crontab`: importações e backup). O acesso atual
-é HTTP em `45.172.240.231:8010`; Apache e HTTPS não foram confirmados. Apache em
-`/almoxarifado` era a proposta anterior, não a topologia atual verificada.
+e `agendador` (supercronic com `deploy/crontab`: importações e backup). A produção
+roda em `C:\docker\producao` (projeto `almoxarifado_prod`, `compose.ambientes.yaml` +
+`compose.producao.yaml`) e é acessada por HTTP direto na porta 8012, sem Apache, proxy
+nem HTTPS. Apache em `/almoxarifado` era a proposta anterior, não a topologia atual.
 Os comandos de manutenção devem selecionar explicitamente o projeto e os arquivos
 do ambiente, conforme `deploy/AMBIENTES.md`.
 

@@ -1,8 +1,29 @@
-# A base nao tem build: producao consome somente a imagem aprovada por digest.
+# Producao real (C:\docker\producao, projeto almoxarifado_prod). A base nao tem build: producao
+# consome somente a imagem aprovada por digest. Guia: deploy/AMBIENTES.md.
+#
+# Topologia verificada: HTTP direto, sem Apache nem proxy HTTPS. O MikroTik encaminha para a
+# porta publicada em todas as interfaces do Windows. Por isso o waitress NAO confia em proxy
+# (sem --trusted-proxy): com a porta aberta na rede, qualquer cliente poderia forjar
+# x-forwarded-for e x-forwarded-proto. O .env de producao fica com USAR_HTTPS=0 e
+# PROXY_HTTPS=0 (o atualizar.ps1 confere). Quando houver proxy HTTPS, volte a porta para
+# 127.0.0.1, devolva os --trusted-proxy da base e ligue USAR_HTTPS e PROXY_HTTPS.
 services:
   web:
+    # Nome herdado da instalacao manual (compose.yaml editado no servidor ate a v1.3.0).
+    container_name: almoxarifado_prod
     environment:
       DEBUG: "0"
+    command: !override
+      - python
+      - -m
+      - waitress
+      - --listen=0.0.0.0:8010
+      - --threads=8
+      - --url-prefix=${PREFIXO_URL:-}
+      - config.wsgi:application
+    # PORTA_WEB so escolhe o numero; o endereco e fixo aqui.
+    ports: !override
+      - "0.0.0.0:${PORTA_WEB:-8012}:8010"
   agendador:
     environment:
       DEBUG: "0"

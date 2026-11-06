@@ -73,7 +73,9 @@ if ($Ambiente -eq 'producao') {
         throw 'origin/main desatualizada. Execute fetch e revise antes de continuar.'
     }
     Invoke-Git merge-base --is-ancestor $sha refs/remotes/origin/main | Out-Null
-    $projeto = 'almoxarifado-prod'
+    # Projeto e volumes da producao real (C:\docker\producao), criados em 23/10/2026. O antigo
+    # almoxarifado-prod (C:\docker\almoxarifado-prod) foi abandonado: seus volumes nao sao os reais.
+    $projeto = 'almoxarifado_prod'
 } else {
     if ($branchStatus -ne 0 -or $branch -ne 'develop') { throw 'Desenvolvimento exige a branch develop.' }
     $remota = @(Invoke-Git ls-remote origin refs/heads/develop)
@@ -107,6 +109,18 @@ try {
     if ($LASTEXITCODE -ne 0 -or ($contexto -join '').Trim() -ne 'desktop-linux') {
         throw 'Este roteiro exige o contexto desktop-linux do Docker Desktop local.'
     }
+    # O projeto e os volumes se escolhem pelo nome, nao pela pasta: rodar de outro clone apontaria
+    # para o mesmo banco com outro .env e outros dados/. Recusar se o projeto ja foi criado noutra pasta.
+    $normalizar = { param($p) ([string]$p).Replace('/', '\').TrimEnd('\').ToLowerInvariant() }
+    $pastas = @(& docker ps -a --filter "label=com.docker.compose.project=$projeto" `
+        --format '{{.Label "com.docker.compose.project.working_dir"}}')
+    if ($LASTEXITCODE -ne 0) { throw 'Docker falhou ao listar os containers do projeto.' }
+    foreach ($pasta in $pastas) {
+        if ([string]::IsNullOrWhiteSpace($pasta)) { continue }
+        if ((& $normalizar $pasta) -ne (& $normalizar $raiz)) {
+            throw "O projeto $projeto foi criado noutra pasta ($pasta). Rode o script no clone dessa pasta."
+        }
+    }
     $script:compose = @('compose', '--project-directory', $raiz, '--env-file', (Join-Path $raiz '.env'),
         '-p', $projeto, '-f', (Join-Path $raiz 'compose.ambientes.yaml'),
         '-f', (Join-Path $raiz "compose.$Ambiente.yaml"))
@@ -125,13 +139,22 @@ try {
                 throw 'Preparacao exige integracoes vazias e LANCAMENTO_REAL=0.'
             }
         }
+        # Producao e HTTP direto, sem proxy (compose.producao.yaml): USAR_HTTPS=1 redirecionaria
+        # para um https que nao existe, e PROXY_HTTPS=1 confiaria num cabecalho que qualquer
+        # cliente da rede pode forjar.
         if ($Ambiente -eq 'producao' -and ((Get-Valor $vars 'DEBUG') -ne '0' -or
-            (Get-Valor $vars 'USAR_HTTPS') -ne '1' -or (Get-Valor $vars 'PROXY_HTTPS') -ne '1')) {
-            throw 'Producao exige DEBUG=0, USAR_HTTPS=1 e PROXY_HTTPS=1; configure HTTPS no proxy.'
+            (Get-Valor $vars 'USAR_HTTPS') -ne '0' -or (Get-Valor $vars 'PROXY_HTTPS') -ne '0')) {
+            throw 'Producao (HTTP direto, sem proxy) exige DEBUG=0, USAR_HTTPS=0 e PROXY_HTTPS=0.'
         }
     }
+    $comando = @($config.services.web.command) -join ' '
     foreach ($porta in $config.services.web.ports) {
-        if ($porta.host_ip -ne '127.0.0.1') { throw 'A porta precisa estar restrita a 127.0.0.1.' }
+        if ($porta.host_ip -eq '127.0.0.1') { continue }
+        if ($Ambiente -ne 'producao') { throw 'A porta precisa estar restrita a 127.0.0.1.' }
+        # Porta aberta na rede: o waitress nao pode confiar em cabecalhos de proxy.
+        if ($comando -match '--trusted-proxy') {
+            throw 'Porta aberta na rede com --trusted-proxy: qualquer cliente forjaria o proxy.'
+        }
     }
     # Uma linha vazia do Compose nao representa um servico em execucao.
     $ativos = @(Invoke-Compose ps --status running --services |

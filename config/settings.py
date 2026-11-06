@@ -172,6 +172,16 @@ if not DEBUG:
     # HSTS com subdomínios e preload depende do domínio de produção, que ainda não está
     # definido: silenciados até essa decisão.
     SILENCED_SYSTEM_CHECKS = ["security.W005", "security.W021"]
+    # USAR_HTTPS=0 é a decisão explícita do .env (o padrão é 1) de servir em HTTP direto, sem
+    # proxy HTTPS: a topologia atual da produção (deploy/AMBIENTES.md). Os quatro avisos são
+    # justamente as consequências dessa decisão; os demais do check --deploy continuam valendo.
+    if not USAR_HTTPS:
+        SILENCED_SYSTEM_CHECKS += [
+            "security.W004",  # HSTS
+            "security.W008",  # redirecionamento para HTTPS
+            "security.W012",  # cookie de sessão só em HTTPS
+            "security.W016",  # cookie do CSRF só em HTTPS
+        ]
 
 LOG_DIR = Path(os.environ.get("LOG_DIR") or BASE_DIR / "logs")
 LOG_DIR.mkdir(parents=True, exist_ok=True)

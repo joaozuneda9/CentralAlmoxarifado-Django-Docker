@@ -19,7 +19,9 @@ PORTA_PUBLICADA=0.0.0.0:8010
 FIM
 echo 'MARIADB_ROOT_PASSWORD=teste' > "$temporario/.env.banco"
 for ambiente in desenvolvimento producao; do
-  PROJETO_COMPOSE="teste-$ambiente" AMBIENTE_DEPLOY="$ambiente" \
+  projeto="teste-$ambiente"
+  [ "$ambiente" = producao ] && projeto=almoxarifado_prod
+  PROJETO_COMPOSE="$projeto" AMBIENTE_DEPLOY="$ambiente" \
     REVISAO_APP=abc123 IMAGEM_APP="teste-$ambiente:abc123" \
     docker compose --project-directory "$temporario" --env-file "$temporario/.env" \
     -f "$temporario/compose.ambientes.yaml" -f "$temporario/compose.$ambiente.yaml" \
@@ -51,9 +53,17 @@ for nome in ('web', 'agendador'):
     assert d['environment']['DB_HOST'] == p['environment']['DB_HOST'] == 'banco'
     assert 'MARIADB_ROOT_PASSWORD' not in d['environment']
 assert 'agendamento' in prod['services']['agendador']['profiles']
-assert prod['services']['web']['ports'][0]['host_ip'] == '127.0.0.1'
+# Producao real: HTTP direto na rede, sem confiar em proxy (deploy/AMBIENTES.md).
+assert prod['name'] == 'almoxarifado_prod'
+assert prod['services']['web']['container_name'] == 'almoxarifado_prod'
+assert len(prod['services']['web']['ports']) == 1
+assert prod['services']['web']['ports'][0]['host_ip'] == '0.0.0.0'
+assert prod['services']['web']['ports'][0]['published'] == '8012'
+assert not any('trusted-proxy' in arg for arg in prod['services']['web']['command'])
+# Desenvolvimento segue so em loopback e com a base intacta.
+assert len(dev['services']['web']['ports']) == 1
 assert dev['services']['web']['ports'][0]['host_ip'] == '127.0.0.1'
-assert prod['services']['web']['ports'][0]['published'] == '8011'
+assert '--trusted-proxy=*' in dev['services']['web']['command']
 porta = json.loads((pasta / 'porta.json').read_text())['services']['web']['ports'][0]
 assert porta['host_ip'] == '127.0.0.1' and porta['published'] == '18011'
 assert not prod['services']['banco'].get('ports')
