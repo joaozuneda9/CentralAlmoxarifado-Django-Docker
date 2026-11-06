@@ -112,9 +112,11 @@ DE/PARA CONSOLIDADO (carga única). No servidor os comandos rodam no container
 arquivos do ambiente explícitos (`deploy/AMBIENTES.md`). Em produção, só a pedido do usuário.
 
 Os comandos `importar_cadastro`, `importar_estoque`, `importar_saidas_scpi` (`--desde`/`--ate`)
-e `atualizar_catalogo` (os três em sequência, num navegador só; com `--carga-inicial`, o cadastro
-inteiro e as saídas desde `curva.INICIO_DADOS_CONFIAVEIS`, também no botão "Carga inicial
-completa" da página Automações) abrem o SCPI pelo Playwright; com `--arquivo`
+e `atualizar_catalogo` (os três em sequência e, por último, `conciliar_lancamentos --diaria`, a
+extração diária das requisições com a conciliação e a limpeza de 60 dias, num navegador só; com
+`--carga-inicial`, o cadastro inteiro e as saídas desde `curva.INICIO_DADOS_CONFIAVEIS`, também no
+botão "Carga inicial completa" da página Automações; o `deploy/crontab` o roda às 07:15, porque o
+SCPI só é estável das 7h às 17h) abrem o SCPI pelo Playwright; com `--arquivo`
 leem um CSV já baixado. Os testes nunca abrem o navegador.
 
 O pytest usa `config.settings_test` (definido no `pyproject.toml`) e cria o banco
@@ -691,6 +693,15 @@ transações precisam se comportar como no servidor.
   e grava a `CorrecaoVinculo`: daí em diante só valem as conferências de extrações começadas depois
   dela, e a próxima é de novo `LANCAMENTO`. Os avisos de saúde (`conciliacao/saude.py`) entram no
   `catalogo.saude._demais`. Na interface, a saída do Central é "requisição", nunca "lote".
+  **Diária e retenção** (PR 6): o `atualizar_catalogo` termina com o passo Requisições
+  (`conciliar_lancamentos --diaria`: motivo `DIARIA`, período de hoje − 9 dias e dos lotes em verificar
+  abertos), que não desfaz os três primeiros se falhar. Depois de conciliar (mesmo incompleta), o
+  `conciliar_lancamentos` roda `conciliacao.limpeza.limpar`, salvo com `--sem-limpeza` (o repasse numa
+  cópia local): esvazia o bruto da extração quando ela e todas as que apontam para ela
+  (`mesmo_arquivo_que`) passaram dos 60 dias (`arquivo_apagado_em`; a impressão fica) e apaga as
+  requisições de extrações com mais de 60 dias que nenhuma conferência liga (a ligada ou a outra do
+  conflito) nem lista como candidata. Roda com a trava das extrações `REQUISICOES` (uma extração nova
+  pode estar apontando para o bruto) e, com ela ocupada, fica para a próxima.
 - `implantacao` (sem modelos nem migrations) guarda o backup, o `robos_em_andamento` e a carga
   do de/para. A migração única das planilhas do Apps Script (`importar_planilhas`, com
   `conversao.py` e `migracao.py`) foi feita e removida; o código fica na tag `v1.0.1`. Do que ela

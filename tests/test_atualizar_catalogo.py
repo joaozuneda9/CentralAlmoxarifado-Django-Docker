@@ -24,7 +24,12 @@ def test_atualizar_roda_os_tres_e_segue_depois_de_uma_falha(monkeypatch, capsys,
     monkeypatch.setattr("scpi.management.commands.atualizar_catalogo.call_command", falso)
     with pytest.raises(CommandError, match=r"^Falharam: importar_cadastro\.$"):
         call_command("atualizar_catalogo")
-    assert feitos == ["importar_cadastro", "importar_estoque", "importar_saidas_scpi"]
+    assert feitos == [
+        "importar_cadastro",
+        "importar_estoque",
+        "importar_saidas_scpi",
+        "conciliar_lancamentos",
+    ]
     assert "Cadastro: o CSV não tem nenhum material" in capsys.readouterr().err
     assert any(
         r.name == "scpi" and "importar_cadastro" in r.getMessage() and r.levelname == "ERROR"
@@ -114,7 +119,8 @@ def test_carga_inicial_pede_o_cadastro_inteiro_e_as_saidas_desde_o_inicio(monkey
         ("importar_cadastro", {"completo": True}),
         ("importar_estoque", {}),
         ("importar_saidas_scpi", {"desde": "01/01/2026"}),
+        ("conciliar_lancamentos", {"diaria": True}),
     ]
     chamados.clear()
     call_command("atualizar_catalogo")
-    assert [extras for _, extras in chamados] == [{}, {}, {}]
+    assert [extras for _, extras in chamados] == [{}, {}, {}, {"diaria": True}]

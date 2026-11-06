@@ -54,7 +54,8 @@ def test_crontab_mantem_os_horarios_do_agendador():
     assert agenda == {
         ("*/30", "7-16", "*", "*", "1-5"): "/app/deploy/tarefa.sh importar_estoque",
         ("0", "17", "*", "*", "1-5"): "/app/deploy/tarefa.sh importar_estoque",
-        ("30", "6", "*", "*", "*"): "/app/deploy/tarefa.sh atualizar_catalogo",
+        # O SCPI só é estável das 7h às 17h (spec 010, R19): o catálogo saiu das 06:30.
+        ("15", "7", "*", "*", "*"): "/app/deploy/tarefa.sh atualizar_catalogo",
         ("0", "23", "*", "*", "*"): "/app/deploy/tarefa.sh backup_banco",
     }
 

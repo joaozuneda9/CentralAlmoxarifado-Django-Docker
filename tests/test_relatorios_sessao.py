@@ -69,7 +69,7 @@ def test_depois_do_bloco_volta_a_uma_sessao_por_relatorio():
     assert avulsa.perfil == "estoque" and avulsa.fechada
 
 
-def test_atualizar_catalogo_baixa_os_tres_na_mesma_sessao(monkeypatch):
+def test_atualizar_catalogo_baixa_os_quatro_na_mesma_sessao(monkeypatch):
     usadas = []
 
     def comando(nome, *args, **kwargs):
@@ -77,7 +77,8 @@ def test_atualizar_catalogo_baixa_os_tres_na_mesma_sessao(monkeypatch):
 
     monkeypatch.setattr("scpi.management.commands.atualizar_catalogo.call_command", comando)
     call_command("atualizar_catalogo")
-    assert len(usadas) == 3 and usadas[0] is usadas[1] is usadas[2]
+    # Cadastro, estoque, saídas e, por último, as requisições da conciliação (spec 010, R19).
+    assert len(usadas) == 4 and all(sessao is usadas[0] for sessao in usadas)
     assert usadas[0].fechada
 
 

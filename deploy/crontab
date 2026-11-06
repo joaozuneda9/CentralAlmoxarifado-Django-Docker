@@ -6,8 +6,9 @@
 */30 7-16 * * 1-5 /app/deploy/tarefa.sh importar_estoque
 0 17 * * 1-5 /app/deploy/tarefa.sh importar_estoque
 
-# Catálogo (cadastro, estoque e saídas do SCPI, em sequência): todo dia às 06:30.
-30 6 * * * /app/deploy/tarefa.sh atualizar_catalogo
+# Catálogo (cadastro, estoque, saídas e requisições do SCPI, com a conciliação, em sequência):
+# todo dia às 07:15. O SCPI só é estável das 7h às 17h (spec 010, R19).
+15 7 * * * /app/deploy/tarefa.sh atualizar_catalogo
 
 # Backup do banco: todo dia às 23:00.
 0 23 * * * /app/deploy/tarefa.sh backup_banco

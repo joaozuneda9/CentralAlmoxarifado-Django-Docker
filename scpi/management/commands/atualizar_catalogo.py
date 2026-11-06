@@ -7,8 +7,16 @@ from scpi import relatorios
 
 logger = logging.getLogger("scpi")
 
-# Cadastro primeiro: o estoque e as saídas se apoiam nos códigos que ele traz.
-COMANDOS = ("importar_cadastro", "importar_estoque", "importar_saidas_scpi")
+# Cadastro primeiro: o estoque e as saídas se apoiam nos códigos que ele traz. Por último, as
+# requisições de todos os tipos para a conciliação com o SCPI (spec 010, R19): extração diária,
+# conciliação e limpeza de 60 dias, na mesma sessão.
+COMANDOS = (
+    "importar_cadastro",
+    "importar_estoque",
+    "importar_saidas_scpi",
+    "conciliar_lancamentos",
+)
+OPCOES = {"conciliar_lancamentos": {"diaria": True}}
 
 # Opções de cada comando na carga inicial: o cadastro inteiro (a recarga completa, que oculta o
 # que sumiu) e as saídas desde o início dos dados confiáveis, em vez de só o que é novo.
@@ -20,8 +28,9 @@ CARGA_INICIAL = {
 
 class Command(BaseCommand):
     help = (
-        "Roda as três importações do SCPI em sequência (cadastro, estoque e saídas), num navegador "
-        "só. Uma falha não impede as seguintes."
+        "Roda as três importações do SCPI em sequência (cadastro, estoque e saídas) e, por último, "
+        "a extração diária das requisições com a conciliação, num navegador só. Uma falha não "
+        "impede as seguintes."
     )
 
     def add_arguments(self, parser):
@@ -34,10 +43,12 @@ class Command(BaseCommand):
 
     def handle(self, *args, carga_inicial=False, **opcoes):
         falharam = []
-        # Um login no SCPI para as três: cada relatório volta à tela de onde partiu.
+        # Um login no SCPI para todos: cada relatório volta à tela de onde partiu.
         with relatorios.sessao_compartilhada():
             for nome in COMANDOS:
-                extras = CARGA_INICIAL.get(nome, {}) if carga_inicial else {}
+                extras = dict(OPCOES.get(nome, {}))
+                if carga_inicial:
+                    extras |= CARGA_INICIAL.get(nome, {})
                 try:
                     call_command(nome, stdout=self.stdout, stderr=self.stderr, **extras)
                 except CommandError as exc:
