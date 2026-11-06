@@ -125,6 +125,9 @@ pedidos de outros formulários".
    `autocomplete="given-name"`) → resultado.
 3. **Erros**: em branco, inválido, sem nome, não encontrado e excesso de tentativas, cada um com a sua
    mensagem (seção 3); o número e o nome digitados ficam nos campos para corrigir.
+4. **Rolagem**: o envio vai para `/pedido/consulta/#resultado`, também pelo botão da tela de sucesso, e o
+   navegador rola sozinho, sem JavaScript, até o cartão do pedido; no erro, o alvo é o formulário, que
+   cabe na tela com o aviso logo abaixo (com os dois campos, no celular o aviso ficava abaixo da dobra).
 
 ## 6. Verificação
 
@@ -185,6 +188,11 @@ Terceira rodada (lista de materiais e consulta no topo da página inicial):
 - A lista é o mesmo parcial da tela de sucesso (`pedidos/_itens_pedidos.html`), a pedido do usuário:
   `test_a_lista_e_a_mesma_da_tela_de_sucesso` confere que o HTML das duas é igual; no celular, o
   P-000170 (4 materiais com unidades longas) sai como na confirmação, sem rolagem lateral.
+
+- Rolagem (a pedido do usuário): no Playwright, em 375 px e 1280 px, a consulta com sucesso termina com o
+  cartão do pedido no topo da tela (24 px no celular) e o botão da tela de sucesso também rola até
+  ele; no erro, o formulário e o aviso ficam inteiros na tela. Um teste confere que há uma só âncora e
+  em qual cartão, e outro que nenhum comentário de template vaza nas páginas da consulta.
 
 ## 7. Pendente de validação com solicitantes
 

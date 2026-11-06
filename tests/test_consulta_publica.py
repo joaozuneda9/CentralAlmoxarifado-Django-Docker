@@ -436,7 +436,7 @@ def test_a_rota_antiga_dos_epis_e_a_mesma_consulta(client, quem, almox):
     r = client.post(URL_ANTIGA, {"numero": pedido.numero, "nome": "Ana"})
     assert selo(r) == "Aguardando atendimento"
     pagina = client.get(URL_ANTIGA)
-    assert pagina.status_code == 200 and f'action="{URL}"' in pagina.text
+    assert pagina.status_code == 200 and f'action="{URL}#resultado"' in pagina.text
 
 
 def test_get_mostra_so_o_formulario(client):
@@ -486,7 +486,8 @@ def test_a_tela_de_sucesso_leva_a_consulta_sem_o_numero_na_url(client):
     formulario = re.search(
         r'<form[^>]*action="([^"]+)"[^>]*data-ver-situacao.*?</form>', r.text, re.S
     )
-    assert formulario and formulario.group(1) == URL  # o número não vai na URL
+    # Nem o número nem o nome vão na URL; a âncora rola até o resultado.
+    assert formulario and formulario.group(1) == URL + "#resultado"
     assert f'name="numero" value="{numero}"' in formulario.group(0)
     assert 'name="nome" value="Ana"' in formulario.group(0)
     assert "csrfmiddlewaretoken" in formulario.group(0)
@@ -503,7 +504,7 @@ def test_a_tela_de_sucesso_do_epi_mantem_o_aviso_da_autorizacao(client):
     r = enviar_formulario(client, "epis", [(LUVA, "1")], destino="ETA I")
     html = texto(r.text)
     assert "Aguardando a autorização da Segurança do Trabalho." in html
-    assert f'action="{URL}"' in r.text and "Ver a situação agora" in html
+    assert f'action="{URL}#resultado"' in r.text and "Ver a situação agora" in html
 
 
 def test_a_pagina_inicial_leva_a_consulta(client):
@@ -736,3 +737,32 @@ def test_a_lista_e_a_mesma_da_tela_de_sucesso(client):
     ).group(1)
     assert lista_consulta == lista_sucesso
     assert itens_da_consulta(consulta) == LIMPEZA_PEDIDA
+
+
+def test_a_ancora_leva_ao_resultado_ou_ao_formulario_com_o_erro(client, quem, almox):
+    """O envio vai para `#resultado`: com sucesso, o navegador rola até o cartão do pedido; com
+    erro, até o formulário, que tem o aviso logo abaixo. Uma só âncora por página."""
+    pedido = limpeza_aguardando(quem, almox)
+    r = consultar(client, pedido.numero, "Ana")
+    assert r.text.count('id="resultado"') == 1
+    assert re.search(r'<section class="cartao pilha consulta-resultado" id="resultado"', r.text)
+    for numero, nome in [("P-999999", "Ana"), ("abc", "Ana"), (pedido.numero, "Bruno"), ("", "")]:
+        r = consultar(client, numero, nome)
+        assert r.text.count('id="resultado"') == 1, (numero, nome)
+        assert re.search(r'<form [^>]*consulta-formulario" id="resultado"', r.text), (numero, nome)
+    # Sem envio (GET), nada para rolar.
+    assert 'id="resultado"' not in client.get(URL).text
+
+
+def test_nenhum_comentario_de_template_vaza_na_pagina(client, quem, almox):
+    """`{# #}` só vale numa linha: em várias, o Django o mostra como texto."""
+    pedido = limpeza_aguardando(quem, almox)
+    paginas = [
+        client.get(URL),
+        consultar(client, pedido.numero, "Ana"),
+        consultar(client, "P-999999", "Ana"),
+        client.get(reverse("pedidos:inicio")),
+        enviar_formulario(client, "limpeza", [("023.001.002", "1")], destino="ETA II"),
+    ]
+    for r in paginas:
+        assert "{#" not in r.text and "#}" not in r.text and "{%" not in r.text

@@ -25,7 +25,7 @@
     <a class="botao botao-secundario" href="{% url 'pedidos:inicio' %}">Voltar ao início</a>
   </div>
   {# POST com o número e o nome escondidos: abre a situação sem pôr o número na URL (spec 011). #}
-  <form method="post" action="{% url 'pedidos:consulta' %}" data-ver-situacao>
+  <form method="post" action="{% url 'pedidos:consulta' %}#resultado" data-ver-situacao>
     {% csrf_token %}
     <input type="hidden" name="numero" value="{{ resposta.numero }}">
     <input type="hidden" name="nome" value="{{ resposta.pedido.solicitante }}">
