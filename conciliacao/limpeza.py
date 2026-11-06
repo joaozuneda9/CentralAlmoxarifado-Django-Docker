@@ -29,6 +29,7 @@ class Limpeza:
 
     @property
     def resumo(self) -> str:
+        """O que a limpeza apagou, numa frase para a saída do comando."""
         if not (self.brutos or self.requisicoes):
             return "nada com mais de 60 dias a apagar"
         return (
@@ -58,6 +59,8 @@ def limpar(agora: datetime | None = None) -> Limpeza | None:
 
 
 def _brutos(corte: datetime, agora: datetime) -> int:
+    """Esvazia o bruto das extrações de antes do `corte` que nenhuma extração recente usa
+    (`mesmo_arquivo_que`), marcando `arquivo_apagado_em`. Devolve quantas esvaziou."""
     recente_apontando = ExtracaoOficial.objects.filter(
         mesmo_arquivo_que=OuterRef("pk"), importacao__inicio__gte=corte
     )
@@ -75,6 +78,8 @@ def _brutos(corte: datetime, agora: datetime) -> int:
 
 
 def _requisicoes(corte: datetime) -> int:
+    """Apaga, em blocos, as requisições de extrações de antes do `corte` que nenhuma conferência
+    liga (a ligada ou a outra do conflito) nem lista como candidata. Devolve quantas apagou."""
     soltas = list(
         RequisicaoOficial.objects.filter(extracao__importacao__inicio__lt=corte)
         .exclude(Exists(ConferenciaLote.objects.filter(requisicao=OuterRef("pk"))))
