@@ -139,6 +139,22 @@ def test_cabecalho_da_conferencia_se_recarrega_so_enquanto_bloqueado(client, pes
 
 
 @pytest.mark.django_db
+def test_erro_previsto_longo_da_extracao_sai_cortado_no_cabecalho(client, pessoa):
+    from catalogo.models import Importacao
+
+    imp = Importacao.objects.create(
+        tipo=Importacao.Tipo.REQUISICOES,
+        situacao=Importacao.Situacao.FALHA,
+        fim=timezone.now(),
+        erro="O relatório veio cortado " + "x" * 300,
+    )
+    ExtracaoOficial.objects.create(importacao=imp, motivo=ExtracaoOficial.Motivo.MANUAL)
+    pagina = client.get(ABA).content.decode()
+    cabecalho = pagina.split('id="conferir-agora"')[1].split("</p>")[0]
+    assert "O relatório veio cortado" in cabecalho and "x" * 200 not in cabecalho
+
+
+@pytest.mark.django_db
 def test_falha_inesperada_da_extracao_aparece_resumida_em_portugues(client, pessoa):
     from catalogo.models import Importacao
     from scpi.execucao import PREFIXO_FALHA_INESPERADA

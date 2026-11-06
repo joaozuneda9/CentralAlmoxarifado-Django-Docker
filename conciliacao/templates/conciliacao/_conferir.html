@@ -25,7 +25,7 @@ liberado: o HTMX devolve o foco do teclado pelo `id` depois da troca.
   <p class="texto-secundario">
     {% if extracao %}
     {% with imp=extracao.importacao %}
-    Última extração do SCPI: {{ imp.inicio|date:"d/m" }} às {{ imp.inicio|date:"H:i" }}{% if imp.situacao == "SUCESSO" %}, {{ extracao.requisicoes }} {{ extracao.requisicoes|pluralize:"requisição,requisições" }} lidas.{% elif imp.situacao == "FALHA" %}. <span class="selo selo-erro">Falhou</span> {{ erro_extracao }}{% else %}. <span class="selo selo-info">Em andamento</span>{% endif %}
+    Última extração do SCPI: {{ imp.inicio|date:"d/m" }} às {{ imp.inicio|date:"H:i" }}{% if imp.situacao == "SUCESSO" %}, {{ extracao.requisicoes }} {{ extracao.requisicoes|pluralize:"requisição,requisições" }} lidas.{% elif imp.situacao == "FALHA" %}. <span class="selo selo-erro">Falhou</span> {{ erro_extracao|truncatechars:160 }}{% else %}. <span class="selo selo-info">Em andamento</span>{% endif %}
     {% endwith %}
     {% else %}
     Nenhuma extração do SCPI ainda. “Conferir agora” extrai as requisições e confere as que o robô lançou.
