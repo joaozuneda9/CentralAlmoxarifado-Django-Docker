@@ -499,6 +499,7 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 .acomp-barra-ok { background: var(--ok-texto); }
 .acomp-barra-aviso { background: #d99a1e; }
 .acomp-barra-erro { background: var(--erro-texto); }
+.acomp-barra-fora { background: var(--texto-suave); }
 .acomp-barra-atual { background: var(--destaque); opacity: 0.45; }
 .acomp-agora {
   display: grid; gap: 6px; padding: var(--esp-2); background: var(--destaque-superficie);

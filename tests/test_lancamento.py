@@ -471,3 +471,46 @@ def test_resumo_marca_a_requisicao_que_mudou_durante_a_execucao(dois_lotes, scpi
     scpi.preencher = mudar
     e = lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
     assert por_lote(e.resumo)[p]["resultado"] == "ignorada"
+
+
+def test_resumo_lista_a_escolhida_que_saiu_da_fila(dois_lotes, scpi):
+    p, av = dois_lotes
+    LinhaSaida.objects.filter(lote=av).update(status="LANCADA", requisicao_scpi="000009/26")
+    e = executar_lancamento(
+        ExecucaoRobo.objects.create(), scpi.abrir, lotes=[av], extrair=so_requisicao_alheia
+    )
+    assert por_lote(e.resumo)[av]["resultado"] == "ignorada"
+    assert "Saiu da fila" in por_lote(e.resumo)[av]["mensagem"]
+
+
+def test_lancada_fica_no_resumo_mesmo_se_o_scpi_nao_volta_ao_formulario(dois_lotes, scpi):
+    p, _ = dois_lotes
+
+    def falha():
+        raise RuntimeError("navegador fechou")
+
+    scpi.depois_de_salvar = falha
+    scpi.reiniciar = falha
+    execucao = ExecucaoRobo.objects.create()
+    with pytest.raises(RuntimeError):
+        lancar_todos(execucao, scpi.abrir)
+    execucao.refresh_from_db()
+    assert por_lote(execucao.resumo)[p]["resultado"] == "lancada"
+    assert por_lote(execucao.resumo)[p]["requisicao"] == "000001/26"
+
+
+def test_falha_ao_gravar_o_progresso_nao_interrompe_o_lancamento(dois_lotes, scpi, monkeypatch):
+    original = lancamento._salvar_resumo
+    chamadas = []
+
+    def as_vezes_falha(execucao, resumo):
+        chamadas.append(resumo.fase)
+        if resumo.fase in ("antes", "depois"):
+            raise DatabaseError("banco ocupado")
+        original(execucao, resumo)
+
+    monkeypatch.setattr(lancamento, "_salvar_resumo", as_vezes_falha)
+    e = lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
+    assert e.situacao == "SUCESSO" and e.resumo["lancadas"] == 2
+    assert "depois" in chamadas
+    assert "Não foi possível gravar o progresso" in e.log

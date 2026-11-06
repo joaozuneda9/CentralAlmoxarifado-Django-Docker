@@ -315,7 +315,7 @@ def test_lancamento_em_andamento():
     assert "Mês de Referência Diferente" in a.linhas[0].detalhe
     assert a.contagem == "1 lançada · 1 para conferir · 1 aguardando"
     assert a.estimativa == "faltam cerca de 2 min"
-    assert a.barra == {"ok": 25.0, "aviso": 25.0, "erro": 0.0, "atual": 25.0}
+    assert a.barra == {"ok": 25.0, "aviso": 25.0, "erro": 0.0, "fora": 0.0, "atual": 25.0}
     assert a.desfecho is None
 
 
@@ -397,3 +397,44 @@ def test_escolhidas_que_nao_foram_ao_scpi_ficam_fora_da_barra():
     assert (a.feitas, a.total) == (1, 1)
     assert a.linhas[1].estado == "fora" and a.linhas[1].texto == "Deixada de fora"
     assert a.desfecho.tipo == "ok" and a.desfecho.titulo == "A requisição foi lançada no SCPI."
+
+
+def test_ultima_atividade_ignora_o_rastro_de_uma_excecao():
+    log = "13:24:50 ✘ Não foi possível\nTraceback (most recent call last):\n  File x\n"
+    assert ultima_atividade(log, AGORA) == 10
+    assert ultima_atividade("Traceback\n  File x\n", AGORA) is None
+
+
+def test_sem_requisicao_para_o_scpi_nao_mostra_fases_nem_sucesso():
+    e = execucao_com(
+        [lote(1, "erro", mensagem="centro de custo 'X' não existe")],
+        requisicoes=0,
+        situacao="ATENCAO",
+        fim=AGORA,
+    )
+    a = acompanhamento(e, AGORA, False)
+    assert a.fases == [] and a.total == 0
+    assert a.desfecho.tipo == "atencao" and a.desfecho.travas == 1
+
+
+def test_nenhuma_lancada_nao_e_sucesso():
+    e = execucao_com(
+        [lote(1, "ignorada", em(-60), em(-30), mensagem="A requisição mudou.")],
+        situacao="SUCESSO",
+        fim=AGORA,
+    )
+    a = acompanhamento(e, AGORA, False)
+    assert a.desfecho.tipo == "atencao" and a.desfecho.titulo == "Nenhuma requisição foi lançada."
+    assert a.barra["fora"] == 100.0  # processada e deixada de fora: enche a barra
+
+
+def test_simulacao_sem_nenhuma_preenchida_nao_e_sucesso():
+    e = execucao_com(
+        [lote(1, "ignorada", mensagem="Tem uma trava para conferir: não foi ao SCPI.")],
+        requisicoes=0,
+        simulacao=True,
+        situacao="SUCESSO",
+        fim=AGORA,
+    )
+    a = acompanhamento(e, AGORA, False)
+    assert a.desfecho.titulo == "Nenhuma requisição foi preenchida."

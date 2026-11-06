@@ -227,10 +227,13 @@ def etapa_do_log(log: str) -> str:
 
 
 def ultima_atividade(log: str, agora: datetime) -> int | None:
-    """Segundos desde a última linha do registro (a hora vem no começo dela, no horário local);
-    None sem registro."""
-    linhas = [linha for linha in (log or "").splitlines() if linha.strip()]
-    if not linhas or not (hora := _HORA.match(linhas[-1])):
+    """Segundos desde a última linha do registro com horário (a hora vem no começo dela, no
+    horário local; o rastro de uma exceção continua em linhas sem ela); None sem nenhuma."""
+    hora = next(
+        (achada for linha in reversed((log or "").splitlines()) if (achada := _HORA.match(linha))),
+        None,
+    )
+    if hora is None:
         return None
     local = timezone.localtime(agora)
     h, m, s = (int(g) for g in hora.groups())
@@ -382,7 +385,7 @@ def _linha(item: dict, simulacao: bool, rodando: bool) -> LinhaRequisicao:
 
 
 def _fases(execucao, rodando: bool, parou: bool, feitas: int, total: int) -> list[Fase]:
-    if execucao.simulacao:
+    if execucao.simulacao or not total:  # sem requisição para o SCPI, nenhuma fase rodou
         return []
     fase = (execucao.resumo or {}).get("fase") or "lancando"
     atual = ORDEM_FASES.index(fase) if fase in ORDEM_FASES else 1
@@ -460,8 +463,9 @@ def _contagem(linhas, simulacao: bool) -> str:
     return " · ".join(partes)
 
 
-def _desfecho(execucao, linhas, total: int) -> Desfecho | None:
-    if not total:
+def _desfecho(execucao, linhas) -> Desfecho | None:
+    """O resultado da execução com o próximo passo (só depois do fim, sem falha)."""
+    if not linhas:
         return None
     verificar = sum(1 for linha in linhas if linha.estado == "aviso")
     erros = sum(1 for linha in linhas if linha.estado == "erro")
@@ -474,6 +478,8 @@ def _desfecho(execucao, linhas, total: int) -> Desfecho | None:
                 else f"{erros} requisições não puderam ser preenchidas."
             )
             return Desfecho("atencao", titulo, "Veja o motivo na lista. Nenhuma linha mudou.", 0)
+        if not ok:
+            return Desfecho("atencao", "Nenhuma requisição foi preenchida.", NENHUMA, 0)
         if ok == 1:
             return Desfecho(
                 "ok",
@@ -509,9 +515,14 @@ def _desfecho(execucao, linhas, total: int) -> Desfecho | None:
             )
             textos.append(f"{erro}: veja o motivo na lista e resolva nas travas.")
         return Desfecho("atencao", titulo, " ".join(textos), verificar + erros)
+    if not ok:
+        return Desfecho("atencao", "Nenhuma requisição foi lançada.", NENHUMA, 0)
     if ok == 1:
         return Desfecho("ok", "A requisição foi lançada no SCPI.", "", 0)
     return Desfecho("ok", f"As {ok} requisições foram lançadas no SCPI.", "", 0)
+
+
+NENHUMA = "Veja na lista por que cada uma ficou de fora."
 
 
 def _titulo(execucao, rodando: bool, interrompida: bool) -> str:
@@ -539,21 +550,22 @@ def acompanhamento(execucao, agora: datetime, interrompida: bool) -> Acompanhame
     parou = interrompida or execucao.situacao == execucao.Situacao.FALHA
     itens = resumo["lotes"]
     linhas = [_linha(item, execucao.simulacao, rodando) for item in itens]
-    no_scpi = [linha for item, linha in zip(itens, linhas, strict=True) if _vai_ao_scpi(item)]
+    no_scpi = [
+        (item, linha) for item, linha in zip(itens, linhas, strict=True) if _vai_ao_scpi(item)
+    ]
     total = len(no_scpi)
-    concluidas = [item for item in itens if item.get("fim")]
-    feitas = len(concluidas)
+    feitas = sum(1 for item in itens if item.get("fim"))
 
     def parte(estado):
-        n = sum(1 for linha in no_scpi if linha.estado == estado)
+        # "fora" só conta a que foi processada (com fim): a não processada não enche a barra.
+        n = sum(
+            1
+            for item, linha in no_scpi
+            if linha.estado == estado and (estado != "fora" or item.get("fim"))
+        )
         return round(100 * n / total, 2) if total else 0.0
 
-    barra = {
-        "ok": parte("ok"),
-        "aviso": parte("aviso"),
-        "erro": parte("erro"),
-        "atual": parte("atual"),
-    }
+    barra = {estado: parte(estado) for estado in ("ok", "aviso", "erro", "fora", "atual")}
     if rodando:
         tempo = f"{duracao(execucao.inicio, agora)} decorridos"
         prevista = estimativa(itens, agora)
@@ -576,5 +588,5 @@ def acompanhamento(execucao, agora: datetime, interrompida: bool) -> Acompanhame
         agora=_agora(execucao, linhas, agora) if rodando else None,
         linhas=linhas,
         contagem=_contagem(linhas, execucao.simulacao),
-        desfecho=None if (rodando or parou) else _desfecho(execucao, linhas, total),
+        desfecho=None if (rodando or parou) else _desfecho(execucao, linhas),
     )

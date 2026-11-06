@@ -112,3 +112,38 @@
     }
   });
 })();
+
+/*
+ * Registro técnico do acompanhamento (pedidos/_andamento.html): a seção da aba se recarrega a cada
+ * 3 s enquanto o robô roda, e o <details> voltaria fechado e rolado para o topo. Guarda antes da
+ * troca se ele estava aberto e onde estava a rolagem (no fim, segue o fim) e reaplica depois.
+ */
+(function () {
+  "use strict";
+
+  var guardado = null;
+
+  function registro() {
+    return document.querySelector("[data-registro-tecnico]");
+  }
+
+  document.addEventListener("htmx:before:swap", function () {
+    var detalhes = registro();
+    if (!detalhes) return;
+    var pre = detalhes.querySelector("pre");
+    guardado = {
+      aberto: detalhes.open,
+      topo: pre ? pre.scrollTop : 0,
+      noFim: pre ? pre.scrollTop + pre.clientHeight >= pre.scrollHeight - 4 : true,
+    };
+  });
+
+  document.addEventListener("htmx:after:swap", function () {
+    var detalhes = registro();
+    if (!detalhes || !guardado) return;
+    detalhes.open = guardado.aberto;
+    var pre = detalhes.querySelector("pre");
+    if (pre) pre.scrollTop = guardado.noFim ? pre.scrollHeight : guardado.topo;
+    guardado = null;
+  });
+})();

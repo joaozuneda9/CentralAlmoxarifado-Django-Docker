@@ -50,7 +50,7 @@ continua no cartão de uma frase (`andamento`).
       {% if acomp.estimativa %}<p class="acomp-estimativa">{{ acomp.estimativa }}</p>{% endif %}
     </div>
     <div class="acomp-barra" role="progressbar" aria-label="Requisições processadas" aria-valuemin="0" aria-valuemax="{{ acomp.total }}" aria-valuenow="{{ acomp.feitas }}" aria-valuetext="{{ acomp.feitas }} de {{ acomp.total }}">
-      <span class="acomp-barra-ok" style="width: {{ acomp.barra.ok|stringformat:'s' }}%"></span><span class="acomp-barra-aviso" style="width: {{ acomp.barra.aviso|stringformat:'s' }}%"></span><span class="acomp-barra-erro" style="width: {{ acomp.barra.erro|stringformat:'s' }}%"></span><span class="acomp-barra-atual" style="width: {{ acomp.barra.atual|stringformat:'s' }}%"></span>
+      <span class="acomp-barra-ok" style="width: {{ acomp.barra.ok|stringformat:'s' }}%"></span><span class="acomp-barra-aviso" style="width: {{ acomp.barra.aviso|stringformat:'s' }}%"></span><span class="acomp-barra-erro" style="width: {{ acomp.barra.erro|stringformat:'s' }}%"></span><span class="acomp-barra-fora" style="width: {{ acomp.barra.fora|stringformat:'s' }}%"></span><span class="acomp-barra-atual" style="width: {{ acomp.barra.atual|stringformat:'s' }}%"></span>
     </div>
   </div>
   {% endif %}
@@ -90,7 +90,8 @@ continua no cartão de uma frase (`andamento`).
   {% endif %}
 
   {% if log_recente and not andamento.falha.tecnico %}
-  <details class="detalhe-tecnico">
+  {# Aberto, continua aberto e na mesma rolagem nas recargas de 3 s (fila-robo.js). #}
+  <details class="detalhe-tecnico" data-registro-tecnico>
     <summary>Registro técnico</summary>
     <pre class="log-execucao mono" tabindex="0">{{ log_recente }}</pre>
   </details>
