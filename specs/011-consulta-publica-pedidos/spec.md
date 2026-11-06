@@ -74,17 +74,19 @@ certo (troca de identificadores): o número normalizado, o formulário e a data 
 
 **Com o número e o primeiro nome** (adotado, decisão do usuário em 2026-11-06, que substitui a F12):
 número normalizado, título do formulário, data do envio (dia), selo, mensagem, data da decisão (EPI
-autorizado) ou da saída (atendido), motivo da recusa (EPI). O nome não muda o que é mostrado: só
-destrava a mesma resposta.
+autorizado) ou da saída (atendido), motivo da recusa (EPI) e, também a pedido do usuário em
+2026-11-06, a **lista de materiais com as quantidades pedidas**: só os itens que o solicitante pediu
+(`ItemPedido.Origem.PEDIDO`), com o nome, a quantidade pedida e a unidade gravados no pedido, como na
+tela de sucesso. Nem o material acrescentado ou trocado pelo almoxarifado, nem a quantidade entregue.
 
 **Regra do nome** (`regras.nome_confere`): a primeira palavra do que foi digitado é igual à primeira
 palavra do `Pedido.solicitante`, sem diferença de acento, maiúsculas ou espaços (`norm_u`). "Marcos",
 "márcos" e "Marcos Pereira" abrem o pedido de "Marcos Pereira"; "Pereira", "Marc" e "MarcosPereira"
 não. Pedido sem nome nunca é consultado.
 
-**Nunca na consulta pública**: nome do solicitante, destino, observação, nº da ocorrência, materiais,
-códigos, quantidades, recebedor, quem atendeu ou decidiu, centro de custo, placa, situação no SCPI e
-número da requisição. Mostrá-los exigiria uma credencial de consulta (abaixo), fora deste escopo.
+**Nunca na consulta pública**: nome do solicitante (o gravado; só o digitado volta no campo), destino,
+observação, nº da ocorrência, códigos, quantidades entregues, materiais acrescentados pelo almoxarifado,
+recebedor, quem atendeu ou decidiu, centro de custo, placa, situação no SCPI e número da requisição.
 
 | Opção | Protege contra varredura | Custo para o solicitante | Custo no sistema |
 |---|---|---|---|
@@ -96,7 +98,8 @@ número da requisição. Mostrá-los exigiria uma credencial de consulta (abaixo
 **Recomendação inicial**: A, pela decisão anterior (F12). **Adotada**: A', a pedido do usuário. Quem
 varre números precisa acertar também o primeiro nome de cada pedido, o que torna a varredura cega
 inútil e protege sobretudo o motivo da recusa de EPI; um primeiro nome comum ("José", "Maria") ainda
-pode acertar. A opção B só se justifica se a consulta passar a mostrar nome ou materiais.
+pode acertar. Com a lista de materiais, quem acerta número e primeiro nome vê o que outra pessoa
+pediu (no EPI, o equipamento e a quantidade); a opção B seria a proteção mais forte se isso pesar.
 
 Proteções mantidas: POST com CSRF (número e nome não vão para a URL nem para o histórico),
 `never_cache`, resposta idêntica para inexistente, avulsa e nome que não confere (o nome gravado nunca
@@ -116,7 +119,8 @@ pedidos de outros formulários".
    inicial com este número e o seu primeiro nome, como foi escrito no pedido." (o nome aparece na mesma
    tela: "N materiais registrados para <nome>") e o botão **Ver a situação agora** (formulário POST com
    o número e o nome escondidos: abre o resultado sem pôr nada na URL). No EPI a frase de aguardar a autorização continua.
-2. **Depois, no mesmo ou em outro aparelho**: página inicial → link **Consultar um pedido** →
+2. **Depois, no mesmo ou em outro aparelho**: página inicial → **Consultar um pedido** (no topo, antes
+   dos formulários, a pedido do usuário) →
    digita o número (aceita `p123`, `P-123`, espaços) e o primeiro nome (o navegador pode sugeri-lo,
    `autocomplete="given-name"`) → resultado.
 3. **Erros**: em branco, inválido, sem nome, não encontrado e excesso de tentativas, cada um com a sua
@@ -149,6 +153,9 @@ Com o primeiro nome (segunda rodada, mesmo dia):
   aparelho com `p169` e "Teste" → "Aguardando atendimento"; com "Playwright" (o sobrenome) → "não
   encontrado"; atendido pelo serviço → "Atendido"; inválido, não encontrado e 429 de novo.
 
+Com a lista de materiais e a consulta no topo da página inicial (terceira rodada, mesmo dia): ver
+o fim desta seção.
+
 Primeira rodada (só com o número):
 
 - `uv run pytest`: 2254 passaram, 1 pulado (o de flags do Windows); `tests/test_consulta_publica.py`
@@ -162,6 +169,18 @@ Primeira rodada (só com o número):
   inicial em 375 px não rola de lado.
 - Os estados de EPI no navegador não foram exercitados (o banco local não tem pedido de EPI); estão
   cobertos pelo cliente de testes do Django.
+
+Terceira rodada (lista de materiais e consulta no topo da página inicial):
+
+- `uv run pytest`: 2291 passaram, 1 pulado. A lista é conferida em cada estado com os nomes, as
+  quantidades pedidas e as unidades do cenário escritos no teste (a unidade da limpeza é a exibida ou,
+  sem ela, a do cadastro, `catalogos.formulario_limpeza`): no parcial a quantidade continua a pedida,
+  na troca o acrescentado não aparece, sem o nome certo a lista não aparece, e a consulta segue com no
+  máximo 2 consultas ao banco.
+- Playwright: P-000169 com "teste" no celular mostra "Materiais pedidos" (AÇÚCAR CRISTAL BRANCO,
+  1 EMBALAGEM 5 Kg, a quantidade desce para a linha de baixo quando não cabe); a página inicial mostra
+  "Já enviou um pedido? Consultar um pedido" acima dos formulários em 375 px e 1280 px, sem rolagem
+  lateral.
 
 ## 7. Pendente de validação com solicitantes
 

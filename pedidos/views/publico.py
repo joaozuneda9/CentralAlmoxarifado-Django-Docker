@@ -201,9 +201,10 @@ def _consultas_demais(ip: str) -> bool:
 def consulta(request):
     """O solicitante, sem login, consulta pelo número e pelo primeiro nome a situação de um pedido
     de qualquer formulário público (spec 011). Mostra só o que a seção 4 da spec permite: número,
-    formulário, dia do envio, situação, a data que a explica e, na recusa do EPI, o motivo. Número
-    que não existe, saída avulsa e nome que não confere têm a mesma resposta; só lê (nada é
-    gravado). Também responde na rota antiga da consulta de EPIs (`pedidos:consulta_epi`)."""
+    formulário, dia do envio, situação, a data que a explica, na recusa do EPI o motivo, e os
+    materiais com as quantidades pedidas. Número que não existe, saída avulsa e nome que não
+    confere têm a mesma resposta; só lê (nada é gravado). Também responde na rota antiga da
+    consulta de EPIs (`pedidos:consulta_epi`)."""
     contexto = {"numero": "", "nome": ""}
     status = 200
     if request.method == "POST":
@@ -242,6 +243,9 @@ def _resultado_da_consulta(pedido: Pedido) -> dict:
         "numero": pedido.numero,
         "formulario": fluxo_da_origem(pedido.origem).titulo,
         "enviado_em": timezone.localdate(pedido.criado_em),
+        # Só o que o solicitante pediu, com a quantidade pedida (como na tela de sucesso): nem o
+        # acrescentado pelo almoxarifado, nem a quantidade entregue. Vem do prefetch.
+        "itens": [i for i in pedido.itens.all() if i.origem == ItemPedido.Origem.PEDIDO],
         "consulta": texto_consulta_publica(
             pedido.situacao,
             autorizacao=autorizacao.situacao if autorizacao else None,

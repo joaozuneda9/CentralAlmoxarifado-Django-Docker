@@ -6,6 +6,11 @@
 {% block heading %}Pedir materiais ao almoxarifado{% endblock %}
 {% block sub %}Escolha o tipo de material. Cada tipo tem seu próprio formulário.{% endblock %}
 {% block page %}
+{# Spec 011: a consulta para quem volta depois do envio (inclusive de outro aparelho), antes dos formulários. #}
+<section class="consulta-chamada" aria-labelledby="consulta-pergunta">
+  <p class="texto-secundario" id="consulta-pergunta">Já enviou um pedido?</p>
+  <a class="botao botao-secundario" href="{% url 'pedidos:consulta' %}">{% include "interface/_icone.html" with nome="busca" %}Consultar um pedido</a>
+</section>
 <div class="opcoes-formulario">
   {# Um cartão por formulário público de `FLUXOS` (pedidos/fluxos.py): título, exemplo e ícone vêm de lá. #}
   {% for f in fluxos_publicos %}
@@ -33,10 +38,5 @@
   {% endfor %}
 </section>
 {% endif %}
-{# Spec 011: a consulta pelo número, para quem volta depois do envio (inclusive de outro aparelho). #}
-<section class="consulta-chamada" aria-labelledby="consulta-pergunta">
-  <p class="opcoes-separador" id="consulta-pergunta">Já enviou um pedido?</p>
-  <a class="botao botao-secundario consulta-atalho" href="{% url 'pedidos:consulta' %}">{% include "interface/_icone.html" with nome="busca" %}Consultar um pedido</a>
-</section>
 <p class="texto-suave texto-pequeno">Enviar um pedido não é a saída do material: o almoxarifado confere, separa e confirma o atendimento depois.</p>
 {% endblock %}

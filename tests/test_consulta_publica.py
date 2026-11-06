@@ -108,6 +108,21 @@ def selo(resposta) -> str | None:
     return casou.group(1) if casou else None
 
 
+def itens_da_consulta(resposta) -> list[tuple[str, str]]:
+    """A lista "Materiais pedidos" da consulta: (material, quantidade com a unidade)."""
+    lista = re.search(
+        r'<ul class="sucesso-itens consulta-itens"[^>]*>(.*?)</ul>', resposta.text, re.S
+    )
+    if not lista:
+        return []
+    return [
+        (texto(m), texto(q))
+        for m, q in re.findall(
+            r"<li><span>(.*?)</span>\s*<strong>(.*?)</strong></li>", lista.group(1)
+        )
+    ]
+
+
 def atender(pedido, usuario, qtds, *, data="2026-10-01", adicionados=()):
     r = confirmar_atendimento(
         pedido.id,
@@ -327,9 +342,10 @@ def test_nao_expoe_dados_do_pedido_nem_do_atendimento(client, almox):
         "Recebedor",
         "SCPI",
     ]
-    materiais = [i.material for i in pedido.itens.all()]
-    for dado in proibidos + materiais:
+    for dado in proibidos:
         assert dado not in r.text, dado
+    # Os materiais pedidos aparecem (com número e primeiro nome), os códigos não.
+    assert itens_da_consulta(r) == LIMPEZA_PEDIDA
 
 
 def test_nao_expoe_a_ocorrencia_nem_quem_decidiu(client, quem):
@@ -342,7 +358,7 @@ def test_nao_expoe_a_ocorrencia_nem_quem_decidiu(client, quem):
     epi = epi_recusado(quem, None)
     r = consultar(client, epi.numero, "marcos pereira")
     assert "Sem laudo do médico" in r.text
-    for dado in ["Marcos", "Pereira", "Sônia", "Sônia Segura", "70001", "LUVA", LUVA, "ETA I"]:
+    for dado in ["Marcos", "Pereira", "Sônia", "Sônia Segura", "70001", LUVA, "ETA I"]:
         assert dado not in r.text, dado
 
 
@@ -491,6 +507,8 @@ def test_a_tela_de_sucesso_do_epi_mantem_o_aviso_da_autorizacao(client):
 def test_a_pagina_inicial_leva_a_consulta(client):
     r = client.get(reverse("pedidos:inicio"))
     assert f'href="{URL}"' in r.text and "Consultar um pedido" in texto(r.text)
+    # No topo, antes dos formulários (quem volta não precisa passar por eles).
+    assert r.text.index(f'href="{URL}"') < r.text.index('class="opcoes-formulario"')
 
 
 # O número digitado (regras puras).
@@ -647,3 +665,51 @@ def test_tentativas_com_nome_errado_contam_no_limite(client, settings, quem, alm
 )
 def test_nome_confere(digitado, gravado, confere):
     assert nome_confere(digitado, gravado) is confere
+
+
+# A lista de materiais e das quantidades pedidas (spec 011, seção 4).
+
+# A unidade é a exibida da lista de limpeza ou, sem ela, a do cadastro
+# (catalogos.formulario_limpeza).
+LIMPEZA_PEDIDA = [("DETERGENTE NEUTRO", "2 UN"), ("CAFÉ 500 G", "1,5 Pacote 500 g")]
+
+
+@pytest.mark.parametrize(
+    ("montar", "esperado"),
+    [
+        (limpeza_aguardando, LIMPEZA_PEDIDA),
+        (limpeza_atendido, LIMPEZA_PEDIDA),
+        # Parcial: a quantidade é a pedida, nunca a entregue (o café saiu com 0).
+        (limpeza_parcial, LIMPEZA_PEDIDA),
+        # Troca: o acrescentado pelo almoxarifado não aparece; o trocado continua como pedido.
+        (limpeza_com_troca, LIMPEZA_PEDIDA),
+        (ab_aguardando, [("FITA VEDA ROSCA", "3 UN")]),
+        (epi_aguardando, [("LUVA DE VAQUETA", "2 UN")]),
+        (epi_recusado, [("LUVA DE VAQUETA", "2 UN")]),
+        (epi_parcial, [("LUVA DE VAQUETA", "2 UN")]),
+    ],
+    ids=lambda v: v.__name__ if callable(v) else "",
+)
+def test_lista_os_materiais_e_as_quantidades_pedidas(client, quem, almox, montar, esperado):
+    pedido = montar(quem, almox)
+    r = consultar(client, pedido.numero)
+    assert itens_da_consulta(r) == esperado
+    assert "Materiais pedidos" in texto(r.text)
+    for palavra in ["Entregue", "entregue:", "Trocado", "Adicionado pelo almoxarifado"]:
+        assert palavra not in r.text, palavra
+
+
+def test_sem_o_nome_certo_a_lista_nao_aparece(client, quem, almox):
+    pedido = limpeza_aguardando(quem, almox)
+    for nome in ["Bruno", ""]:
+        r = consultar(client, pedido.numero, nome)
+        assert itens_da_consulta(r) == [] and "DETERGENTE" not in r.text and "CAFÉ" not in r.text
+    r = consultar(client, "P-999999", "Ana")
+    assert itens_da_consulta(r) == [] and "Materiais pedidos" not in texto(r.text)
+
+
+def test_a_lista_nao_custa_consulta_a_mais(client, quem, almox, django_assert_max_num_queries):
+    pedido = limpeza_com_troca(quem, almox)
+    with django_assert_max_num_queries(2):
+        r = consultar(client, pedido.numero, "Ana")
+    assert len(itens_da_consulta(r)) == 2
