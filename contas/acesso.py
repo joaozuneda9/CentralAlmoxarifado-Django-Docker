@@ -24,6 +24,7 @@ ROTAS_SEGURANCA_TRABALHO = frozenset(
         "pedidos:materiais",
         "pedidos:carrinho",
         "pedidos:consulta_epi",
+        "pedidos:consulta",
     }
 )
 

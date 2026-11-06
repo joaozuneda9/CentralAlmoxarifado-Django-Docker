@@ -6,7 +6,10 @@ app_name = "pedidos"
 
 urlpatterns = [
     path("", publico.inicio, name="inicio"),
-    path("pedido/epis/consulta/", publico.consulta_epi, name="consulta_epi"),
+    # Antes de "pedido/<fluxo>/", que também casaria com "consulta". A rota antiga dos EPIs serve a
+    # mesma consulta (links já distribuídos e página aberta antes da atualização).
+    path("pedido/consulta/", publico.consulta, name="consulta"),
+    path("pedido/epis/consulta/", publico.consulta, name="consulta_epi"),
     path("pedido/<str:fluxo>/", publico.formulario, name="formulario"),
     path("pedido/<str:fluxo>/materiais/", materiais.materiais, name="materiais"),
     path("pedido/<str:fluxo>/carrinho/", materiais.carrinho, name="carrinho"),

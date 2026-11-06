@@ -2,12 +2,13 @@ from django.conf import settings
 from django.core.cache import cache
 from django.shortcuts import render
 from django.urls import reverse
+from django.utils import timezone
 from django.views.decorators.cache import never_cache
 from django.views.decorators.http import require_http_methods
 
 from pedidos import carrinho as carrinho_mod
-from pedidos.fluxos import fluxo_publico, fluxos_publicos, opcoes_filtro
-from pedidos.models import AutorizacaoPedido, ItemPedido
+from pedidos.fluxos import fluxo_da_origem, fluxo_publico, fluxos_publicos, opcoes_filtro
+from pedidos.models import ItemPedido, Pedido
 from pedidos.protecao import (
     CAMPO_ISCA,
     MENSAGEM_RAPIDO,
@@ -20,10 +21,10 @@ from pedidos.protecao import (
 )
 from pedidos.regras import (
     EnvioPedido,
-    normalizar_numero_pedido,
+    numero_de_pedido_publico,
     opcoes_destino,
     resolver_destino,
-    texto_situacao_consulta,
+    texto_consulta_publica,
 )
 from pedidos.servicos import catalogo_de, centros_do_fluxo, registrar_pedido
 from pedidos.views.materiais import contexto_busca, urls_do_fluxo
@@ -161,9 +162,18 @@ def _por_campo(erros) -> dict[str, list[str]]:
     return por_campo
 
 
-MENSAGEM_CONSULTA_NAO_ACHADA = "Não encontramos um pedido de EPIs com este número."
-MENSAGEM_CONSULTA_LIMITE = "Muitas consultas desta rede em pouco tempo. Procure o almoxarifado."
 MENSAGEM_CONSULTA_VAZIA = "Informe o número do pedido."
+MENSAGEM_CONSULTA_INVALIDA = (
+    "Este não é um número de pedido. O número começa com P, como P-000123, e aparece na tela de "
+    "confirmação do envio."
+)
+MENSAGEM_CONSULTA_NAO_ACHADA = (
+    "Não encontramos um pedido com este número. Confira o número na tela de confirmação do envio."
+)
+MENSAGEM_CONSULTA_LIMITE = (
+    "Muitas consultas desta rede em pouco tempo. Tente de novo daqui a 10 minutos ou procure o "
+    "almoxarifado."
+)
 JANELA_DAS_CONSULTAS = 10 * 60  # segundos
 
 
@@ -171,7 +181,7 @@ def _consultas_demais(ip: str) -> bool:
     """Conta esta consulta e diz se a origem passou do limite da janela. O contador vive no cache
     do processo (um só): zerar numa reinicialização é aceitável para um limite contra varredura
     de números (research R6), e evita uma tabela só para isso."""
-    chave = f"consulta_epi:{ip}"
+    chave = f"consulta_pedido:{ip}"
     cache.add(chave, 0, timeout=JANELA_DAS_CONSULTAS)
     try:
         n = cache.incr(chave)
@@ -183,31 +193,52 @@ def _consultas_demais(ip: str) -> bool:
 
 @never_cache
 @require_http_methods(["GET", "POST"])
-def consulta_epi(request):
-    """O servidor, sem login, consulta pelo número do pedido de EPI se ele foi autorizado ou
-    recusado (spec 008, FR-031). Mostra só a situação e o motivo da recusa; número inexistente e
-    de outro formulário têm a mesma resposta; só lê (nada é gravado)."""
+def consulta(request):
+    """O solicitante, sem login, consulta pelo número a situação de um pedido de qualquer formulário
+    público (spec 011). Mostra só o que a seção 4 da spec permite: número, formulário, dia do envio,
+    situação, a data que a explica e, na recusa do EPI, o motivo. A saída avulsa e o número que não
+    existe têm a mesma resposta; só lê (nada é gravado). Também responde na rota antiga da
+    consulta de EPIs (`pedidos:consulta_epi`)."""
     contexto = {"numero": ""}
+    status = 200
     if request.method == "POST":
         digitado = request.POST.get("numero", "")
         contexto["numero"] = digitado
+        numero = numero_de_pedido_publico(digitado)
         if _consultas_demais(request.META.get("REMOTE_ADDR", "")):
             contexto["aviso"] = MENSAGEM_CONSULTA_LIMITE
-        elif not normalizar_numero_pedido(digitado):
+            status = 429
+        elif not "".join(digitado.split()):
             contexto["aviso"] = MENSAGEM_CONSULTA_VAZIA
+        elif numero is None:
+            contexto["aviso"] = MENSAGEM_CONSULTA_INVALIDA
         else:
-            numero = normalizar_numero_pedido(digitado)
-            autorizacao = AutorizacaoPedido.objects.filter(pedido__numero=numero).first()
-            if autorizacao is None:
+            pedido = (
+                Pedido.objects.select_related("atendimento", "autorizacao")
+                .prefetch_related("itens")
+                .filter(numero=numero, origem__in=[f.origem for f in fluxos_publicos()])
+                .first()
+            )
+            if pedido is None:
                 contexto["aviso"] = MENSAGEM_CONSULTA_NAO_ACHADA
             else:
-                frase, motivo = texto_situacao_consulta(
-                    numero, autorizacao.situacao, autorizacao.motivo
-                )
-                contexto.update(
-                    frase=frase,
-                    motivo=motivo,
-                    situacao=autorizacao.situacao,
-                    rotulo=autorizacao.get_situacao_display(),
-                )
-    return render(request, "pedidos/consulta_epi.html", contexto)
+                contexto["resultado"] = _resultado_da_consulta(pedido)
+    return render(request, "pedidos/consulta.html", contexto, status=status)
+
+
+def _resultado_da_consulta(pedido: Pedido) -> dict:
+    autorizacao = pedido.autorizacao_ou_none
+    atendimento = pedido.atendimento_ou_none
+    decidido_em = autorizacao.decidido_em if autorizacao else None
+    return {
+        "numero": pedido.numero,
+        "formulario": fluxo_da_origem(pedido.origem).titulo,
+        "enviado_em": timezone.localdate(pedido.criado_em),
+        "consulta": texto_consulta_publica(
+            pedido.situacao,
+            autorizacao=autorizacao.situacao if autorizacao else None,
+            motivo=autorizacao.motivo if autorizacao else "",
+            decidido_em=timezone.localdate(decidido_em) if decidido_em else None,
+            saida_em=atendimento.data_efetiva if atendimento else None,
+        ),
+    }

@@ -26,6 +26,7 @@ PERMITIDAS = {
     "pedidos:materiais",
     "pedidos:carrinho",
     "pedidos:consulta_epi",
+    "pedidos:consulta",
 }
 
 
@@ -73,6 +74,7 @@ def test_o_teste_enxerga_as_rotas_de_todas_as_areas():
         "admin:index",
         "pedidos:autorizacoes",
         "pedidos:consulta_epi",
+        "pedidos:consulta",
         "login",
         "logout",
     ]:
@@ -152,6 +154,7 @@ def test_o_grupo_continua_abrindo_as_paginas_publicas(client, quem):
     assert client.get(reverse("pedidos:inicio")).status_code == 200
     assert client.get(reverse("pedidos:formulario", args=["epis"])).status_code == 200
     assert client.get(reverse("pedidos:consulta_epi")).status_code == 200
+    assert client.get(reverse("pedidos:consulta")).status_code == 200
 
 
 def test_o_login_do_grupo_termina_na_fila(client, quem):

@@ -748,27 +748,82 @@ def situacao_pedido(origem: str, atendido: bool, itens, autorizacao: str | None 
 _NUMERO_DE_PEDIDO = re.compile(r"^P-?(\d{1,9})$")
 
 
-def normalizar_numero_pedido(digitado: str) -> str:
-    """O número de pedido como a numeração o grava ("P-000123"), a partir do que o servidor
-    digita ("p-123", " P123 "). O que não parece um número de pedido volta só limpo e em
-    maiúsculas (a consulta não o acha)."""
+def numero_de_pedido_publico(digitado: str) -> str | None:
+    """O número de um pedido dos formulários públicos como a numeração o grava ("P-000123"), a
+    partir do que o solicitante digita ("p-123", " P123 ", "p - 123"), ou None quando o texto não
+    tem esse formato (saída avulsa `AV-`, requisição do SCPI, nº da ocorrência). Só o formato
+    decide: a resposta nunca depende de o número existir."""
     limpo = "".join(str(digitado or "").split()).upper()
     casou = _NUMERO_DE_PEDIDO.match(limpo)
-    return f"P-{int(casou.group(1)):06d}" if casou else limpo
+    return f"P-{int(casou.group(1)):06d}" if casou else None
 
 
-def texto_situacao_consulta(numero: str, autorizacao: str, motivo: str) -> tuple[str, str]:
-    """O que a consulta pública do pedido de EPI diz ao servidor (spec 008, FR-031): a situação
-    e, na recusa, o motivo. Nada além disso: nem nome, nem destino, nem materiais."""
-    if autorizacao == AUTORIZACAO_RECUSADA:
-        return f"Pedido {numero}: recusado pela Segurança do Trabalho.", motivo
-    if autorizacao == AUTORIZACAO_AUTORIZADA:
-        return (
-            f"Pedido {numero}: autorizado. O almoxarifado vai atendê-lo; procure o almoxarifado "
-            "para retirar.",
-            "",
+@dataclass(frozen=True)
+class ConsultaPublica:
+    """O que a consulta pública diz ao solicitante (spec 011, seção 3): o selo, a frase e, na
+    recusa do EPI, o motivo. Nada que identifique o pedido além do número (seção 4)."""
+
+    chave: str  # a de `situacao_pedido`, que escolhe a cor do selo
+    rotulo: str
+    frase: str
+    motivo: str = ""
+
+
+def texto_consulta_publica(
+    situacao: Situacao,
+    *,
+    autorizacao: str | None = None,
+    motivo: str = "",
+    decidido_em: date | None = None,
+    saida_em: date | None = None,
+) -> ConsultaPublica:
+    """Traduz a situação do pedido (`situacao_pedido`, a fonte única) para o solicitante. A
+    autorização só é a notícia enquanto não há atendimento; nenhuma frase promete retirada,
+    entrega ou prazo, que o sistema não registra. `decidido_em` é o dia da autorização e
+    `saida_em` a data efetiva do atendimento."""
+    chave = situacao.chave
+    if chave == "aguardando_autorizacao":
+        return ConsultaPublica(
+            chave,
+            "Aguardando autorização",
+            "A Segurança do Trabalho ainda não decidiu este pedido. O almoxarifado só pode "
+            "atendê-lo depois da autorização.",
         )
-    return f"Pedido {numero}: aguardando autorização da Segurança do Trabalho.", ""
+    if chave == "recusado":
+        return ConsultaPublica(
+            chave,
+            "Recusado",
+            "A Segurança do Trabalho recusou este pedido. Ele está encerrado e não será atendido.",
+            motivo,
+        )
+    if chave == "aguardando":
+        if autorizacao == AUTORIZACAO_AUTORIZADA:
+            return ConsultaPublica(
+                chave,
+                "Autorizado",
+                f"A Segurança do Trabalho autorizou este pedido em {_data_br(decidido_em)}. "
+                "O almoxarifado ainda não registrou o atendimento deste pedido.",
+            )
+        return ConsultaPublica(
+            chave,
+            "Aguardando atendimento",
+            "O almoxarifado ainda não registrou o atendimento deste pedido.",
+        )
+    saida = f"O almoxarifado registrou a saída dos materiais deste pedido em {_data_br(saida_em)}"
+    if chave == "atendido":
+        return ConsultaPublica(chave, "Atendido", saida + ".")
+    if chave == "parcial":
+        return ConsultaPublica(
+            chave,
+            "Atendido parcialmente",
+            saida + ", com algum material em quantidade menor que a pedida. O que faltou não fica "
+            "pendente neste pedido.",
+        )
+    raise ValueError(f"Situação sem texto na consulta pública: {chave}")
+
+
+def _data_br(dia: date | None) -> str:
+    return dia.strftime("%d/%m/%Y") if dia else ""
 
 
 # ---------------------------------------------------------------------------

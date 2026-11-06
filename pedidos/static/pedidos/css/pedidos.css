@@ -135,6 +135,11 @@ html:not(.js) .formulario-pedido { display: none; }
 .pagina-larga .sucesso-pedido { width: 100%; max-width: 720px; margin-inline: auto; }
 .sucesso-icone { display: inline-flex; width: 48px; height: 48px; align-items: center; justify-content: center; border-radius: 50%; background: var(--superficie); color: var(--texto); }
 .sucesso-icone .icone { width: 24px; height: 24px; }
+/* Consulta pública (spec 011): o número e o selo na mesma linha, que quebra na tela estreita. */
+.consulta-cabecalho { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: var(--esp-1) var(--esp-2); }
+.consulta-cabecalho .cartao-titulo { margin: 0; }
+.consulta-chamada { display: grid; gap: var(--esp-2); }
+.consulta-atalho { justify-self: center; }
 .sucesso-numero { font-size: 40px; font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; color: var(--texto); }
 
 /* Recibo (detalhe e impressão) e atendimento */
