@@ -87,8 +87,10 @@ Git ou chat. A credencial de Git e a de registry são independentes.
 ## Clones e configuração local do Git
 
 Produção usa clone exclusivo em `C:\docker\producao` (projeto `almoxarifado_prod`),
-com checkout destacado na tag e sem alterações locais (nem no `compose.yaml`: a
-configuração real está em `compose.producao.yaml`). Não editar código, fazer
+com checkout destacado na tag. Hoje (estado inicial) ela ainda tem o `compose.yaml`
+editado à mão e nenhum marcador; a passagem única de [AMBIENTES.md](AMBIENTES.md)
+desfaz a edição e cria o marcador, e só depois dela o checkout fica sem alterações
+locais e a configuração real passa a ser `compose.producao.yaml`. Não editar código, fazer
 commit/push, trocar para `develop` ou resolver conflitos nessa pasta, nem criar
 worktrees dentro dela (o `atualizar.ps1` recusa checkout com arquivos não
 versionados). `C:\docker\almoxarifado-prod` é uma preparação abandonada, não a

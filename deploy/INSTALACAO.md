@@ -9,7 +9,9 @@ A produção está em `C:\docker\producao`, projeto `almoxarifado_prod` (virada 
 23/10/2026); a instalação do Desktop virou o desenvolvimento. A pasta
 `C:\docker\almoxarifado-prod` foi uma preparação abandonada e não é produção.
 O nome do projeto escolhe os volumes (o banco): não rode o Compose de produção
-a partir de outra pasta.
+a partir de outra pasta. A produção ainda roda do `compose.yaml` editado à mão,
+sem marcador; o `atualizar.ps1` só vale depois da passagem única descrita em
+[AMBIENTES.md](AMBIENTES.md).
 
 Leia [AMBIENTES.md](AMBIENTES.md) para a preparação, migração e atualização e
 [FLUXO_GIT.md](FLUXO_GIT.md) para branches, PRs, versões e publicação de imagens.

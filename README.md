@@ -93,8 +93,9 @@ com alvo explícito, sem deploy automático ao fazer push.
 
 O sistema usa Docker Compose: `banco` (MariaDB), `web` (waitress e robôs da página)
 e `agendador` (supercronic com `deploy/crontab`: importações e backup). A produção
-roda em `C:\docker\producao` (projeto `almoxarifado_prod`, `compose.ambientes.yaml` +
-`compose.producao.yaml`) e é acessada por HTTP direto na porta 8012, sem Apache, proxy
+roda em `C:\docker\producao` (projeto `almoxarifado_prod`; hoje do `compose.yaml` editado à
+mão, e, depois da passagem única de `deploy/AMBIENTES.md`, de `compose.ambientes.yaml` +
+`compose.producao.yaml` com o marcador) e é acessada por HTTP direto na porta 8012, sem Apache, proxy
 nem HTTPS. Apache em `/almoxarifado` era a proposta anterior, não a topologia atual.
 Os comandos de manutenção devem selecionar explicitamente o projeto e os arquivos
 do ambiente, conforme `deploy/AMBIENTES.md`.

@@ -3,28 +3,36 @@
 ## Situação atual
 
 Conferida no servidor em 06/11/2026, com `docker ps`, os rótulos do Compose e os
-arquivos de cada pasta.
+arquivos de cada pasta. A produção ainda está no **estado inicial**: roda do
+`compose.yaml` editado à mão, sem marcador, e o `atualizar.ps1` a recusa. A
+coluna "depois da passagem" é o estado que a [passagem única](#passagem-única-do-composeyaml-editado-ao-script)
+produz; só a partir dele vale a [atualização comum](#atualizar-a-produção-depois-da-passagem).
 
-| | Produção | Desenvolvimento |
-|---|---|---|
-| Pasta | `C:\docker\producao` | `C:\Users\laboratorio\Desktop\CentralAlmoxarifado-Django-Docker` |
-| Projeto Compose | `almoxarifado_prod` | `almoxarifado` |
-| Arquivos Compose | `compose.ambientes.yaml` + `compose.producao.yaml` (veja "Passagem única") | `compose.ambientes.yaml` + `compose.desenvolvimento.yaml` |
-| Git | Tag de `main`, HEAD destacado | `develop` |
-| Imagem | GHCR por digest, com label de revisão | `central-almoxarifado-dev:<SHA>` (build local) |
-| Containers | `almoxarifado_prod` (web), `almoxarifado_prod-agendador-1`, `almoxarifado_prod-banco-1` | `almoxarifado-web-1`, `-agendador-1`, `-banco-1` (parados) |
-| Banco | Volume `almoxarifado_prod_banco-dados` | Volume `almoxarifado_banco-dados` |
-| Perfil SCPI | Volume `almoxarifado_prod_perfil-navegador` | Volume `almoxarifado_perfil-navegador` |
-| Porta | `0.0.0.0:8012`, HTTP direto na rede (`PORTA_WEB`, padrão 8012) | `127.0.0.1:8011` (`PORTA_WEB`, padrão 8011) |
-| Marcador `.deploy-ambiente` | `producao` | `desenvolvimento` |
-| Operação real | `LANCAMENTO_REAL=1`, SCPI e Telegram preenchidos, agendador ligado | Integrações forçadas vazias pelo overlay, agendador nunca sobe |
+| | Produção hoje (estado inicial) | Produção depois da passagem | Desenvolvimento |
+|---|---|---|---|
+| Pasta | `C:\docker\producao` | igual | `C:\Users\laboratorio\Desktop\CentralAlmoxarifado-Django-Docker` |
+| Projeto Compose | `almoxarifado_prod` | igual | `almoxarifado` |
+| Arquivos Compose | `compose.yaml` legado **editado à mão** (não versionado) | `compose.ambientes.yaml` + `compose.producao.yaml` | `compose.ambientes.yaml` + `compose.desenvolvimento.yaml` |
+| Git | Tag `v1.2.2`, HEAD destacado, com `compose.yaml` alterado | Tag de `main`, HEAD destacado, checkout limpo | `develop` |
+| Imagem | Digest escrito no `compose.yaml` | `-Imagem` do GHCR por digest, com label de revisão | `central-almoxarifado-dev:<SHA>` (build local) |
+| Containers | `almoxarifado_prod` (web), `almoxarifado_prod-agendador-1`, `almoxarifado_prod-banco-1` | os mesmos nomes, recriados | `almoxarifado-web-1`, `-agendador-1`, `-banco-1` (parados) |
+| Banco | Volume `almoxarifado_prod_banco-dados` | o mesmo volume | Volume `almoxarifado_banco-dados` |
+| Perfil SCPI | Volume `almoxarifado_prod_perfil-navegador` | o mesmo volume | Volume `almoxarifado_perfil-navegador` |
+| Porta | `0.0.0.0:8012`, HTTP direto (`PORTA_PUBLICADA`) | `0.0.0.0:8012`, HTTP direto (`PORTA_WEB`, padrão 8012) | `127.0.0.1:8011` (`PORTA_WEB`, padrão 8011) |
+| Marcador `.deploy-ambiente` | **nenhum** | `producao` | `desenvolvimento` |
+| Como atualizar | à mão (trocar o digest, `migrate`, `up -d`) | `atualizar.ps1 -Ambiente producao` | `atualizar.ps1 -Ambiente desenvolvimento` |
+| Operação real | `LANCAMENTO_REAL=1`, SCPI e Telegram preenchidos, agendador ligado | igual | Integrações forçadas vazias pelo overlay, agendador nunca sobe |
 
 Volumes são prefixados pelo projeto, por isso o nome do projeto é o que escolhe
 o banco: o mesmo projeto rodado de outra pasta usaria o mesmo banco com outro
-`.env` e outra `dados/`. O `atualizar.ps1` recusa quando os containers do
-projeto foram criados noutra pasta (rótulo `com.docker.compose.project.working_dir`).
-Bind mounts `./dados` ficam em cada pasta: logs (com o journal do lançamento),
-backups e `.xlsx` de carga.
+`.env` e outra `dados/`. O `atualizar.ps1` recusa quando um container do projeto
+foi criado noutra pasta (rótulo `com.docker.compose.project.working_dir`) e,
+como o volume só guarda o projeto, também quando um volume do projeto não é
+montado por nenhum container criado nesta pasta (containers removidos, volume
+órfão ou de outra pasta): a origem não pode ser comprovada, e quem decide
+reutilizá-lo é uma pessoa, conferindo antes de quem é o volume. Bind mounts
+`./dados` ficam em cada pasta: logs (com o journal do lançamento), backups e
+`.xlsx` de carga.
 
 ### Topologia de acesso: HTTP direto, sem proxy
 
@@ -32,7 +40,8 @@ Não há Apache, proxy nem HTTPS. O waitress publica na porta 8012 de todas as
 interfaces do Windows (`192.168.0.241`), e o acesso externo chega por
 encaminhamento do MikroTik (a regra exata é conferida com o André). Por isso:
 
-- o waitress **não** usa `--trusted-proxy` (`compose.producao.yaml` substitui o
+- o waitress **não** usa `--trusted-proxy` (hoje porque o `compose.yaml` editado
+  os tirou; depois da passagem, porque o `compose.producao.yaml` substitui o
   comando da base): com a porta aberta na rede, qualquer cliente forjaria
   `x-forwarded-for` (que divide o limite por IP dos formulários) e
   `x-forwarded-proto`;
@@ -40,9 +49,9 @@ encaminhamento do MikroTik (a regra exata é conferida com o André). Por isso:
   o `settings.py` silencia só os quatro avisos do `check --deploy` que são a
   consequência dessa decisão (W004, W008, W012, W016); os demais continuam
   barrando a atualização;
-- o `atualizar.ps1` recusa produção com `USAR_HTTPS` ou `PROXY_HTTPS` diferentes
-  de `0` e porta aberta na rede com `--trusted-proxy`. Desenvolvimento continua
-  só em loopback.
+- depois da passagem, o `atualizar.ps1` recusa produção com `USAR_HTTPS` ou
+  `PROXY_HTTPS` diferentes de `0` e porta aberta na rede com `--trusted-proxy`.
+  Desenvolvimento continua só em loopback.
 
 Quando houver proxy HTTPS, o caminho de volta é: porta em `127.0.0.1`, o
 comando da base (com `--trusted-proxy`), `USAR_HTTPS=1` e `PROXY_HTTPS=1` no
@@ -63,15 +72,15 @@ comando da base (com `--trusted-proxy`), `USAR_HTTPS=1` e `PROXY_HTTPS=1` no
 
 ## Arquivos e comandos
 
-`compose.yaml` é legado e não se altera; nenhum ambiente o usa depois da
-passagem única. Os comandos combinam explicitamente `compose.ambientes.yaml` com
+`compose.yaml` é legado e não se altera; a produção o usa (editado) só até a
+passagem única, e depois dela nenhum ambiente o usa. Os comandos combinam explicitamente `compose.ambientes.yaml` com
 um único overlay (`compose.desenvolvimento.yaml` ou `compose.producao.yaml`).
 Não há `compose.override.yaml` implícito. Sempre usar o script na pasta do
 ambiente.
 
 `deploy/atualizar.ps1` funciona em PowerShell 5.1 ou superior e **planeja por
 padrão**. Valida checkout limpo, marcador, branch/tag remota, imagem/projeto,
-pasta de origem do projeto, contexto Docker `desktop-linux`, porta e topologia
+pasta de origem dos containers e dos volumes do projeto, contexto Docker `desktop-linux`, porta e topologia
 de acesso e variáveis herdadas do terminal. Não imprime a configuração
 resolvida, pois ela contém senhas. Não usar `docker compose config` para enviar
 configuração completa ao chat.
@@ -89,7 +98,40 @@ Uma migration pode alterar o banco e recriar web interrompe suas requisições
 (e mata os robôs, filhos do waitress): `-Aplicar` não é uma operação apenas de
 consulta.
 
-## Atualizar a produção
+## Passagem única: do `compose.yaml` editado ao script
+
+Até a `v1.3.0`, a produção rodou do `compose.yaml` legado **editado à mão no
+servidor** (projeto `almoxarifado_prod`, imagem por digest, `container_name`,
+porta `0.0.0.0:8012`, sem `--trusted-proxy`), com o checkout sujo e sem
+marcador; o `atualizar.ps1` recusava essa pasta. O `compose.producao.yaml`
+passou a descrever exatamente essa instalação, com o mesmo projeto e os mesmos
+volumes. A passagem é feita uma vez, na primeira versão que traz esta mudança,
+dentro de uma janela de manutenção:
+
+1. Guardar uma cópia do `compose.yaml` editado (por exemplo em
+   `C:\docker\resguardo-producao-<data>\compose.yaml`) e conferir que o `.env`
+   tem `USAR_HTTPS=0` e `PROXY_HTTPS=0`. `PORTA_PUBLICADA` deixa de ser lida;
+   `PORTA_WEB` só precisa existir se a porta mudar de 8012.
+2. Desfazer a edição local (`git restore compose.yaml`), trocar para a tag nova
+   (`git switch --detach vX.Y.Z`) e conferir `git status` limpo.
+3. Criar o marcador: `Set-Content .deploy-ambiente producao` (ignorado pelo Git).
+4. Planejar e aplicar com os comandos da seção seguinte (é a primeira vez em que
+   eles valem). Os containers são
+   recriados a partir dos arquivos novos, com os mesmos nomes e volumes; o
+   banco pode ser recriado (o volume fica). O Compose pode avisar que o projeto
+   foi criado com outros arquivos: é esperado nesta passagem.
+5. Conferir que `docker compose ls` mostra `almoxarifado_prod` com
+   `compose.ambientes.yaml,compose.producao.yaml` e que o volume em uso é
+   `almoxarifado_prod_banco-dados` (os dados de antes continuam lá).
+
+Rollback da passagem: o `compose.yaml` guardado no passo 1 e `docker compose -f
+compose.yaml up -d` na pasta, como antes. Voltar a imagem não desfaz migrations.
+
+## Atualizar a produção (depois da passagem)
+
+**Só depois da passagem única.** No estado inicial (`compose.yaml` editado, sem
+marcador) o `atualizar.ps1` recusa a pasta, e este roteiro não se aplica: a
+primeira versão com o script é aplicada pela seção anterior.
 
 Pré-requisitos: tag `vX.Y.Z` em `main` e a imagem aprovada do workflow **Imagem
 de release** (`ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:...`),
@@ -120,34 +162,6 @@ Depois: abrir o painel, conferir login, a página Automações e
 comando que falhou: não continuar cegamente nem apagar dados/volumes; religar o
 agendador (`docker compose -p almoxarifado_prod start agendador`) só com a versão
 anterior ou a nova inteira no ar.
-
-## Passagem única: do `compose.yaml` editado ao script
-
-Até a `v1.3.0`, a produção rodou do `compose.yaml` legado **editado à mão no
-servidor** (projeto `almoxarifado_prod`, imagem por digest, `container_name`,
-porta `0.0.0.0:8012`, sem `--trusted-proxy`), com o checkout sujo e sem
-marcador; o `atualizar.ps1` recusava essa pasta. O `compose.producao.yaml`
-passou a descrever exatamente essa instalação, com o mesmo projeto e os mesmos
-volumes. A passagem é feita uma vez, na primeira versão que traz esta mudança,
-dentro de uma janela de manutenção:
-
-1. Guardar uma cópia do `compose.yaml` editado (por exemplo em
-   `C:\docker\resguardo-producao-<data>\compose.yaml`) e conferir que o `.env`
-   tem `USAR_HTTPS=0` e `PROXY_HTTPS=0`. `PORTA_PUBLICADA` deixa de ser lida;
-   `PORTA_WEB` só precisa existir se a porta mudar de 8012.
-2. Desfazer a edição local (`git restore compose.yaml`), trocar para a tag nova
-   (`git switch --detach vX.Y.Z`) e conferir `git status` limpo.
-3. Criar o marcador: `Set-Content .deploy-ambiente producao` (ignorado pelo Git).
-4. Planejar e aplicar como em "Atualizar a produção". Os containers são
-   recriados a partir dos arquivos novos, com os mesmos nomes e volumes; o
-   banco pode ser recriado (o volume fica). O Compose pode avisar que o projeto
-   foi criado com outros arquivos: é esperado nesta passagem.
-5. Conferir que `docker compose ls` mostra `almoxarifado_prod` com
-   `compose.ambientes.yaml,compose.producao.yaml` e que o volume em uso é
-   `almoxarifado_prod_banco-dados` (os dados de antes continuam lá).
-
-Rollback da passagem: o `compose.yaml` guardado no passo 1 e `docker compose -f
-compose.yaml up -d` na pasta, como antes. Voltar a imagem não desfaz migrations.
 
 ## Desenvolvimento
 

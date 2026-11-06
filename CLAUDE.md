@@ -159,7 +159,8 @@ transações precisam se comportar como no servidor.
   backend direto na rede com `--trusted-proxy`) junto com `PROXY_HTTPS=1`: sem o primeiro
   cabeçalho o redirecionamento para https entra em laço; sem o segundo, todo pedido parece vir do
   proxy e divide um único limite por IP. **A produção atual não tem proxy**: HTTP direto na porta
-  8012 de todas as interfaces, e por isso o `compose.producao.yaml` tira os `--trusted-proxy` e o
+  8012 de todas as interfaces, sem `--trusted-proxy` (hoje pelo `compose.yaml` editado à mão;
+  depois da passagem única de `deploy/AMBIENTES.md`, pelo `compose.producao.yaml`), e o
   `.env` tem `USAR_HTTPS=0` e `PROXY_HTTPS=0` (o `atualizar.ps1` confere; com `USAR_HTTPS=0` o
   `settings.py` silencia só os avisos W004, W008, W012 e W016 do `check --deploy`).
 - `contas.Usuario` é o `AUTH_USER_MODEL`: `AbstractUser` com o `username` rotulado
@@ -741,14 +742,16 @@ transações precisam se comportar como no servidor.
   serviços `web` (waitress com `--url-prefix=${PREFIXO_URL}` e `--trusted-proxy=*`) e `agendador`
   (supercronic com `deploy/crontab`, que chama `deploy/tarefa.sh`, saída em
   `dados/logs/agendador.log`); o `banco` é o MariaDB 11.4, sem porta publicada. O `compose.yaml`
-  é **legado** (nenhum ambiente o usa depois da passagem única de `deploy/AMBIENTES.md`) e não se
-  altera. Os ambientes combinam `compose.ambientes.yaml` com um único overlay,
+  é **legado** e não se altera: a produção ainda roda dele, **editado à mão e sem marcador**
+  (estado inicial, que o `atualizar.ps1` recusa), até a passagem única de `deploy/AMBIENTES.md`;
+  depois dela, nenhum ambiente o usa. Os ambientes combinam `compose.ambientes.yaml` com um único overlay,
   `compose.desenvolvimento.yaml` ou `compose.producao.yaml`, sem `compose.override.yaml`
   implícito, em projetos e volumes separados: `almoxarifado` (desenvolvimento, pasta do Desktop,
   `127.0.0.1:8011`) e `almoxarifado_prod` (produção, `C:\docker\producao`, container web
   `almoxarifado_prod`, `0.0.0.0:8012` em HTTP direto); o overlay fixa o endereço e `PORTA_WEB`
-  só escolhe o número. O nome do projeto escolhe o banco: o script recusa o projeto criado
-  noutra pasta. O Compose força `DB_HOST`, `SCPI_HEADLESS=1`, `MYSQLDUMP=mariadb-dump` e as
+  só escolhe o número (na produção, isso vale depois da passagem). O nome do projeto escolhe o
+  banco: o script recusa container do projeto criado noutra pasta e volume do projeto que nenhum
+  container desta pasta monta (origem não comprovada). O Compose força `DB_HOST`, `SCPI_HEADLESS=1`, `MYSQLDUMP=mariadb-dump` e as
   pastas (`/dados/logs`, `/dados/backups`, `/dados/perfil`) por cima do `.env`; `dados/` do
   host guarda logs, backups e os `.xlsx` de carga (`dados/importacao`). Os robôs da página são filhos do waitress
   no container `web` (`disparo.py` abre sessão própria fora do Windows), então recriar o `web`

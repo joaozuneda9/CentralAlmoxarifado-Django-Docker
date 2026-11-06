@@ -12,7 +12,9 @@ $global:AlmoxTesteChatSeguranca = ''
 $global:AlmoxTesteHttps = '0'
 $global:AlmoxTesteProxy = '--listen=0.0.0.0:8010'
 $global:AlmoxTestePortaDev = '127.0.0.1'
-$global:AlmoxTestePastaProjeto = ''
+$global:AlmoxTestePastaProjeto = @()
+$global:AlmoxTesteVolumes = @()
+$global:AlmoxTesteOrigemVolume = @()
 $global:AlmoxTesteDigest = 'ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:' + ('a' * 64)
 
 function docker {
@@ -25,8 +27,33 @@ function docker {
     }
     if ($linha.Contains('ps --status running --services')) { return $global:AlmoxTesteServicos }
     if ($linha -eq 'context show') { return 'desktop-linux' }
-    if ($linha.StartsWith('ps -a --filter label=com.docker.compose.project=')) {
-        return $global:AlmoxTestePastaProjeto
+    # Containers: o ps devolve IDs ("projeto<i>" ou "volume<i>", um por pasta nao vazia; a pasta
+    # vazia simula container sem o rotulo working_dir) e o inspect devolve os rotulos como mapa
+    # JSON, um por linha, sem aspas internas no formato (o PowerShell 5.1 as tiraria).
+    $ids = {
+        param([string]$Prefixo, $Pastas)
+        $i = 0
+        foreach ($pasta in @($Pastas)) { "$Prefixo$i"; $i++ }
+    }
+    if ($linha.StartsWith('ps -a -q --filter label=com.docker.compose.project=')) {
+        return (& $ids 'projeto' $global:AlmoxTestePastaProjeto)
+    }
+    if ($linha.StartsWith('ps -a -q --filter volume=')) {
+        return (& $ids 'volume' $global:AlmoxTesteOrigemVolume)
+    }
+    if ($linha.StartsWith('volume ls --quiet --filter label=com.docker.compose.project=')) {
+        return $global:AlmoxTesteVolumes
+    }
+    if ($linha.StartsWith('inspect --format {{json .Config.Labels}} ')) {
+        foreach ($id in $args[3..($args.Count - 1)]) {
+            if ($id -match '^projeto(\d+)$') { $pasta = @($global:AlmoxTestePastaProjeto)[[int]$Matches[1]] }
+            elseif ($id -match '^volume(\d+)$') { $pasta = @($global:AlmoxTesteOrigemVolume)[[int]$Matches[1]] }
+            else { throw "ID inesperado: $id" }
+            $mapa = @{ 'com.docker.compose.project' = 'x' }
+            if (-not [string]::IsNullOrWhiteSpace($pasta)) { $mapa['com.docker.compose.project.working_dir'] = $pasta }
+            $mapa | ConvertTo-Json -Compress
+        }
+        return
     }
     if ($linha.Contains('config --format json')) {
         $vars = @{ LANCAMENTO_REAL = '0'; DEBUG = '0'
@@ -116,7 +143,7 @@ try {
     Recusa { Executar } 'destacado'
     Git-Teste checkout -q --detach v1.0.0
     Executar
-    if ($global:AlmoxTesteChamadas | Where-Object { $_ -notmatch ' ps --status running --services$|config --format json$|^context show$|^ps -a --filter label=com\.docker\.compose\.project=almoxarifado_prod ' }) {
+    if ($global:AlmoxTesteChamadas | Where-Object { $_ -notmatch ' ps --status running --services$|config --format json$|^context show$|^ps -a -q --filter label=com\.docker\.compose\.project=almoxarifado_prod$|^volume ls --quiet --filter label=com\.docker\.compose\.project=almoxarifado_prod$' }) {
         throw 'Planejamento deve apenas consultar os servicos do projeto.'
     }
     # -notmatch ignora maiusculas: digest e versao precisam da comparacao exata.
@@ -138,7 +165,21 @@ try {
     # A mesma pasta, com barras e maiusculas diferentes, e linha vazia: aceita.
     $global:AlmoxTestePastaProjeto = @(($global:AlmoxTesteDestino.Replace('\', '/').ToUpperInvariant() + '/'), '')
     Executar
-    $global:AlmoxTestePastaProjeto = ''
+    $global:AlmoxTestePastaProjeto = @()
+    # Containers removidos, volumes do projeto ainda la: a origem precisa ser comprovada.
+    $global:AlmoxTesteVolumes = @('almoxarifado_prod_banco-dados', '')
+    $global:AlmoxTesteOrigemVolume = @()
+    Recusa { Executar } 'comprove a origem'
+    $global:AlmoxTesteOrigemVolume = @('', 'C:\docker\almoxarifado-prod')
+    Recusa { Executar } 'outra pasta'
+    # Montado por container desta pasta (parado ou nao): aceita, sem alterar nada.
+    $global:AlmoxTesteOrigemVolume = @(($global:AlmoxTesteDestino.Replace('\', '/') + '/'))
+    Executar
+    if ($global:AlmoxTesteChamadas | Where-Object { $_ -match ' (pull|build|run|up|stop|down|restart|rm) ' }) {
+        throw 'Conferir a origem dos volumes nao pode alterar o Docker.'
+    }
+    $global:AlmoxTesteVolumes = @()
+    $global:AlmoxTesteOrigemVolume = @()
     # Compose no Windows pode emitir uma linha vazia quando nao ha servicos.
     foreach ($saidaVazia in @('', " `t")) {
         $global:AlmoxTesteServicos = @($saidaVazia)

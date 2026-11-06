@@ -112,13 +112,46 @@ try {
     # O projeto e os volumes se escolhem pelo nome, nao pela pasta: rodar de outro clone apontaria
     # para o mesmo banco com outro .env e outros dados/. Recusar se o projeto ja foi criado noutra pasta.
     $normalizar = { param($p) ([string]$p).Replace('/', '\').TrimEnd('\').ToLowerInvariant() }
-    $pastas = @(& docker ps -a --filter "label=com.docker.compose.project=$projeto" `
-        --format '{{.Label "com.docker.compose.project.working_dir"}}')
-    if ($LASTEXITCODE -ne 0) { throw 'Docker falhou ao listar os containers do projeto.' }
+    # Pasta de origem (rotulo working_dir do Compose) dos containers do filtro, parados inclusive.
+    # Os rotulos vem do inspect, como mapa JSON: no ps, .Labels e um texto "k=v,..." e o
+    # config_files tem virgulas; e o formato vai sem aspas internas, que o PowerShell 5.1 tira
+    # ao chamar o docker.exe.
+    $pastasDosContainers = {
+        param([string]$Filtro, [string]$Erro)
+        $ids = @(& docker ps -a -q --filter $Filtro | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
+        if ($LASTEXITCODE -ne 0) { throw $Erro }
+        if (-not $ids.Count) { return }
+        $linhas = @(& docker inspect --format '{{json .Config.Labels}}' @ids)
+        if ($LASTEXITCODE -ne 0) { throw $Erro }
+        foreach ($linha in $linhas) {
+            if ([string]::IsNullOrWhiteSpace($linha)) { continue }
+            $pasta = Get-Valor ($linha | ConvertFrom-Json) 'com.docker.compose.project.working_dir'
+            if (-not [string]::IsNullOrWhiteSpace($pasta)) { $pasta }
+        }
+    }
+    $pastas = @(& $pastasDosContainers "label=com.docker.compose.project=$projeto" `
+        'Docker falhou ao listar os containers do projeto.')
     foreach ($pasta in $pastas) {
-        if ([string]::IsNullOrWhiteSpace($pasta)) { continue }
         if ((& $normalizar $pasta) -ne (& $normalizar $raiz)) {
             throw "O projeto $projeto foi criado noutra pasta ($pasta). Rode o script no clone dessa pasta."
+        }
+    }
+    # Sem containers (removidos), sobram os volumes, que o Compose reutilizaria pelo nome. O volume
+    # so guarda o projeto, nao a pasta: a origem se comprova pelos containers que o montam, mesmo
+    # parados. Volume do projeto sem container desta pasta montando-o bloqueia a atualizacao.
+    $volumes = @(& docker volume ls --quiet --filter "label=com.docker.compose.project=$projeto")
+    if ($LASTEXITCODE -ne 0) { throw 'Docker falhou ao listar os volumes do projeto.' }
+    foreach ($volume in $volumes) {
+        if ([string]::IsNullOrWhiteSpace($volume)) { continue }
+        $origens = @(& $pastasDosContainers "volume=$volume" `
+            "Docker falhou ao conferir a origem do volume $volume.")
+        if (-not $origens.Count) {
+            throw "Volume $volume do projeto $projeto sem container que comprove a origem. Confira a quem pertence antes de reutiliza-lo."
+        }
+        foreach ($origem in $origens) {
+            if ((& $normalizar $origem) -ne (& $normalizar $raiz)) {
+                throw "Volume $volume em uso por container de outra pasta ($origem). Rode o script no clone dessa pasta."
+            }
         }
     }
     $script:compose = @('compose', '--project-directory', $raiz, '--env-file', (Join-Path $raiz '.env'),
