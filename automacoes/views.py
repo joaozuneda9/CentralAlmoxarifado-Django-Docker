@@ -121,6 +121,17 @@ def _linha_do_lancamento(execucao, *, interrompida, em_andamento, pendentes, tra
     }
 
 
+# Por quanto tempo depois do fim o andamento continua no topo da aba Lançamento no SCPI: quem
+# acompanhava vê o resultado onde estava olhando, sem o cartão pular para baixo da fila.
+ANDAMENTO_NO_TOPO = timedelta(minutes=10)
+
+
+def _andamento_no_topo(execucao, agora, em_andamento: bool) -> bool:
+    if em_andamento:
+        return True
+    return bool(execucao and execucao.fim and agora - execucao.fim < ANDAMENTO_NO_TOPO)
+
+
 def contexto_lancamento() -> dict:
     """Lançamento das saídas no SCPI: botões, fila, andamento do robô e travas."""
     agora = timezone.now()
@@ -145,6 +156,8 @@ def contexto_lancamento() -> dict:
     return {
         "execucao": execucao,
         "andamento": resumo,
+        "acomp": andamento.acompanhamento(execucao, agora, interrompida) if execucao else None,
+        "andamento_no_topo": _andamento_no_topo(execucao, agora, em_andamento),
         "lancamento_em_andamento": em_andamento,
         "log_recente": "\n".join(execucao.log.splitlines()[-LINHAS_DO_LOG:]) if execucao else "",
         "fila": fila,

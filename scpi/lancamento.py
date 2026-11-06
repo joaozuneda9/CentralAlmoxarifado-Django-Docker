@@ -16,7 +16,7 @@ import json
 import logging
 from collections.abc import Callable, Collection
 from contextlib import AbstractContextManager
-from dataclasses import asdict, dataclass
+from dataclasses import asdict, dataclass, field
 from pathlib import Path
 from typing import Protocol
 
@@ -73,7 +73,13 @@ AbrirSCPI = Callable[[], AbstractContextManager[SCPI]]
 
 @dataclass
 class Resumo:
-    """Contagens da execução, todas em lotes (um lote = uma requisição)."""
+    """Contagens da execução, todas em lotes (um lote = uma requisição), e o progresso que a aba
+    Lançamento no SCPI mostra enquanto o robô roda (`pedidos/andamento.py`).
+
+    `fase` diz o que o robô faz agora: `antes` (a extração do registro oficial antes de lançar, só
+    na execução real), `lancando` e `depois` (a extração depois do lançamento). `lotes` tem um
+    item por lote escolhido, na ordem em que o robô os processa (os que não vão ao SCPI, travados
+    ou inválidos, no fim), com o `resultado` de cada um (`RESULTADOS`)."""
 
     requisicoes: int = 0
     processadas: int = 0
@@ -82,6 +88,37 @@ class Resumo:
     falhas: int = 0
     verificar: int = 0
     ignoradas: int = 0
+    fase: str = ""
+    lotes: list[dict] = field(default_factory=list)
+
+
+# O resultado de cada lote no `Resumo.lotes`: os dois primeiros enquanto a execução roda.
+RESULTADOS = (
+    "aguardando",
+    "andamento",
+    "lancada",
+    "simulada",
+    "verificar",
+    "erro",
+    "ignorada",
+)
+MENSAGEM_TRAVADO = "Tem uma trava para conferir: não foi ao SCPI."
+MENSAGEM_MUDOU = "A requisição mudou durante a execução: não foi lançada."
+
+
+def _progresso(lote: str, req: Requisicao | None = None, resultado="aguardando", mensagem=""):
+    """O item de um lote no `Resumo.lotes`. O travado não tem a requisição montada (só o lote)."""
+    return {
+        "lote": lote,
+        "recebedor": req.recebedor if req else "",
+        "centro": req.cod_ccusto if req else "",
+        "itens": len(req.itens) if req else 0,
+        "resultado": resultado,
+        "requisicao": "",
+        "mensagem": mensagem[:300],
+        "inicio": "",
+        "fim": "",
+    }
 
 
 class LancamentoEmAndamento(Exception):
@@ -184,7 +221,9 @@ def _salvar_resumo(execucao: ExecucaoRobo, resumo: Resumo) -> None:
 
 def _lancar_um(
     req: Requisicao, scpi: SCPI, execucao: ExecucaoRobo, resumo: Resumo, ordem: int
-) -> None:
+) -> tuple[str, str, str]:
+    """Processa um lote e devolve o resultado para o `Resumo.lotes`: (resultado, número da
+    requisição, mensagem)."""
     simulacao = execucao.simulacao
     try:
         scpi.preencher(req)
@@ -196,20 +235,20 @@ def _lancar_um(
             _gravar(req, ERRO, execucao_id=execucao.pk, mensagem=mensagem[:500], critico=False)
             _tentativa_sem_salvar(execucao, ordem, req, TentativaLancamento.Resultado.ERRO)
         scpi.descartar(req.lote)
-        return
+        return "erro", "", mensagem
 
     if simulacao:
         scpi.encerrar_simulacao()
         resumo.simuladas += 1
         logger.info("◇ simulação: %s preenchido e descartado, sem salvar", req.lote)
-        return
+        return "simulada", "", ""
 
     if not _travar(req, execucao, ordem):
         logger.warning("⚠ %s — lote mudou durante a execução; não lançado", req.lote)
         resumo.ignoradas += 1
         _tentativa_sem_salvar(execucao, ordem, req, TentativaLancamento.Resultado.IGNORADA)
         scpi.descartar(req.lote)
-        return
+        return "ignorada", "", MENSAGEM_MUDOU
 
     _journal("em_lancamento", req, execucao.pk)
     try:
@@ -226,7 +265,7 @@ def _lancar_um(
             critico=True,
         )
         scpi.reiniciar()
-        return
+        return "verificar", "", f"Resultado incerto: {exc}"
 
     _journal("lancada", req, execucao.pk, requisicao=numero)
     _gravar(
@@ -246,6 +285,7 @@ def _lancar_um(
     except Exception as exc:
         logger.warning("Aviso: o SCPI não voltou ao formulário (%s); reiniciando.", exc)
         scpi.reiniciar()
+    return "lancada", numero, ""
 
 
 def lancar(
@@ -269,24 +309,32 @@ def lancar(
         logger.warning("⚠ %s não está mais na fila do robô — não será lançada", lote)
     resumo.ignoradas += sum(1 for req in validas if req.lote not in escolhidos)
     validas = [req for req in validas if req.lote in escolhidos]
+    travados = [lote for lote in sel.travados if lote in escolhidos]
+    invalidas = [req for req in sel.requisicoes if req.erro and req.lote in escolhidos]
+    resumo.lotes = [
+        *(_progresso(req.lote, req) for req in validas),
+        *(_progresso(lote, resultado="ignorada", mensagem=MENSAGEM_TRAVADO) for lote in travados),
+        *(_progresso(req.lote, req, "erro", req.erro) for req in invalidas),
+    ]
 
     periodo = None
     if validas and not simulacao:
+        resumo.fase = "antes"
+        _salvar_resumo(execucao, resumo)
         periodo = robo.periodo_da_execucao(validas, timezone.localdate())
         robo.extrair_antes(execucao, periodo, extrair)  # sem ela, nada abaixo acontece
 
-    for lote in sel.travados:
-        if lote in escolhidos:
-            logger.warning("⚠ lote %s travado — conferir no SCPI", lote)
-            resumo.ignoradas += 1
-    for req in sel.requisicoes:
-        if req.erro and req.lote in escolhidos:
-            logger.error("✘ %s — validação: %s", req, req.erro)
-            resumo.falhas += 1
-            if not simulacao:
-                _gravar(req, ERRO, execucao_id=execucao.pk, mensagem=req.erro[:500], critico=False)
+    for lote in travados:
+        logger.warning("⚠ lote %s travado — conferir no SCPI", lote)
+        resumo.ignoradas += 1
+    for req in invalidas:
+        logger.error("✘ %s — validação: %s", req, req.erro)
+        resumo.falhas += 1
+        if not simulacao:
+            _gravar(req, ERRO, execucao_id=execucao.pk, mensagem=req.erro[:500], critico=False)
 
     resumo.requisicoes = len(validas)
+    resumo.fase = "lancando"
     _salvar_resumo(execucao, resumo)
     if not validas:
         logger.info("Nada a lançar.")
@@ -294,12 +342,23 @@ def lancar(
 
     with abrir_scpi() as scpi:
         for ordem, req in enumerate(validas, start=1):
+            progresso = resumo.lotes[ordem - 1]
+            progresso.update(resultado="andamento", inicio=timezone.now().isoformat())
+            _salvar_resumo(execucao, resumo)
             logger.info("→ (%d/%d) %s", ordem, len(validas), req)
-            _lancar_um(req, scpi, execucao, resumo, ordem)
+            resultado, numero, mensagem = _lancar_um(req, scpi, execucao, resumo, ordem)
+            progresso.update(
+                resultado=resultado,
+                requisicao=numero,
+                mensagem=mensagem[:300],
+                fim=timezone.now().isoformat(),
+            )
             resumo.processadas += 1
             _salvar_resumo(execucao, resumo)
 
     if periodo is not None:
+        resumo.fase = "depois"
+        _salvar_resumo(execucao, resumo)
         robo.extrair_depois(execucao, periodo, extrair)
     return resumo
 

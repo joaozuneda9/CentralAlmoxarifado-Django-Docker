@@ -39,7 +39,8 @@ def lancar_todos(execucao, abrir, extrair=so_requisicao_alheia):
 def test_lanca_um_lote_por_requisicao_e_grava_o_numero(dois_lotes, scpi):
     execucao = lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
     assert execucao.situacao == "SUCESSO" and execucao.fim is not None
-    assert execucao.resumo == {
+    contagens = {k: v for k, v in execucao.resumo.items() if k not in ("fase", "lotes")}
+    assert contagens == {
         "requisicoes": 2,
         "processadas": 2,
         "lancadas": 2,
@@ -382,3 +383,91 @@ def test_falha_ao_registrar_a_tentativa_desfaz_a_trava_e_nao_salva(dois_lotes, s
         lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
     assert set(LinhaSaida.objects.values_list("status", flat=True)) == {"PENDENTE"}
     assert ("salvar", dois_lotes[0]) not in scpi.chamadas
+
+
+# --- Progresso por requisição no resumo (o acompanhamento da aba Lançamento no SCPI) ---
+
+
+def por_lote(resumo):
+    return {item["lote"]: item for item in resumo["lotes"]}
+
+
+def test_resumo_lista_cada_requisicao_com_o_resultado(dois_lotes, scpi):
+    p, av = dois_lotes
+    scpi.falhas_preencher[p] = ErroSCPI("item 1/2 (023.001.002): saldo insuficiente")
+    e = lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
+    assert [item["lote"] for item in e.resumo["lotes"]] == [p, av]
+    lotes = por_lote(e.resumo)
+    assert lotes[p]["resultado"] == "erro" and "saldo insuficiente" in lotes[p]["mensagem"]
+    assert lotes[p]["itens"] == 2 and lotes[av]["itens"] == 1
+    assert lotes[av]["resultado"] == "lancada" and lotes[av]["requisicao"] == "000001/26"
+    assert lotes[av]["recebedor"] and lotes[av]["centro"]
+    assert lotes[av]["inicio"] and lotes[av]["fim"]
+
+
+def test_resumo_marca_para_verificar(dois_lotes, scpi):
+    p, _ = dois_lotes
+    scpi.falhas_salvar[p] = RuntimeError("Timeout 10000ms exceeded")
+    e = lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
+    assert por_lote(e.resumo)[p]["resultado"] == "verificar"
+    assert "Timeout" in por_lote(e.resumo)[p]["mensagem"]
+
+
+def test_resumo_da_simulacao_nao_le_o_scpi_antes(dois_lotes, scpi):
+    s = lancar_todos(ExecucaoRobo.objects.create(simulacao=True), scpi.abrir)
+    assert {item["resultado"] for item in s.resumo["lotes"]} == {"simulada"}
+    assert s.resumo["fase"] == "lancando"
+
+
+def test_resumo_mostra_a_requisicao_em_andamento_enquanto_o_robo_trabalha(dois_lotes, scpi):
+    p, av = dois_lotes
+    vistos = []
+    original = scpi.preencher
+
+    def olhar(req):
+        resumo = ExecucaoRobo.objects.get().resumo
+        vistos.append((resumo["fase"], {i["lote"]: i["resultado"] for i in resumo["lotes"]}))
+        original(req)
+
+    scpi.preencher = olhar
+    lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
+    assert vistos == [
+        ("lancando", {p: "andamento", av: "aguardando"}),
+        ("lancando", {p: "lancada", av: "andamento"}),
+    ]
+
+
+def test_resumo_diz_que_esta_lendo_o_scpi_antes_e_depois(dois_lotes, scpi):
+    fases = []
+
+    def extrair(de, ate):
+        resumo = ExecucaoRobo.objects.get().resumo
+        fases.append((resumo["fase"], {i["resultado"] for i in resumo["lotes"]}))
+        return so_requisicao_alheia(de, ate)
+
+    lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir, extrair=extrair)
+    assert fases == [("antes", {"aguardando"}), ("depois", {"lancada"})]
+
+
+def test_resumo_lista_as_escolhidas_que_nao_foram_ao_scpi(dois_lotes, scpi):
+    p, av = dois_lotes
+    LinhaSaida.objects.filter(lote=p, seq=1).update(status="VERIFICAR")
+    LinhaSaida.objects.filter(lote=av).update(centro_custo="")
+    e = lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
+    lotes = por_lote(e.resumo)
+    assert lotes[p]["resultado"] == "ignorada" and lotes[av]["resultado"] == "erro"
+    assert lotes[av]["mensagem"]
+
+
+def test_resumo_marca_a_requisicao_que_mudou_durante_a_execucao(dois_lotes, scpi):
+    p, _ = dois_lotes
+    original = scpi.preencher
+
+    def mudar(req):
+        original(req)
+        if req.lote == p:
+            LinhaSaida.objects.filter(lote=p, seq=2).update(status="NAO_LANCAR")
+
+    scpi.preencher = mudar
+    e = lancar_todos(ExecucaoRobo.objects.create(), scpi.abrir)
+    assert por_lote(e.resumo)[p]["resultado"] == "ignorada"

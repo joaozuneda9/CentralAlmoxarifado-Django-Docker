@@ -479,3 +479,130 @@ def test_mensagem_diz_quais_requisicoes_foram_escolhidas(
         reverse("automacoes:lancar"), {"modo": "simular", "lotes": numeros}, follow=True
     )
     assert f"{', '.join(numeros)}." in r.text
+
+
+# --- Acompanhamento por requisição (resumo com a lista das requisições) ---
+
+
+def item(numero, resultado, segundos_atras=None, **campos):
+    agora = timezone.now()
+    inicio = agora - timedelta(seconds=segundos_atras) if segundos_atras else None
+    fim = campos.pop("fim", None)
+    return {
+        "lote": numero,
+        "recebedor": campos.pop("recebedor", "Fulano de Tal"),
+        "centro": "4",
+        "itens": campos.pop("itens", 2),
+        "resultado": resultado,
+        "requisicao": campos.pop("requisicao", ""),
+        "mensagem": campos.pop("mensagem", ""),
+        "inicio": inicio.isoformat() if inicio else "",
+        "fim": fim.isoformat() if fim else "",
+    }
+
+
+def posicoes(html):
+    return html.index('id="andamento"'), html.index("data-fila-robo")
+
+
+def test_acompanhamento_em_andamento_no_topo_com_a_requisicao_atual(client, usuario_logado):
+    agora = timezone.localtime()
+    ExecucaoRobo.objects.create(
+        iniciada_por=usuario_logado,
+        resumo={
+            "requisicoes": 2,
+            "processadas": 1,
+            "lancadas": 1,
+            "fase": "lancando",
+            "lotes": [
+                item(
+                    "AV-000001",
+                    "lancada",
+                    90,
+                    fim=agora - timedelta(seconds=30),
+                    requisicao="003712/26",
+                ),
+                item("AV-000002", "andamento", 20, recebedor="Beltrana Souza"),
+            ],
+        },
+        log=(
+            f"{agora:%H:%M:%S} → (2/2) AV-000002\n"
+            f"{agora:%H:%M:%S}   item 1/2 (008.001.002): qtd 2\n"
+        ),
+    )
+    html = client.get(LANCAMENTOS).text
+    topo, fila = posicoes(html)
+    assert topo < fila and 'hx-trigger="every 3s"' in html
+    andamento = andamento_da_pagina(html)
+    assert "Lançamento em andamento" in andamento and "Iniciado por 12345 hoje às" in andamento
+    assert "Preenchendo o item 1 de 2" in andamento and "Beltrana Souza" in andamento
+    assert 'Lançada · <span class="mono">003712/26</span>' in andamento
+    assert 'aria-valuenow="1"' in andamento and 'aria-valuemax="2"' in andamento
+    assert 'style="width: 50.0%"' in andamento  # sem vírgula decimal do pt-BR
+    assert re.search(r"<details[^>]*>\s*<summary>Registro técnico", andamento)
+    assert '<details class="detalhe-tecnico" open' not in andamento
+
+
+def test_acompanhamento_com_pendencias_aponta_as_travas(client, usuario_logado):
+    ExecucaoRobo.objects.create(
+        situacao="ATENCAO",
+        fim=timezone.now(),
+        resumo={
+            "requisicoes": 1,
+            "verificar": 1,
+            "fase": "depois",
+            "lotes": [item("AV-000001", "verificar", 60, fim=timezone.now())],
+        },
+    )
+    andamento = andamento_da_pagina(client.get(LANCAMENTOS).text)
+    assert "Lançamento concluído com pendências" in andamento
+    assert "1 requisição precisa ser conferida no SCPI." in andamento
+    assert 'href="#travas"' in andamento and "Conferir no SCPI" in andamento
+
+
+def test_acompanhamento_antigo_desce_para_baixo_da_fila(client, usuario_logado):
+    criar_pedido(atendido=True, linhas=[("PENDENTE", "")])
+    fim = timezone.now() - timedelta(hours=1)
+    ExecucaoRobo.objects.create(
+        simulacao=True,
+        situacao="SUCESSO",
+        inicio=fim - timedelta(minutes=2),
+        fim=fim,
+        resumo={
+            "requisicoes": 1,
+            "simuladas": 1,
+            "fase": "lancando",
+            "lotes": [item("AV-000001", "simulada", 4000, fim=fim)],
+        },
+    )
+    html = client.get(LANCAMENTOS).text
+    topo, fila = posicoes(html)
+    assert fila < topo and 'hx-trigger="every 3s"' not in html
+    andamento = andamento_da_pagina(html)
+    assert "Simulação concluída" in andamento and "prontas para lançar" not in andamento
+    assert "pronta para lançar" in andamento and "Preenchida e conferida" in andamento
+    assert "acomp-fases" not in andamento  # a simulação não tem as fases do lançamento real
+
+
+def test_acompanhamento_fala_em_requisicao(client, usuario_logado):
+    ExecucaoRobo.objects.create(
+        situacao="SUCESSO",
+        fim=timezone.now(),
+        resumo={
+            "requisicoes": 1,
+            "lancadas": 1,
+            "fase": "depois",
+            "lotes": [
+                item("AV-000001", "lancada", 60, fim=timezone.now(), requisicao="000001/26"),
+                item(
+                    "AV-000002",
+                    "ignorada",
+                    mensagem="Tem uma trava para conferir: não foi ao SCPI.",
+                ),
+            ],
+        },
+    )
+    html = client.get(LANCAMENTOS).text
+    visivel = re.sub(r"<[^>]+>", " ", andamento_da_pagina(html))
+    assert not re.search(r"\blotes?\b", visivel, re.I)
+    assert "A requisição foi lançada no SCPI." in visivel and "Deixada de fora" in visivel

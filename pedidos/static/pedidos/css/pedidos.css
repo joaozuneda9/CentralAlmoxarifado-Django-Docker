@@ -458,6 +458,102 @@ tr[data-trocado] .entrega-alterar, tr[data-em-troca] .entrega-alterar { visibili
 .andamento-frase { margin: 0; font-size: 1.0625em; font-weight: 500; color: var(--texto); }
 .contadores { display: flex; flex-wrap: wrap; gap: var(--esp-meio) var(--esp-1); margin: 0; padding: 0; list-style: none; }
 .pilha-curta { display: grid; gap: var(--esp-meio); min-width: 0; }
+/* Acompanhamento por requisição (pedidos/andamento.py, `acompanhamento`): as fases do lançamento
+   real (uma sequência de verdade, por isso numeradas), o "N de M" com a barra colorida pelo
+   resultado, o bloco "Agora" com a etapa em português e a lista das requisições da execução.
+   Estado nunca só por cor: cada linha tem ícone e texto. */
+.acompanhamento { display: grid; gap: var(--esp-3); }
+.acompanhamento [hidden] { display: none !important; }
+.acomp-topo { display: flex; justify-content: space-between; align-items: flex-start; gap: var(--esp-2); }
+.acomp-topo h2 { margin: 0; font-size: 1.3em; }
+.acomp-topo p { margin: 4px 0 0; }
+.acomp-fases { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: var(--esp-1); margin: 0; padding: 0; list-style: none; }
+.acomp-fase {
+  display: grid; grid-template-columns: 24px minmax(0, 1fr); gap: 2px var(--esp-1); align-items: start;
+  padding-top: 10px; border-top: 3px solid var(--borda); font-size: 0.9em; color: var(--texto-suave);
+}
+.acomp-fase-marca {
+  display: grid; place-items: center; width: 22px; height: 22px; border: 1.5px solid currentColor;
+  border-radius: 50%; font-size: 12px; font-weight: 600;
+}
+.acomp-fase-marca .icone { width: 14px; height: 14px; }
+.acomp-fase-nome { padding-top: 1px; line-height: 1.35; }
+.acomp-fase-estado { grid-column: 2; font-size: 0.85em; }
+.acomp-fase-feita { border-top-color: var(--ok-texto); color: var(--texto-secundario); }
+.acomp-fase-feita .acomp-fase-marca { background: var(--ok-texto); border-color: var(--ok-texto); color: #fff; }
+.acomp-fase-atual { border-top-color: var(--destaque); color: var(--texto); }
+.acomp-fase-atual .acomp-fase-marca { background: var(--destaque); border-color: var(--destaque); color: #fff; }
+.acomp-fase-atual .acomp-fase-nome { font-weight: 600; }
+.acomp-fase-atual .acomp-fase-estado { color: var(--info-texto); }
+.acomp-fase-parou { border-top-color: var(--erro-texto); color: var(--texto); }
+.acomp-fase-parou .acomp-fase-marca { background: var(--erro-texto); border-color: var(--erro-texto); color: #fff; }
+.acomp-fase-parou .acomp-fase-estado { color: var(--erro-texto); }
+.acomp-progresso { display: grid; gap: var(--esp-1); }
+.acomp-progresso-linha { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--esp-2); }
+.acomp-progresso-linha p { margin: 0; }
+.acomp-numero { font-family: var(--fonte-titulo); font-size: 1.6em; font-weight: 700; letter-spacing: -0.02em; line-height: 1; }
+.acomp-numero small { margin-left: 4px; font-family: var(--fonte-texto); font-size: 0.55em; font-weight: 400; letter-spacing: 0; color: var(--texto-secundario); }
+.acomp-estimativa { color: var(--texto-secundario); font-size: 0.92em; }
+.acomp-barra { display: flex; height: 8px; overflow: hidden; background: var(--superficie); border: 1px solid var(--borda); border-radius: var(--raio-pilula); }
+.acomp-barra > span { display: block; height: 100%; transition: width 0.4s ease; }
+.acomp-barra-ok { background: var(--ok-texto); }
+.acomp-barra-aviso { background: #d99a1e; }
+.acomp-barra-erro { background: var(--erro-texto); }
+.acomp-barra-atual { background: var(--destaque); opacity: 0.45; }
+.acomp-agora {
+  display: grid; gap: 6px; padding: var(--esp-2); background: var(--destaque-superficie);
+  border-left: 3px solid var(--destaque); border-radius: var(--raio-controle);
+}
+.acomp-agora p { margin: 0; }
+.acomp-agora-rotulo { font-size: 0.8em; font-weight: 600; color: var(--info-texto); }
+.acomp-agora-req { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px var(--esp-1); }
+.acomp-agora-req strong { font-weight: 600; }
+.acomp-agora-etapa { display: flex; align-items: center; gap: var(--esp-1); }
+.acomp-pulso { flex: none; width: 8px; height: 8px; border-radius: 50%; background: var(--destaque); animation: acomp-pulso 1.4s ease-in-out infinite; }
+@keyframes acomp-pulso { 0%, 100% { opacity: 1; transform: scale(1); } 50% { opacity: 0.35; transform: scale(0.75); } }
+.acomp-agora-atividade { display: flex; align-items: flex-start; gap: 6px; font-size: 0.85em; color: var(--texto-secundario); }
+.acomp-agora-atividade .icone { flex: none; width: 14px; height: 14px; margin-top: 3px; }
+.acomp-agora-parado { background: var(--aviso-superficie); border-left-color: #d99a1e; }
+.acomp-agora-parado .acomp-agora-rotulo { color: var(--aviso-texto); }
+.acomp-agora-parado .acomp-pulso { background: #d99a1e; animation: none; }
+.acomp-lista-titulo { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: baseline; gap: var(--esp-1) var(--esp-2); }
+.acomp-lista-titulo h3 { margin: 0; font-size: 1em; }
+.acomp-lista { margin: 0; padding: 0; list-style: none; border-top: 1px solid var(--borda); }
+.acomp-req {
+  display: grid; grid-template-columns: 20px 96px minmax(0, 1fr) minmax(0, 1.25fr); gap: 2px var(--esp-2);
+  align-items: start; padding: 10px var(--esp-1); border-bottom: 1px solid var(--borda); font-size: 0.95em;
+}
+.acomp-req > .icone { width: 18px; height: 18px; margin-top: 2px; }
+.acomp-req p { margin: 0; }
+.acomp-req-nome { min-width: 0; }
+.acomp-req-nome > span { display: block; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.acomp-req-meta { font-size: 0.85em; color: var(--texto-secundario); }
+.acomp-req-resultado { min-width: 0; }
+.acomp-req-resultado strong { font-weight: 500; }
+.acomp-req-resultado p { margin-top: 2px; font-size: 0.85em; color: var(--texto-secundario); overflow-wrap: anywhere; }
+.acomp-req-ok > .icone, .acomp-req-ok .acomp-req-resultado strong { color: var(--ok-texto); }
+.acomp-req-aviso > .icone, .acomp-req-aviso .acomp-req-resultado strong { color: var(--aviso-texto); }
+.acomp-req-erro > .icone, .acomp-req-erro .acomp-req-resultado strong { color: var(--erro-texto); }
+.acomp-req-fora > .icone, .acomp-req-fora .acomp-req-resultado strong { color: var(--texto-secundario); }
+.acomp-req-atual { background: var(--destaque-superficie); box-shadow: inset 3px 0 0 var(--destaque); }
+.acomp-req-atual .acomp-req-resultado strong { color: var(--info-texto); }
+.acomp-req-espera, .acomp-req-espera .acomp-req-meta, .acomp-req-espera a { color: var(--texto-suave); }
+.acomp-marca-espera, .acomp-marca-atual { width: 12px; height: 12px; margin: 5px 3px 0; border-radius: 50%; }
+.acomp-marca-espera { border: 1.5px dashed var(--texto-suave); }
+.acomp-marca-atual { border: 2px solid var(--destaque); border-right-color: transparent; animation: acomp-gira 0.9s linear infinite; }
+@keyframes acomp-gira { to { transform: rotate(360deg); } }
+@media (prefers-reduced-motion: reduce) {
+  .acomp-pulso, .acomp-marca-atual { animation: none; }
+  .acomp-marca-atual { border-right-color: var(--destaque); }
+  .acomp-barra > span { transition: none; }
+}
+@media (max-width: 640px) {
+  .acomp-topo { flex-direction: column; }
+  .acomp-fases { grid-template-columns: minmax(0, 1fr); }
+  .acomp-fase:not(.acomp-fase-atual):not(.acomp-fase-parou) { display: none; }
+  .acomp-req { grid-template-columns: 20px minmax(0, 1fr); }
+  .acomp-req > a, .acomp-req-nome, .acomp-req-resultado { grid-column: 2; }
+}
 /* Conferência com o SCPI (spec 010): o filtro por veredito em links, a lista dos lotes lançados
    separada por linhas (não um cartão por lote) e as candidatas do lote em verificar. */
 #conciliacao { margin-top: var(--esp-3); }
