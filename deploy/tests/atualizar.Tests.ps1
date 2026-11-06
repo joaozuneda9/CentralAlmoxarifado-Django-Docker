@@ -52,6 +52,8 @@ function docker {
             if ($id -match '^projeto(\d+)$') { $pasta = @($global:AlmoxTestePastaProjeto)[[int]$Matches[1]] }
             elseif ($id -match '^volume(\d+)$') { $pasta = @($global:AlmoxTesteOrigemVolume)[[int]$Matches[1]] }
             else { throw "ID inesperado: $id" }
+            # '' = container com rotulos, mas sem working_dir; 'SEM-ROTULOS' = nenhum rotulo (null).
+            if ($pasta -eq 'SEM-ROTULOS') { 'null'; continue }
             $mapa = @{ 'com.docker.compose.project' = 'x' }
             if (-not [string]::IsNullOrWhiteSpace($pasta)) { $mapa['com.docker.compose.project.working_dir'] = $pasta }
             $mapa | ConvertTo-Json -Compress
@@ -188,16 +190,26 @@ try {
     # O mesmo projeto (e banco) a partir de outro clone, como o abandonado almoxarifado-prod.
     $global:AlmoxTestePastaProjeto = @('C:\docker\almoxarifado-prod')
     Recusa { Executar } 'noutra pasta'
-    # A mesma pasta, com barras e maiusculas diferentes, e linha vazia: aceita.
-    $global:AlmoxTestePastaProjeto = @(($global:AlmoxTesteDestino.Replace('\', '/').ToUpperInvariant() + '/'), '')
+    # A mesma pasta, com barras e maiusculas diferentes: aceita.
+    $mesmaPasta = $global:AlmoxTesteDestino.Replace('\', '/').ToUpperInvariant() + '/'
+    $global:AlmoxTestePastaProjeto = @($mesmaPasta)
     Executar
+    # Um container do projeto sem rotulo de origem, ao lado de um desta pasta: recusa.
+    $global:AlmoxTestePastaProjeto = @($mesmaPasta, '')
+    Recusa { Executar } 'sem rotulo de origem'
     $global:AlmoxTestePastaProjeto = @()
     # Containers removidos, volumes do projeto ainda la: a origem precisa ser comprovada.
     $global:AlmoxTesteVolumes = @('almoxarifado_prod_banco-dados', '')
     $global:AlmoxTesteOrigemVolume = @()
     Recusa { Executar } 'comprove a origem'
-    $global:AlmoxTesteOrigemVolume = @('', 'C:\docker\almoxarifado-prod')
+    $global:AlmoxTesteOrigemVolume = @('C:\docker\almoxarifado-prod')
     Recusa { Executar } 'outra pasta'
+    # Cenario misto: um consumidor desta pasta e outro sem origem (sem working_dir, ou sem
+    # rotulo algum). O desta pasta nao basta: o outro tambem precisa ser comprovado.
+    foreach ($desconhecido in @('', 'SEM-ROTULOS')) {
+        $global:AlmoxTesteOrigemVolume = @(($global:AlmoxTesteDestino + '\'), $desconhecido)
+        Recusa { Executar } 'sem rotulo de origem'
+    }
     # Montado por container desta pasta (parado ou nao): aceita, sem alterar nada.
     $global:AlmoxTesteOrigemVolume = @(($global:AlmoxTesteDestino.Replace('\', '/') + '/'))
     Executar

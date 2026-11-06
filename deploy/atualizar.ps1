@@ -116,6 +116,9 @@ try {
     # Os rotulos vem do inspect, como mapa JSON: no ps, .Labels e um texto "k=v,..." e o
     # config_files tem virgulas; e o formato vai sem aspas internas, que o PowerShell 5.1 tira
     # ao chamar o docker.exe.
+    # Container sem o rotulo (criado fora do Compose, ou sem rotulos) nao tem origem comprovada:
+    # recusa, em vez de ser ignorado, para um consumidor desconhecido nao passar ao lado de um
+    # desta pasta.
     $pastasDosContainers = {
         param([string]$Filtro, [string]$Erro)
         $ids = @(& docker ps -a -q --filter $Filtro | Where-Object { -not [string]::IsNullOrWhiteSpace($_) })
@@ -123,10 +126,17 @@ try {
         if (-not $ids.Count) { return }
         $linhas = @(& docker inspect --format '{{json .Config.Labels}}' @ids)
         if ($LASTEXITCODE -ne 0) { throw $Erro }
-        foreach ($linha in $linhas) {
-            if ([string]::IsNullOrWhiteSpace($linha)) { continue }
-            $pasta = Get-Valor ($linha | ConvertFrom-Json) 'com.docker.compose.project.working_dir'
-            if (-not [string]::IsNullOrWhiteSpace($pasta)) { $pasta }
+        if ($linhas.Count -ne $ids.Count) { throw $Erro }
+        for ($i = 0; $i -lt $ids.Count; $i++) {
+            $pasta = ''
+            if (-not [string]::IsNullOrWhiteSpace($linhas[$i])) {
+                $rotulos = $linhas[$i] | ConvertFrom-Json
+                if ($null -ne $rotulos) { $pasta = Get-Valor $rotulos 'com.docker.compose.project.working_dir' }
+            }
+            if ([string]::IsNullOrWhiteSpace($pasta)) {
+                throw "Container $($ids[$i]) ($Filtro) sem rotulo de origem do Compose. Confira a quem pertence antes de continuar."
+            }
+            $pasta
         }
     }
     $pastas = @(& $pastasDosContainers "label=com.docker.compose.project=$projeto" `

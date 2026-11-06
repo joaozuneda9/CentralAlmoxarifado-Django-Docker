@@ -210,7 +210,12 @@ não ligar agendamentos de testes que possam competir com produção.
 O `atualizar.ps1` para com "sem container que comprove a origem" quando um
 volume do projeto (com o rótulo dele, ou com o nome que a configuração usa)
 existe e nenhum container o monta: por exemplo, depois que os containers foram
-removidos e os volumes ficaram. O volume pode ter os dados reais; nada aqui
+removidos e os volumes ficaram. Para com "sem rotulo de origem" quando um
+container do projeto, ou um que monta o volume, não tem o rótulo
+`com.docker.compose.project.working_dir` (criado fora do Compose): mesmo que
+outro container desta pasta monte o volume, esse consumidor desconhecido também
+precisa ser identificado (`docker inspect <id>`) e resolvido por quem administra
+o servidor antes de continuar. O volume pode ter os dados reais; nada aqui
 apaga, recria ou sobrescreve volume. **Nunca** use `docker volume rm`,
 `docker volume prune`, `down -v` nem cópia por cima para destravar.
 
