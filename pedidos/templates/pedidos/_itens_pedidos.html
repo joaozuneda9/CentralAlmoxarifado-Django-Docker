@@ -1,0 +1,3 @@
+{% load interface_extras %}
+{# Os materiais e as quantidades pedidas, como o solicitante os enviou: a tela de sucesso e a consulta pública (spec 011) usam a mesma lista. `rotulo_id`, opcional, liga a lista ao título que a nomeia. #}
+<ul class="sucesso-itens"{% if rotulo_id %} aria-labelledby="{{ rotulo_id }}"{% endif %}>{% for i in itens %}<li><span>{{ i.material }}</span> <strong>{{ i.qtd_pedida|quantidade }}{% if i.unidade %} {{ i.unidade }}{% endif %}</strong></li>{% endfor %}</ul>

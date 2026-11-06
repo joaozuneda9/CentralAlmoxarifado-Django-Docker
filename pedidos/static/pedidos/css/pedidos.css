@@ -140,11 +140,6 @@ html:not(.js) .formulario-pedido { display: none; }
 .consulta-cabecalho .cartao-titulo { margin: 0; }
 .consulta-chamada { display: flex; flex-wrap: wrap; align-items: center; gap: var(--esp-1) var(--esp-2); }
 .consulta-chamada p { margin: 0; }
-/* O nome do material fica com a largura; a quantidade com unidade longa desce, alinhada à direita. */
-.consulta-itens { max-width: none; }
-.consulta-itens li { flex-wrap: wrap; column-gap: var(--esp-2); row-gap: 2px; }
-.consulta-itens span { flex: 1 1 12rem; }
-.consulta-itens strong { margin-left: auto; }
 .consulta-itens-bloco .rotulo-secao { margin: 0; }
 .sucesso-numero { font-size: 40px; font-weight: 500; line-height: 1.1; letter-spacing: -0.01em; color: var(--texto); }
 

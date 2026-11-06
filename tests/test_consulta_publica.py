@@ -111,7 +111,9 @@ def selo(resposta) -> str | None:
 def itens_da_consulta(resposta) -> list[tuple[str, str]]:
     """A lista "Materiais pedidos" da consulta: (material, quantidade com a unidade)."""
     lista = re.search(
-        r'<ul class="sucesso-itens consulta-itens"[^>]*>(.*?)</ul>', resposta.text, re.S
+        r'<ul class="sucesso-itens" aria-labelledby="consulta-itens-titulo">(.*?)</ul>',
+        resposta.text,
+        re.S,
     )
     if not lista:
         return []
@@ -713,3 +715,24 @@ def test_a_lista_nao_custa_consulta_a_mais(client, quem, almox, django_assert_ma
     with django_assert_max_num_queries(2):
         r = consultar(client, pedido.numero, "Ana")
     assert len(itens_da_consulta(r)) == 2
+
+
+def test_a_lista_e_a_mesma_da_tela_de_sucesso(client):
+    """A consulta reaproveita a lista da confirmação do envio (`_itens_pedidos.html`)."""
+    sucesso = enviar_formulario(
+        client,
+        "limpeza",
+        [("023.001.002", "2"), ("008.001.002", "1,5")],
+        destino="ETA II",
+        solicitante="Ana",
+    )
+    numero = re.search(r'class="sucesso-numero mono">([^<]+)<', sucesso.text).group(1)
+    lista_sucesso = re.search(r'<ul class="sucesso-itens">(.*?)</ul>', sucesso.text, re.S).group(1)
+    consulta = consultar(client, numero, "Ana")
+    lista_consulta = re.search(
+        r'<ul class="sucesso-itens" aria-labelledby="consulta-itens-titulo">(.*?)</ul>',
+        consulta.text,
+        re.S,
+    ).group(1)
+    assert lista_consulta == lista_sucesso
+    assert itens_da_consulta(consulta) == LIMPEZA_PEDIDA

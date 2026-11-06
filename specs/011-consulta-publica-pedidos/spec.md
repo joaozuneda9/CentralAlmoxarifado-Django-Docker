@@ -178,9 +178,13 @@ Terceira rodada (lista de materiais e consulta no topo da página inicial):
   na troca o acrescentado não aparece, sem o nome certo a lista não aparece, e a consulta segue com no
   máximo 2 consultas ao banco.
 - Playwright: P-000169 com "teste" no celular mostra "Materiais pedidos" (AÇÚCAR CRISTAL BRANCO,
-  1 EMBALAGEM 5 Kg, a quantidade desce para a linha de baixo quando não cabe); a página inicial mostra
+  1 EMBALAGEM 5 Kg); a página inicial mostra
   "Já enviou um pedido? Consultar um pedido" acima dos formulários em 375 px e 1280 px, sem rolagem
   lateral.
+
+- A lista é o mesmo parcial da tela de sucesso (`pedidos/_itens_pedidos.html`), a pedido do usuário:
+  `test_a_lista_e_a_mesma_da_tela_de_sucesso` confere que o HTML das duas é igual; no celular, o
+  P-000170 (4 materiais com unidades longas) sai como na confirmação, sem rolagem lateral.
 
 ## 7. Pendente de validação com solicitantes
 
