@@ -18,7 +18,7 @@ from django.urls import reverse
 from django.utils import timezone
 
 from pedidos.models import Atendimento, AutorizacaoPedido, LinhaSaida, Pedido
-from pedidos.regras import AB, AVULSA, EPIS, LIMPEZA, OFICINA, VIATURAS, Adicionado
+from pedidos.regras import AB, AVULSA, EPIS, LIMPEZA, OFICINA, VIATURAS, Adicionado, nome_confere
 from pedidos.servicos import (
     catalogo_de,
     confirmar_atendimento,
@@ -43,8 +43,10 @@ INVALIDO = (
     "Este não é um número de pedido. O número começa com P, como P-000123, e aparece na tela de "
     "confirmação do envio."
 )
+SEM_NOME = "Informe o seu primeiro nome, como foi escrito no pedido."
 NAO_ACHADO = (
-    "Não encontramos um pedido com este número. Confira o número na tela de confirmação do envio."
+    "Não encontramos um pedido com este número e este nome. Confira os dois na tela de confirmação "
+    "do envio."
 )
 LIMITE = (
     "Muitas consultas desta rede em pouco tempo. Tente de novo daqui a 10 minutos ou procure o "
@@ -92,8 +94,13 @@ def hoje_br() -> str:
     return timezone.localdate().strftime("%d/%m/%Y")
 
 
-def consultar(client, numero):
-    return client.post(URL, {"numero": numero})
+def consultar(client, numero, nome=None):
+    """Consulta com o número e o nome. Sem `nome`, o nome como o solicitante o escreveu no pedido
+    (é a entrada da consulta, nunca a expectativa); sem pedido com o número, "Ana"."""
+    if nome is None:
+        pedido = Pedido.objects.filter(numero=numero).first()
+        nome = pedido.solicitante if pedido else "Ana"
+    return client.post(URL, {"numero": numero, "nome": nome})
 
 
 def selo(resposta) -> str | None:
@@ -301,7 +308,8 @@ def test_nao_expoe_dados_do_pedido_nem_do_atendimento(client, almox):
     atender(pedido, almox, {"023.001.002": "2", "008.001.002": "1,5"})
     Atendimento.objects.filter(pedido=pedido).update(recebedor="Recebedora Fulana", placa="XYZ9A99")
     LinhaSaida.objects.filter(atendimento__pedido=pedido).update(requisicao_scpi="009876/26")
-    r = consultar(client, pedido.numero)
+    # O nome digitado em minúsculas: o gravado ("Ana Distinta Exposta") não pode voltar na resposta.
+    r = consultar(client, pedido.numero, "ana distinta exposta")
     assert selo(r) == "Atendido"
     proibidos = [
         "Ana Distinta",
@@ -327,12 +335,12 @@ def test_nao_expoe_dados_do_pedido_nem_do_atendimento(client, almox):
 def test_nao_expoe_a_ocorrencia_nem_quem_decidiu(client, quem):
     viatura = criar_pedido(origem=VIATURAS, solicitante="Carlos Motorista")
     Pedido.objects.filter(pk=viatura.pk).update(ocorrencia="OC-55443", obs="Viatura 12")
-    r = consultar(client, viatura.numero)
+    r = consultar(client, viatura.numero, "carlos motorista")
     for dado in ["OC-55443", "Viatura 12", "Carlos", "ocorrência"]:
         assert dado not in r.text, dado
 
     epi = epi_recusado(quem, None)
-    r = consultar(client, epi.numero)
+    r = consultar(client, epi.numero, "marcos pereira")
     assert "Sem laudo do médico" in r.text
     for dado in ["Marcos", "Pereira", "Sônia", "Sônia Segura", "70001", "LUVA", LUVA, "ETA I"]:
         assert dado not in r.text, dado
@@ -378,7 +386,7 @@ def test_nao_achado_e_o_mesmo_para_inexistente_e_para_pedido_interno(client, alm
 def test_o_numero_digitado_e_normalizado(client, quem, almox, digitado):
     pedido = limpeza_aguardando(quem, almox)
     assert pedido.numero == "P-000001"
-    r = consultar(client, digitado)
+    r = consultar(client, digitado, "Ana")
     assert selo(r) == "Aguardando atendimento", digitado
     assert "Pedido P-000001" in texto(r.text)
 
@@ -399,13 +407,15 @@ def test_excesso_de_tentativas(client, settings, quem, almox):
     assert AGUARDANDO not in texto(r.text)
     # O limite é por origem.
     outro = Client(REMOTE_ADDR="10.9.9.9")
-    assert selo(outro.post(URL, {"numero": pedido.numero})) == "Aguardando atendimento"
+    assert (
+        selo(outro.post(URL, {"numero": pedido.numero, "nome": "Ana"})) == "Aguardando atendimento"
+    )
 
 
 def test_a_rota_antiga_dos_epis_e_a_mesma_consulta(client, quem, almox):
     pedido = limpeza_aguardando(quem, almox)
     assert URL == "/pedido/consulta/" and URL_ANTIGA == "/pedido/epis/consulta/"
-    r = client.post(URL_ANTIGA, {"numero": pedido.numero})
+    r = client.post(URL_ANTIGA, {"numero": pedido.numero, "nome": "Ana"})
     assert selo(r) == "Aguardando atendimento"
     pagina = client.get(URL_ANTIGA)
     assert pagina.status_code == 200 and f'action="{URL}"' in pagina.text
@@ -425,7 +435,7 @@ def test_nao_vai_para_o_cache_do_navegador(client):
 
 def test_exige_o_csrf():
     estrito = Client(enforce_csrf_checks=True)
-    assert estrito.post(URL, {"numero": "P-000001"}).status_code == 403
+    assert estrito.post(URL, {"numero": "P-000001", "nome": "Ana"}).status_code == 403
 
 
 def test_outro_metodo_nao_e_aceito(client):
@@ -460,13 +470,15 @@ def test_a_tela_de_sucesso_leva_a_consulta_sem_o_numero_na_url(client):
     )
     assert formulario and formulario.group(1) == URL  # o número não vai na URL
     assert f'name="numero" value="{numero}"' in formulario.group(0)
+    assert 'name="nome" value="Ana"' in formulario.group(0)
     assert "csrfmiddlewaretoken" in formulario.group(0)
     html = texto(r.text)
     assert "Ver a situação agora" in html
     assert "de qualquer aparelho" in html and "Consultar pedido" in html
+    assert "com este número e o seu primeiro nome, como foi escrito no pedido" in html
     # Em outro aparelho: só o número, digitado.
     outro = Client(REMOTE_ADDR="10.1.1.1")
-    assert selo(outro.post(URL, {"numero": numero})) == "Aguardando atendimento"
+    assert selo(outro.post(URL, {"numero": numero, "nome": "Ana"})) == "Aguardando atendimento"
 
 
 def test_a_tela_de_sucesso_do_epi_mantem_o_aviso_da_autorizacao(client):
@@ -562,3 +574,76 @@ def test_situacao_sem_texto_publico_e_erro():
 
     with pytest.raises(ValueError):
         texto_consulta_publica(Situacao("desconhecida", "", ""))
+
+
+# O primeiro nome do solicitante (spec 011, seção 4: número e primeiro nome).
+
+
+@pytest.mark.parametrize(
+    "digitado",
+    ["Marcos", "marcos", "  MARCOS ", "Márcos", "Marcos Pereira", "marcos da silva"],
+)
+def test_basta_o_primeiro_nome_sem_diferenca_de_maiusculas_acentos_e_espacos(client, digitado):
+    pedido = registrar_epi(solicitante="Marcos Pereira")
+    assert selo(consultar(client, pedido.numero, digitado)) == "Aguardando autorização"
+
+
+@pytest.mark.parametrize(
+    "digitado",
+    ["Pereira", "Marc", "Marcosa", "Ana", "MarcosPereira", "Pereira Marcos"],
+)
+def test_nome_que_nao_confere_responde_como_numero_inexistente(client, digitado):
+    pedido = registrar_epi(solicitante="Marcos Pereira")
+    errado = consultar(client, pedido.numero, digitado)
+    inexistente = consultar(client, "P-999999", digitado)
+    assert errado.status_code == inexistente.status_code == 200
+    assert selo(errado) is None and NAO_ACHADO in texto(errado.text)
+    assert texto(errado.text.replace(pedido.numero, "P-999999")) == texto(inexistente.text)
+    assert "aguardando" not in texto(errado.text).lower()
+
+
+def test_o_nome_de_outro_pedido_nao_abre_este(client, quem, almox):
+    ana = limpeza_aguardando(quem, almox)  # solicitante "Ana"
+    bruno = ab_aguardando(quem, almox)  # solicitante "Bruno"
+    assert NAO_ACHADO in texto(consultar(client, ana.numero, "Bruno").text)
+    assert NAO_ACHADO in texto(consultar(client, bruno.numero, "Ana").text)
+
+
+@pytest.mark.parametrize("nome", ["", "   "])
+def test_sem_o_nome_pede_o_nome(client, quem, almox, nome):
+    pedido = limpeza_aguardando(quem, almox)
+    r = consultar(client, pedido.numero, nome)
+    assert SEM_NOME in texto(r.text) and selo(r) is None
+
+
+def test_o_nome_digitado_fica_no_campo(client):
+    r = consultar(client, "P-999999", "Fulano de Tal")
+    assert 'value="Fulano de Tal"' in r.text
+
+
+def test_tentativas_com_nome_errado_contam_no_limite(client, settings, quem, almox):
+    settings.PEDIDOS_CONSULTA_LIMITE_IP_10_MIN = 2
+    pedido = limpeza_aguardando(quem, almox)
+    consultar(client, pedido.numero, "Beatriz")
+    consultar(client, pedido.numero, "Carla")
+    r = consultar(client, pedido.numero, "Ana")  # o certo, mas depois do limite
+    assert r.status_code == 429 and LIMITE in texto(r.text) and selo(r) is None
+
+
+@pytest.mark.parametrize(
+    ("digitado", "gravado", "confere"),
+    [
+        ("Ana", "Ana", True),
+        (" ana ", "Ana Maria", True),
+        ("JOSÉ", "José da Silva", True),
+        ("jose", "José da Silva", True),
+        ("José Souza", "José da Silva", True),  # só o primeiro nome é comparado
+        ("Jos", "José", False),
+        ("Silva", "José da Silva", False),
+        ("", "", False),  # pedido sem nome nunca é consultado
+        ("  ", "", False),
+        ("Ana", "", False),
+    ],
+)
+def test_nome_confere(digitado, gravado, confere):
+    assert nome_confere(digitado, gravado) is confere

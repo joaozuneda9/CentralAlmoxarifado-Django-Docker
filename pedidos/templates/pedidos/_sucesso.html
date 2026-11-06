@@ -17,17 +17,18 @@
   {% else %}
     <p>O almoxarifado vai conferir e separar os materiais; a saída só é registrada quando o atendimento for confirmado.</p>
   {% endif %}
-    {# Spec 011: o número é a única chave da consulta, em qualquer aparelho. #}
-    <p>Guarde o número. Para acompanhar o pedido, de qualquer aparelho, use <a href="{% url 'pedidos:consulta' %}">Consultar pedido</a> na página inicial com este número.</p>
+    {# Spec 011: a consulta pede o número e o primeiro nome, em qualquer aparelho. #}
+    <p>Guarde o número. Para acompanhar o pedido, de qualquer aparelho, use <a href="{% url 'pedidos:consulta' %}">Consultar pedido</a> na página inicial com este número e o seu primeiro nome, como foi escrito no pedido.</p>
   </div></div>
   <div class="acoes">
     <a class="botao botao-primario" href="{% url 'pedidos:formulario' fluxo.nome %}">Fazer outro pedido</a>
     <a class="botao botao-secundario" href="{% url 'pedidos:inicio' %}">Voltar ao início</a>
   </div>
-  {# POST com o número escondido: abre a situação sem pôr o número na URL (spec 011). #}
+  {# POST com o número e o nome escondidos: abre a situação sem pôr o número na URL (spec 011). #}
   <form method="post" action="{% url 'pedidos:consulta' %}" data-ver-situacao>
     {% csrf_token %}
     <input type="hidden" name="numero" value="{{ resposta.numero }}">
+    <input type="hidden" name="nome" value="{{ resposta.pedido.solicitante }}">
     <button type="submit" class="botao botao-suave">{% include "interface/_icone.html" with nome="busca" %}Ver a situação agora</button>
   </form>
 </section>

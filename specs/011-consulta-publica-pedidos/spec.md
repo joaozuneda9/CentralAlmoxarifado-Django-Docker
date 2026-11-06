@@ -58,11 +58,13 @@ Respostas que não são de um pedido:
 |---|---|---|---|
 | Em branco | só espaços | Informe o número do pedido. | 200 |
 | Número inválido | não casa `P-?<1 a 9 dígitos>` depois de limpar espaços e maiúsculas (ex.: `AV-000002`, `003588/26`, ocorrência) | Este não é um número de pedido. O número começa com P, como P-000123, e aparece na tela de confirmação do envio. | 200 |
-| Não encontrado | número válido sem pedido de formulário público (inexistente ou de saída avulsa) | Não encontramos um pedido com este número. Confira o número na tela de confirmação do envio. | 200 |
+| Sem nome | número válido, nome só com espaços | Informe o seu primeiro nome, como foi escrito no pedido. | 200 |
+| Não encontrado | número válido sem pedido de formulário público (inexistente ou de saída avulsa), **ou** primeiro nome que não confere | Não encontramos um pedido com este número e este nome. Confira os dois na tela de confirmação do envio. | 200 |
 | Excesso de tentativas | mais de `PEDIDOS_CONSULTA_LIMITE_IP_10_MIN` consultas da mesma origem na janela de 10 min (toda consulta conta, inclusive a inválida) | Muitas consultas desta rede em pouco tempo. Tente de novo daqui a 10 minutos ou procure o almoxarifado. | 429 |
 
 A validação do formato depende só do texto digitado, nunca do banco: não revela se um número existe.
-Inexistente e saída avulsa têm a mesma resposta.
+Inexistente, saída avulsa e nome que não confere têm a mesma resposta: a tela nunca diz que o número
+existe.
 
 ## 4. Contrato de acesso público
 
@@ -70,8 +72,15 @@ Inexistente e saída avulsa têm a mesma resposta.
 explica (decisão da autorização ou saída) e, na recusa, o motivo. Para conferir que digitou o número
 certo (troca de identificadores): o número normalizado, o formulário e a data do envio.
 
-**Só com o número** (adotado): número normalizado, título do formulário, data do envio (dia), selo,
-mensagem, data da decisão (EPI autorizado) ou da saída (atendido), motivo da recusa (EPI).
+**Com o número e o primeiro nome** (adotado, decisão do usuário em 2026-11-06, que substitui a F12):
+número normalizado, título do formulário, data do envio (dia), selo, mensagem, data da decisão (EPI
+autorizado) ou da saída (atendido), motivo da recusa (EPI). O nome não muda o que é mostrado: só
+destrava a mesma resposta.
+
+**Regra do nome** (`regras.nome_confere`): a primeira palavra do que foi digitado é igual à primeira
+palavra do `Pedido.solicitante`, sem diferença de acento, maiúsculas ou espaços (`norm_u`). "Marcos",
+"márcos" e "Marcos Pereira" abrem o pedido de "Marcos Pereira"; "Pereira", "Marc" e "MarcosPereira"
+não. Pedido sem nome nunca é consultado.
 
 **Nunca na consulta pública**: nome do solicitante, destino, observação, nº da ocorrência, materiais,
 códigos, quantidades, recebedor, quem atendeu ou decidiu, centro de custo, placa, situação no SCPI e
@@ -79,17 +88,19 @@ número da requisição. Mostrá-los exigiria uma credencial de consulta (abaixo
 
 | Opção | Protege contra varredura | Custo para o solicitante | Custo no sistema |
 |---|---|---|---|
-| A. Só o número (adotada) | Não; limita a 20 consultas/10 min por origem | Um dado, que ele já anota | Nenhum dado novo |
+| A. Só o número | Não; limita a 20 consultas/10 min por origem | Um dado, que ele já anota | Nenhum dado novo |
+| A'. Número + primeiro nome (adotada) | Parcial: o número sozinho não abre nada, mas o primeiro nome é adivinhável (nomes comuns); somado ao limite por origem | O número e o próprio primeiro nome, que ele não precisa anotar | Comparação por `norm_u`, sem dado novo nem migration |
 | B. Número + código de consulta (ex.: 6 caracteres derivados por HMAC do id do envio) | Sim | Dois dados para anotar; perder o código perde a consulta em outro aparelho | Troca da `SECRET_KEY` invalida os códigos, ou campo novo com migration |
-| C. Número + nome completo | Parcial (nomes são adivinháveis) | Digitar o nome igual ao do envio | Comparação por `norm_u`; recusado antes pelo usuário (F12) |
+| C. Número + nome completo | Um pouco mais que A' | Digitar o nome inteiro igual ao do envio (abreviações e sobrenomes esquecidos viram "não encontrado") | Comparação por `norm_u` |
 
-**Recomendação**: A. Com a exposição limitada à tabela, quem varre números aprende a situação, o
-formulário e as datas de pedidos de outras pessoas, sem identificá-las; o único texto livre é o motivo
-da recusa de EPI, já público por decisão anterior (F12) e com aviso na tela de decisão. A opção B só
-se justifica se a consulta passar a mostrar nome ou materiais.
+**Recomendação inicial**: A, pela decisão anterior (F12). **Adotada**: A', a pedido do usuário. Quem
+varre números precisa acertar também o primeiro nome de cada pedido, o que torna a varredura cega
+inútil e protege sobretudo o motivo da recusa de EPI; um primeiro nome comum ("José", "Maria") ainda
+pode acertar. A opção B só se justifica se a consulta passar a mostrar nome ou materiais.
 
-Proteções mantidas: POST com CSRF (o número não vai para a URL nem para o histórico), `never_cache`,
-resposta idêntica para inexistente e avulsa, só leitura, limite por origem no cache do processo (zera
+Proteções mantidas: POST com CSRF (número e nome não vão para a URL nem para o histórico),
+`never_cache`, resposta idêntica para inexistente, avulsa e nome que não confere (o nome gravado nunca
+volta na resposta; só o que foi digitado fica no campo), só leitura, toda tentativa conta no limite, limite por origem no cache do processo (zera
 ao reiniciar, como na consulta de EPIs).
 
 **Rotas**: `pedidos:consulta` (`/pedido/consulta/`) para todos os formulários públicos. A antiga
@@ -102,12 +113,14 @@ pedidos de outros formulários".
 
 1. **Confirmação do envio** (`_sucesso.html`, todos os formulários): o número em destaque, a frase
    "Guarde o número. Para acompanhar o pedido, de qualquer aparelho, use Consultar pedido na página
-   inicial com este número." e o botão **Ver a situação agora** (formulário POST com o número escondido:
-   abre o resultado sem pôr o número na URL). No EPI a frase de aguardar a autorização continua.
+   inicial com este número e o seu primeiro nome, como foi escrito no pedido." (o nome aparece na mesma
+   tela: "N materiais registrados para <nome>") e o botão **Ver a situação agora** (formulário POST com
+   o número e o nome escondidos: abre o resultado sem pôr nada na URL). No EPI a frase de aguardar a autorização continua.
 2. **Depois, no mesmo ou em outro aparelho**: página inicial → link **Consultar um pedido** →
-   digita o número (aceita `p123`, `P-123`, espaços) → resultado.
-3. **Erros**: em branco, inválido, não encontrado e excesso de tentativas, cada um com a sua mensagem
-   (seção 3); o número digitado fica no campo para corrigir.
+   digita o número (aceita `p123`, `P-123`, espaços) e o primeiro nome (o navegador pode sugeri-lo,
+   `autocomplete="given-name"`) → resultado.
+3. **Erros**: em branco, inválido, sem nome, não encontrado e excesso de tentativas, cada um com a sua
+   mensagem (seção 3); o número e o nome digitados ficam nos campos para corrigir.
 
 ## 6. Verificação
 
@@ -125,6 +138,18 @@ retirar") e `normalizar_numero_pedido` deram lugar a `texto_consulta_publica` e
 `numero_de_pedido_publico`.
 
 ### Evidências executadas (2026-11-06)
+
+Com o primeiro nome (segunda rodada, mesmo dia):
+
+- `uv run pytest`: 2281 passaram, 1 pulado; `tests/test_consulta_publica.py` tem 103 casos, entre eles
+  as variações do nome que conferem e as que não conferem (resposta idêntica à do número inexistente),
+  o nome de outro pedido, o nome em branco, o nome errado contando no limite e a regra pura
+  `nome_confere`. `ruff` e `manage.py check` sem problemas; nenhuma migration.
+- Playwright: P-000169 enviado pela tela → "Ver a situação agora" (número e nome escondidos) → outro
+  aparelho com `p169` e "Teste" → "Aguardando atendimento"; com "Playwright" (o sobrenome) → "não
+  encontrado"; atendido pelo serviço → "Atendido"; inválido, não encontrado e 429 de novo.
+
+Primeira rodada (só com o número):
 
 - `uv run pytest`: 2254 passaram, 1 pulado (o de flags do Windows); `tests/test_consulta_publica.py`
   tem 76 casos. `ruff check`, `ruff format --check`, `makemigrations --check` (nenhuma migration) e
@@ -145,3 +170,5 @@ retirar") e `normalizar_numero_pedido` deram lugar a `texto_consulta_publica` e
 - Se o número é de fato guardado (H1) ou se é preciso lembrá-lo no aparelho.
 - Se o limite por rede atrapalha um prédio inteiro (H3).
 - Se o formulário e a data do envio bastam para o solicitante perceber que digitou o número errado.
+- Se o solicitante lembra do primeiro nome como o digitou (apelido, nome composto como "Ana Maria", que
+  só compara "Ana"), e se o "não encontrado" com o nome errado é entendido.

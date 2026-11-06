@@ -21,6 +21,7 @@ from pedidos.protecao import (
 )
 from pedidos.regras import (
     EnvioPedido,
+    nome_confere,
     numero_de_pedido_publico,
     opcoes_destino,
     resolver_destino,
@@ -167,8 +168,12 @@ MENSAGEM_CONSULTA_INVALIDA = (
     "Este não é um número de pedido. O número começa com P, como P-000123, e aparece na tela de "
     "confirmação do envio."
 )
+MENSAGEM_CONSULTA_SEM_NOME = "Informe o seu primeiro nome, como foi escrito no pedido."
+# A mesma para número inexistente, saída avulsa e nome que não confere: a resposta nunca diz que o
+# número existe.
 MENSAGEM_CONSULTA_NAO_ACHADA = (
-    "Não encontramos um pedido com este número. Confira o número na tela de confirmação do envio."
+    "Não encontramos um pedido com este número e este nome. Confira os dois na tela de confirmação "
+    "do envio."
 )
 MENSAGEM_CONSULTA_LIMITE = (
     "Muitas consultas desta rede em pouco tempo. Tente de novo daqui a 10 minutos ou procure o "
@@ -194,16 +199,17 @@ def _consultas_demais(ip: str) -> bool:
 @never_cache
 @require_http_methods(["GET", "POST"])
 def consulta(request):
-    """O solicitante, sem login, consulta pelo número a situação de um pedido de qualquer formulário
-    público (spec 011). Mostra só o que a seção 4 da spec permite: número, formulário, dia do envio,
-    situação, a data que a explica e, na recusa do EPI, o motivo. A saída avulsa e o número que não
-    existe têm a mesma resposta; só lê (nada é gravado). Também responde na rota antiga da
-    consulta de EPIs (`pedidos:consulta_epi`)."""
-    contexto = {"numero": ""}
+    """O solicitante, sem login, consulta pelo número e pelo primeiro nome a situação de um pedido
+    de qualquer formulário público (spec 011). Mostra só o que a seção 4 da spec permite: número,
+    formulário, dia do envio, situação, a data que a explica e, na recusa do EPI, o motivo. Número
+    que não existe, saída avulsa e nome que não confere têm a mesma resposta; só lê (nada é
+    gravado). Também responde na rota antiga da consulta de EPIs (`pedidos:consulta_epi`)."""
+    contexto = {"numero": "", "nome": ""}
     status = 200
     if request.method == "POST":
         digitado = request.POST.get("numero", "")
-        contexto["numero"] = digitado
+        nome = request.POST.get("nome", "")
+        contexto.update(numero=digitado, nome=nome)
         numero = numero_de_pedido_publico(digitado)
         if _consultas_demais(request.META.get("REMOTE_ADDR", "")):
             contexto["aviso"] = MENSAGEM_CONSULTA_LIMITE
@@ -212,6 +218,8 @@ def consulta(request):
             contexto["aviso"] = MENSAGEM_CONSULTA_VAZIA
         elif numero is None:
             contexto["aviso"] = MENSAGEM_CONSULTA_INVALIDA
+        elif not "".join(nome.split()):
+            contexto["aviso"] = MENSAGEM_CONSULTA_SEM_NOME
         else:
             pedido = (
                 Pedido.objects.select_related("atendimento", "autorizacao")
@@ -219,7 +227,7 @@ def consulta(request):
                 .filter(numero=numero, origem__in=[f.origem for f in fluxos_publicos()])
                 .first()
             )
-            if pedido is None:
+            if pedido is None or not nome_confere(nome, pedido.solicitante):
                 contexto["aviso"] = MENSAGEM_CONSULTA_NAO_ACHADA
             else:
                 contexto["resultado"] = _resultado_da_consulta(pedido)

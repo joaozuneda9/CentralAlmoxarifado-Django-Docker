@@ -758,6 +758,14 @@ def numero_de_pedido_publico(digitado: str) -> str | None:
     return f"P-{int(casou.group(1)):06d}" if casou else None
 
 
+def nome_confere(digitado: str, solicitante: str) -> bool:
+    """Se o primeiro nome digitado é o primeiro nome do solicitante do pedido, sem diferença de
+    acento, maiúsculas ou espaços (`norm_u`). É a segunda chave da consulta pública (spec 011,
+    seção 4): só o primeiro nome é comparado, e pedido sem nome nunca confere."""
+    digitado_u, gravado_u = norm_u(digitado).split(), norm_u(solicitante).split()
+    return bool(digitado_u and gravado_u) and digitado_u[0] == gravado_u[0]
+
+
 @dataclass(frozen=True)
 class ConsultaPublica:
     """O que a consulta pública diz ao solicitante (spec 011, seção 3): o selo, a frase e, na
