@@ -136,13 +136,33 @@ try {
             throw "O projeto $projeto foi criado noutra pasta ($pasta). Rode o script no clone dessa pasta."
         }
     }
+    $script:compose = @('compose', '--project-directory', $raiz, '--env-file', (Join-Path $raiz '.env'),
+        '-p', $projeto, '-f', (Join-Path $raiz 'compose.ambientes.yaml'),
+        '-f', (Join-Path $raiz "compose.$Ambiente.yaml"))
+    # Nao imprimir config: inclui senhas. A saida e validada somente em memoria.
+    $config = (Invoke-Compose --profile '*' config --format json) -join "`n" | ConvertFrom-Json
+    if ($config.name -ne $projeto -or $config.services.web.image -ne $Imagem) {
+        throw 'Projeto ou imagem resolvidos nao correspondem ao alvo.'
+    }
     # Sem containers (removidos), sobram os volumes, que o Compose reutilizaria pelo nome. O volume
     # so guarda o projeto, nao a pasta: a origem se comprova pelos containers que o montam, mesmo
-    # parados. Volume do projeto sem container desta pasta montando-o bloqueia a atualizacao.
-    $volumes = @(& docker volume ls --quiet --filter "label=com.docker.compose.project=$projeto")
+    # parados. Conferidos: os volumes com o rotulo do projeto e os que ja existem com os nomes que
+    # esta configuracao usa (um volume criado fora do Compose nao tem rotulo, e o Compose o
+    # reutilizaria do mesmo jeito). Sem container desta pasta montando-o, a atualizacao para.
+    $comRotulo = @(& docker volume ls --quiet --filter "label=com.docker.compose.project=$projeto")
     if ($LASTEXITCODE -ne 0) { throw 'Docker falhou ao listar os volumes do projeto.' }
+    $existentes = @(& docker volume ls --quiet)
+    if ($LASTEXITCODE -ne 0) { throw 'Docker falhou ao listar os volumes.' }
+    $daConfiguracao = @()
+    if ($config.PSObject.Properties['volumes']) {
+        foreach ($definicao in $config.volumes.PSObject.Properties) {
+            $nome = Get-Valor $definicao.Value 'name'
+            if ($nome -and $existentes -ccontains $nome) { $daConfiguracao += $nome }
+        }
+    }
+    $volumes = @(@($comRotulo) + $daConfiguracao |
+        Where-Object { -not [string]::IsNullOrWhiteSpace($_) } | Select-Object -Unique)
     foreach ($volume in $volumes) {
-        if ([string]::IsNullOrWhiteSpace($volume)) { continue }
         $origens = @(& $pastasDosContainers "volume=$volume" `
             "Docker falhou ao conferir a origem do volume $volume.")
         if (-not $origens.Count) {
@@ -153,14 +173,6 @@ try {
                 throw "Volume $volume em uso por container de outra pasta ($origem). Rode o script no clone dessa pasta."
             }
         }
-    }
-    $script:compose = @('compose', '--project-directory', $raiz, '--env-file', (Join-Path $raiz '.env'),
-        '-p', $projeto, '-f', (Join-Path $raiz 'compose.ambientes.yaml'),
-        '-f', (Join-Path $raiz "compose.$Ambiente.yaml"))
-    # Nao imprimir config: inclui senhas. A saida e validada somente em memoria.
-    $config = (Invoke-Compose --profile '*' config --format json) -join "`n" | ConvertFrom-Json
-    if ($config.name -ne $projeto -or $config.services.web.image -ne $Imagem) {
-        throw 'Projeto ou imagem resolvidos nao correspondem ao alvo.'
     }
     foreach ($servico in @('web', 'agendador')) {
         $vars = $config.services.$servico.environment

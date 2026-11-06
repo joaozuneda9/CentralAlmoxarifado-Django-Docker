@@ -14,6 +14,7 @@ $global:AlmoxTesteProxy = '--listen=0.0.0.0:8010'
 $global:AlmoxTestePortaDev = '127.0.0.1'
 $global:AlmoxTestePastaProjeto = @()
 $global:AlmoxTesteVolumes = @()
+$global:AlmoxTesteVolumesExistentes = @()
 $global:AlmoxTesteOrigemVolume = @()
 $global:AlmoxTesteDigest = 'ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:' + ('a' * 64)
 
@@ -44,6 +45,8 @@ function docker {
     if ($linha.StartsWith('volume ls --quiet --filter label=com.docker.compose.project=')) {
         return $global:AlmoxTesteVolumes
     }
+    # Todos os volumes do Docker, com ou sem rotulo do Compose.
+    if ($linha -eq 'volume ls --quiet') { return $global:AlmoxTesteVolumesExistentes }
     if ($linha.StartsWith('inspect --format {{json .Config.Labels}} ')) {
         foreach ($id in $args[3..($args.Count - 1)]) {
             if ($id -match '^projeto(\d+)$') { $pasta = @($global:AlmoxTestePastaProjeto)[[int]$Matches[1]] }
@@ -74,6 +77,10 @@ function docker {
                 web = @{ image = $env:IMAGEM_APP; environment = $vars; command = $comando
                     ports = @($porta) }
                 agendador = @{ environment = $vars }
+            }
+            volumes = @{
+                'banco-dados' = @{ name = "$($env:PROJETO_COMPOSE)_banco-dados" }
+                'perfil-navegador' = @{ name = "$($env:PROJETO_COMPOSE)_perfil-navegador" }
             }
         } | ConvertTo-Json -Depth 8 -Compress)
     }
@@ -143,7 +150,7 @@ try {
     Recusa { Executar } 'destacado'
     Git-Teste checkout -q --detach v1.0.0
     Executar
-    if ($global:AlmoxTesteChamadas | Where-Object { $_ -notmatch ' ps --status running --services$|config --format json$|^context show$|^ps -a -q --filter label=com\.docker\.compose\.project=almoxarifado_prod$|^volume ls --quiet --filter label=com\.docker\.compose\.project=almoxarifado_prod$' }) {
+    if ($global:AlmoxTesteChamadas | Where-Object { $_ -notmatch ' ps --status running --services$|config --format json$|^context show$|^ps -a -q --filter label=com\.docker\.compose\.project=almoxarifado_prod$|^volume ls --quiet --filter label=com\.docker\.compose\.project=almoxarifado_prod$|^volume ls --quiet$' }) {
         throw 'Planejamento deve apenas consultar os servicos do projeto.'
     }
     # -notmatch ignora maiusculas: digest e versao precisam da comparacao exata.
@@ -180,6 +187,16 @@ try {
     }
     $global:AlmoxTesteVolumes = @()
     $global:AlmoxTesteOrigemVolume = @()
+    # Volume criado fora do Compose (sem rotulo) com o nome que a configuracao usa: o Compose o
+    # reutilizaria, entao tambem precisa de origem comprovada. Volume de outro nome nao conta.
+    $global:AlmoxTesteVolumesExistentes = @('gis-stack_dados', 'almoxarifado_prod_banco-dados')
+    Recusa { Executar } 'comprove a origem'
+    $global:AlmoxTesteOrigemVolume = @(($global:AlmoxTesteDestino + '\'))
+    Executar
+    $global:AlmoxTesteVolumesExistentes = @('gis-stack_dados', 'almoxarifado-prod_banco-dados')
+    $global:AlmoxTesteOrigemVolume = @()
+    Executar
+    $global:AlmoxTesteVolumesExistentes = @()
     # Compose no Windows pode emitir uma linha vazia quando nao ha servicos.
     foreach ($saidaVazia in @('', " `t")) {
         $global:AlmoxTesteServicos = @($saidaVazia)
@@ -215,6 +232,15 @@ try {
     $global:AlmoxTesteServicos = @()
     $global:AlmoxTesteToken = 'token-que-nao-pode-enviar'
     Recusa { Executar -Aplicar } 'integracoes vazias'
+    # Producao em operacao (deploy/AMBIENTES.md): o planejamento tambem leva -AtivarOperacao e
+    # aceita o agendador rodando; sem a opcao, recusa pelas integracoes preenchidas.
+    $global:AlmoxTesteServicos = @('web', 'banco', 'agendador')
+    Recusa { Executar } 'integracoes vazias'
+    Executar -AtivarOperacao
+    if ($global:AlmoxTesteChamadas | Where-Object { $_ -match ' (pull|build|run|up|stop|down|restart) ' }) {
+        throw 'Planejamento com -AtivarOperacao nao pode alterar o Docker.'
+    }
+    $global:AlmoxTesteServicos = @()
     $global:AlmoxTesteToken = ''
     # O chat da Seguranca do Trabalho (spec 008) tambem conta como integracao.
     $global:AlmoxTesteChatSeguranca = '-100123'

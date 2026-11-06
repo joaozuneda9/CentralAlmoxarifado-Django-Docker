@@ -20,7 +20,7 @@ produz; só a partir dele vale a [atualização comum](#atualizar-a-produção-d
 | Perfil SCPI | Volume `almoxarifado_prod_perfil-navegador` | o mesmo volume | Volume `almoxarifado_perfil-navegador` |
 | Porta | `0.0.0.0:8012`, HTTP direto (`PORTA_PUBLICADA`) | `0.0.0.0:8012`, HTTP direto (`PORTA_WEB`, padrão 8012) | `127.0.0.1:8011` (`PORTA_WEB`, padrão 8011) |
 | Marcador `.deploy-ambiente` | **nenhum** | `producao` | `desenvolvimento` |
-| Como atualizar | à mão (trocar o digest, `migrate`, `up -d`) | `atualizar.ps1 -Ambiente producao` | `atualizar.ps1 -Ambiente desenvolvimento` |
+| Como atualizar | à mão (trocar o digest, `migrate`, `up -d`) | `atualizar.ps1 -Ambiente producao ... -AtivarOperacao` (planejar e aplicar) | `atualizar.ps1 -Ambiente desenvolvimento` |
 | Operação real | `LANCAMENTO_REAL=1`, SCPI e Telegram preenchidos, agendador ligado | igual | Integrações forçadas vazias pelo overlay, agendador nunca sobe |
 
 Volumes são prefixados pelo projeto, por isso o nome do projeto é o que escolhe
@@ -124,8 +124,23 @@ dentro de uma janela de manutenção:
    `compose.ambientes.yaml,compose.producao.yaml` e que o volume em uso é
    `almoxarifado_prod_banco-dados` (os dados de antes continuam lá).
 
-Rollback da passagem: o `compose.yaml` guardado no passo 1 e `docker compose -f
-compose.yaml up -d` na pasta, como antes. Voltar a imagem não desfaz migrations.
+Rollback da passagem, na mesma janela, em `C:\docker\producao`. Primeiro
+**restaurar o Compose** editado, e só depois subir, sempre com o projeto
+explícito (sem `-p`, o Compose tiraria o nome do arquivo ou da pasta e poderia
+criar outro projeto, com volumes novos e vazios):
+
+```powershell
+docker compose -p almoxarifado_prod stop agendador
+git switch --detach <tag anterior>          # a que rodava antes da passagem
+Copy-Item C:\docker\resguardo-producao-<data>\compose.yaml .\compose.yaml
+Remove-Item .deploy-ambiente                # volta ao estado inicial
+docker compose -p almoxarifado_prod -f compose.yaml up -d
+```
+
+O `compose.yaml` restaurado traz o digest da imagem de antes. Voltar a imagem
+não desfaz migrations: confira antes que a versão anterior aceita o banco já
+migrado. Depois, conferir que `docker compose ls` mostra `almoxarifado_prod`
+com `compose.yaml` e que o volume em uso continua `almoxarifado_prod_banco-dados`.
 
 ## Atualizar a produção (depois da passagem)
 
@@ -143,13 +158,17 @@ git fetch origin --tags
 git switch --detach vX.Y.Z
 git status   # precisa estar limpo
 $imagem = 'ghcr.io/joaozuneda9/centralalmoxarifado-django-docker@sha256:<digest>'
-.\deploy\atualizar.ps1 -Ambiente producao -Versao vX.Y.Z -Imagem $imagem
+.\deploy\atualizar.ps1 -Ambiente producao -Versao vX.Y.Z -Imagem $imagem -AtivarOperacao
 ```
 
+A produção tem integrações preenchidas e `LANCAMENTO_REAL=1`, então **o
+planejamento também leva `-AtivarOperacao`**: sem ele, o script recusa
+("Preparacao exige integracoes vazias e LANCAMENTO_REAL=0"). No planejamento, o
+agendador pode continuar rodando.
+
 Revisar o plano. Na janela combinada (sem usuários gravando nem robôs
-rodando), parar **só o agendador deste projeto** e aplicar. A produção tem
-integrações preenchidas, então toda aplicação usa `-AtivarOperacao`, que também
-religa o agendador no fim:
+rodando), parar **só o agendador deste projeto** e aplicar, de novo com
+`-AtivarOperacao`, que também religa o agendador no fim:
 
 ```powershell
 docker compose -p almoxarifado_prod stop agendador
