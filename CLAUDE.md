@@ -701,7 +701,9 @@ transações precisam se comportar como no servidor.
   (`mesmo_arquivo_que`) passaram dos 60 dias (`arquivo_apagado_em`; a impressão fica) e apaga as
   requisições de extrações com mais de 60 dias que nenhuma conferência liga (a ligada ou a outra do
   conflito) nem lista como candidata. Roda com a trava das extrações `REQUISICOES` (uma extração nova
-  pode estar apontando para o bruto) e, com ela ocupada, fica para a próxima.
+  pode estar apontando para o bruto) e a da conciliação (nenhuma liga uma requisição no meio da
+  exclusão); com alguma ocupada, fica para a próxima. Uma falha da conciliação, prevista ou não, não
+  impede a limpeza, e as duas falhas saem juntas no erro do comando.
 - `implantacao` (sem modelos nem migrations) guarda o backup, o `robos_em_andamento` e a carga
   do de/para. A migração única das planilhas do Apps Script (`importar_planilhas`, com
   `conversao.py` e `migracao.py`) foi feita e removida; o código fica na tag `v1.0.1`. Do que ela

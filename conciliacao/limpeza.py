@@ -15,6 +15,7 @@ from django.utils import timezone
 
 from catalogo.models import Importacao, trava_importacao
 from conciliacao.models import Candidata, ConferenciaLote, ExtracaoOficial, RequisicaoOficial
+from conciliacao.servicos import ConciliacaoEmAndamento, trava_conciliacao
 from scpi.execucao import trava
 
 RETENCAO = timedelta(days=60)
@@ -39,15 +40,21 @@ class Limpeza:
 
 
 def limpar(agora: datetime | None = None) -> Limpeza | None:
-    """Apaga o que passou da retenção. Roda com a trava das extrações de requisições: uma extração
-    nova pode estar apontando para um bruto (`mesmo_arquivo_que`) que esta limpeza esvaziaria.
-    Com a trava ocupada, não faz nada e devolve None (a próxima limpeza faz)."""
+    """Apaga o que passou da retenção. Roda com duas travas: a das extrações de requisições (uma
+    extração nova pode estar apontando para um bruto, `mesmo_arquivo_que`, que esta limpeza
+    esvaziaria) e a da conciliação, com a espera de sempre (nenhuma conciliação liga uma
+    requisição entre a escolha das soltas e a exclusão delas). Com alguma ocupada, não faz nada e
+    devolve None: a próxima limpeza faz."""
     agora = agora or timezone.now()
     corte = agora - RETENCAO
     with trava(trava_importacao(Importacao.Tipo.REQUISICOES)) as obtida:
         if not obtida:
             return None
-        return Limpeza(_brutos(corte, agora), _requisicoes(corte))
+        try:
+            with trava_conciliacao():
+                return Limpeza(_brutos(corte, agora), _requisicoes(corte))
+        except ConciliacaoEmAndamento:
+            return None
 
 
 def _brutos(corte: datetime, agora: datetime) -> int:

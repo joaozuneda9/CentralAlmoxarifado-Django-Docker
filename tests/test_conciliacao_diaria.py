@@ -186,3 +186,65 @@ def test_limpeza_espera_a_extracao_em_andamento(scpi, trava_importacao_ocupada):
     assert limpar() is None
     origem.refresh_from_db()
     assert origem.arquivo is not None
+
+
+@pytest.mark.django_db
+def test_limpeza_espera_a_conciliacao_em_andamento(scpi, monkeypatch):
+    from django.db import connections
+
+    from conciliacao import servicos
+
+    origem = extracao(scpi)
+    envelhecer(origem)
+    monkeypatch.setattr(servicos, "ESPERA_TRAVA_S", 0)
+    outra = connections.create_connection("default")
+    try:
+        with outra.cursor() as cursor:
+            cursor.execute("SELECT GET_LOCK(%s, 0)", [servicos.TRAVA_CONCILIACAO])
+        assert limpar() is None
+    finally:
+        outra.close()
+    origem.refresh_from_db()
+    assert origem.arquivo is not None
+
+
+COMANDO = "conciliacao.management.commands.conciliar_lancamentos"
+
+
+@pytest.fixture
+def comando_com_scpi(scpi, monkeypatch):
+    scpi.requisicao_manual(timezone.localdate(), tipo="OUTRA")
+    monkeypatch.setattr(f"{COMANDO}.relatorios.baixar_requisicoes", scpi.relatorio)
+    return scpi
+
+
+@pytest.mark.django_db
+def test_limpeza_roda_mesmo_com_falha_inesperada_da_conciliacao(comando_com_scpi, monkeypatch):
+    limpezas = []
+
+    def quebra(extracao):
+        raise RuntimeError("banco fora do ar")
+
+    monkeypatch.setattr(f"{COMANDO}.conciliar", quebra)
+    monkeypatch.setattr(f"{COMANDO}.limpar", lambda: limpezas.append(1))
+    with pytest.raises(CommandError, match="Conciliação com o SCPI falhou: banco fora do ar"):
+        call_command("conciliar_lancamentos")
+    assert limpezas == [1]
+
+
+@pytest.mark.django_db
+def test_falha_da_conciliacao_e_da_limpeza_saem_juntas(comando_com_scpi, monkeypatch):
+    from conciliacao.servicos import ConciliacaoIncompleta
+
+    def incompleta(extracao):
+        raise ConciliacaoIncompleta({}, ["lotes lançados: tabela indisponível"])
+
+    def quebra_limpeza():
+        raise RuntimeError("disco cheio")
+
+    monkeypatch.setattr(f"{COMANDO}.conciliar", incompleta)
+    monkeypatch.setattr(f"{COMANDO}.limpar", quebra_limpeza)
+    with pytest.raises(CommandError) as erro:
+        call_command("conciliar_lancamentos")
+    assert "tabela indisponível" in str(erro.value)
+    assert "Limpeza de 60 dias falhou: disco cheio" in str(erro.value)

@@ -1,3 +1,4 @@
+import logging
 from datetime import timedelta
 
 from django.core.management import BaseCommand, CommandError
@@ -20,6 +21,9 @@ from scpi import relatorios
 from scpi.execucao import ImportacaoEmAndamento
 from scpi.leitura import ErroImportacao, ler_requisicoes
 from scpi.management.comum import data_opcao, obter_csv
+
+logger = logging.getLogger("scpi")
+LIMPEZA_ADIADA = "adiada (extração ou conciliação em andamento)"
 
 # A extração diária e a conferência pela tela voltam 9 dias (spec 010, decisão 8).
 DIAS_DE_REVISAO = 9
@@ -106,25 +110,32 @@ class Command(BaseCommand):
             raise CommandError("Extração de requisições do SCPI já em andamento.") from None
         if not extracao.bem_sucedida:
             raise CommandError(extracao.importacao.erro)
-        erro = None
+        erros = []
+        contagem = {}
         try:
             contagem = conciliar(extracao)
         except ConciliacaoEmAndamento as exc:
-            erro = str(exc)
+            erros.append(str(exc))
         except ConciliacaoIncompleta as exc:
             parcial = resumo_da_contagem(exc.contagem) or "nada gravado"
-            erro = f"{exc} (gravado: {parcial})."
-        # A limpeza roda mesmo com a conciliação incompleta: ela não depende dos vereditos de
-        # agora, e uma falha que se repetisse todo dia nunca deixaria apagar nada.
+            erros.append(f"{exc} (gravado: {parcial}).")
+        except Exception as exc:
+            logger.exception("Conciliação com o SCPI falhou")
+            erros.append(f"Conciliação com o SCPI falhou: {exc}.")
+        # A limpeza roda mesmo com a conciliação com falha: ela não depende dos vereditos de
+        # agora, e uma falha que se repetisse todo dia nunca deixaria apagar nada. A falha dela
+        # também não esconde a da conciliação: as duas saem no erro do comando.
         if not sem_limpeza:
-            limpeza = limpar()
-            self.stdout.write(
-                "Limpeza: "
-                + (limpeza.resumo if limpeza else "adiada (outra extração em andamento)")
-                + "."
-            )
-        if erro:
-            raise CommandError(erro)
+            try:
+                limpeza = limpar()
+            except Exception as exc:
+                logger.exception("Limpeza de 60 dias da conciliação falhou")
+                erros.append(f"Limpeza de 60 dias falhou: {exc}.")
+            else:
+                resumo = limpeza.resumo if limpeza else LIMPEZA_ADIADA
+                self.stdout.write(f"Limpeza: {resumo}.")
+        if erros:
+            raise CommandError(" ".join(erros))
         self.stdout.write(
             f"Requisições do SCPI ({de:%d/%m/%Y} a {ate:%d/%m/%Y}): {extracao.requisicoes}. "
             f"Conciliação: {resumo_da_contagem(contagem) or 'nenhum lote a conferir'}."
