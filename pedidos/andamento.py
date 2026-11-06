@@ -5,6 +5,8 @@ o banco. O `resumo` pode estar vazio (`{}`) quando a execução falhou antes de 
 toda leitura dele passa por `_num`.
 """
 
+import math
+import re
 from dataclasses import dataclass
 from datetime import datetime, timedelta
 
@@ -180,3 +182,411 @@ def explicar_falha(execucao) -> Falha | None:
     else:
         proximo = "Confira as travas abaixo antes de lançar de novo."
     return Falha(o_que, ate_onde, proximo, tecnico, simular_de_novo=execucao.simulacao)
+
+
+# --- Acompanhamento por requisição -------------------------------------------------------------
+#
+# Desde que o robô grava a lista das requisições no `resumo` (`lotes`, `fase`; scpi.lancamento),
+# a aba mostra cada uma com o resultado, a etapa atual em português e quanto falta. A execução
+# gravada antes disso (sem `lotes`) continua no cartão de uma frase.
+
+PARADO_S = 60  # sem nenhuma linha nova no registro por esse tempo, o cartão avisa
+NOMES_FASES = ("Ler o SCPI antes", "Lançar as requisições", "Conferir o que foi gravado")
+ORDEM_FASES = ("antes", "lancando", "depois")
+
+# A última linha reconhecida do registro da requisição atual vira a etapa; a primeira regra que
+# casar vence (a ordem importa: "conferência final: 17 item(ns)" não é um item).
+_ETAPAS = (
+    ("reabrindo", "Preparando o SCPI para a próxima requisição"),
+    ("[DRY-RUN]", "Descartando sem salvar"),
+    ("etapa: salvar no SCPI", "Salvando no SCPI"),
+    ("conferência final", "Conferindo o que foi digitado"),
+    ("etapa: itens", "Preenchendo os materiais"),
+    ("etapa: cabeçalho", "Preenchendo o cabeçalho"),
+    ("etapa: abrir formulário", "Abrindo o formulário"),
+    ("→ (", "Abrindo o formulário"),
+)
+_ITEM = re.compile(r"\bitem (\d+)/(\d+)\b")
+_HORA = re.compile(r"^(\d\d):(\d\d):(\d\d) ")
+_RESPOSTA_SCPI = re.compile(r"respondeu ao Salvar: '([^']+)'")
+
+
+def etapa_do_log(log: str) -> str:
+    """A etapa da requisição atual em português, pela última linha reconhecida do registro."""
+    linhas = (log or "").splitlines()
+    for linha in reversed(linhas):
+        item = _ITEM.search(linha)
+        if item and "conferência final" not in linha:
+            return f"Preenchendo o item {item.group(1)} de {item.group(2)}"
+        for marca, texto in _ETAPAS:
+            if marca in linha:
+                return texto
+        if "→ (" in linha:  # começo da requisição atual: não olha a anterior
+            break
+    return "Trabalhando nesta requisição"
+
+
+def ultima_atividade(log: str, agora: datetime) -> int | None:
+    """Segundos desde a última linha do registro com horário (a hora vem no começo dela, no
+    horário local; o rastro de uma exceção continua em linhas sem ela); None sem nenhuma."""
+    hora = next(
+        (achada for linha in reversed((log or "").splitlines()) if (achada := _HORA.match(linha))),
+        None,
+    )
+    if hora is None:
+        return None
+    local = timezone.localtime(agora)
+    h, m, s = (int(g) for g in hora.groups())
+    momento_ = local.replace(hour=h, minute=m, second=s, microsecond=0)
+    if momento_ > local + timedelta(minutes=1):  # linha de antes da meia-noite
+        momento_ -= timedelta(days=1)
+    return max(int((local - momento_).total_seconds()), 0)
+
+
+def _quando(texto: str) -> datetime | None:
+    return datetime.fromisoformat(texto) if texto else None
+
+
+def _vai_ao_scpi(item: dict) -> bool:
+    """Lote que o robô processa (ou processaria): os travados e inválidos nunca vão."""
+    return bool(item.get("inicio")) or item.get("resultado") in ("aguardando", "andamento")
+
+
+def _segundos(segundos: int) -> str:
+    agora = timezone.now()
+    return duracao(agora - timedelta(seconds=segundos), agora)
+
+
+def estimativa(lotes: list[dict], agora: datetime) -> str | None:
+    """Quanto falta, pelo tempo médio das requisições já concluídas; None antes da primeira ou
+    sem nada por fazer."""
+    tempos = [
+        (_quando(i["fim"]) - _quando(i["inicio"])).total_seconds()
+        for i in lotes
+        if i.get("inicio") and i.get("fim")
+    ]
+    aguardando = sum(1 for i in lotes if i.get("resultado") == "aguardando")
+    atual = next((i for i in lotes if i.get("resultado") == "andamento"), None)
+    if not tempos or not (aguardando or atual):
+        return None
+    media = sum(tempos) / len(tempos)
+    falta = media * aguardando
+    if atual and atual.get("inicio"):
+        falta += max(media - (agora - _quando(atual["inicio"])).total_seconds(), 0)
+    if falta < 60:
+        return "falta menos de 1 min"
+    return f"faltam cerca de {math.ceil(falta / 60)} min"
+
+
+@dataclass(frozen=True)
+class Fase:
+    nome: str
+    estado: str  # "feita", "atual", "parou" ou "" (ainda não)
+    texto: str
+
+
+@dataclass(frozen=True)
+class LinhaRequisicao:
+    lote: str
+    recebedor: str
+    centro: str
+    itens: int
+    estado: str  # ok, aviso, erro, fora, atual, espera
+    icone: str  # nome do _icone.html; vazio nas marcas desenhadas (atual, espera)
+    texto: str
+    requisicao: str
+    detalhe: str
+
+
+@dataclass(frozen=True)
+class Agora:
+    rotulo: str
+    linha: LinhaRequisicao | None
+    etapa: str
+    atividade: str
+    parado: bool
+
+
+@dataclass(frozen=True)
+class Desfecho:
+    tipo: str  # "ok" ou "atencao"
+    titulo: str
+    texto: str
+    travas: int  # quantas foram para as travas (botão "Ver as travas")
+
+
+@dataclass(frozen=True)
+class Acompanhamento:
+    titulo: str
+    iniciado: str  # "Iniciado" ou "Iniciada", concorda com o modo
+    quando: str  # "hoje às 12:25"
+    tempo: str  # "4 min decorridos", "levou 8 min 35 s"
+    em_andamento: bool
+    fases: list[Fase]
+    feitas: int
+    total: int
+    barra: dict
+    estimativa: str | None
+    agora: Agora | None
+    linhas: list[LinhaRequisicao]
+    contagem: str
+    desfecho: Desfecho | None
+
+
+def _detalhe_verificar(mensagem: str) -> str:
+    texto = "O robô não sabe se ela foi gravada."
+    if resposta := _RESPOSTA_SCPI.search(mensagem or ""):
+        texto += f" O SCPI respondeu: “{resposta.group(1).strip()[:140]}”"
+    return texto
+
+
+def _primeira_linha(mensagem: str, limite: int = 200) -> str:
+    linhas = (mensagem or "").strip().splitlines()
+    return linhas[0][:limite] if linhas else ""
+
+
+def _linha(item: dict, simulacao: bool, rodando: bool) -> LinhaRequisicao:
+    resultado = item.get("resultado")
+    requisicao, detalhe = "", ""
+    if resultado == "lancada":
+        estado, icone, texto, requisicao = "ok", "check", "Lançada", item.get("requisicao", "")
+    elif resultado == "simulada":
+        estado, icone, texto = "ok", "check", "Preenchida e conferida"
+    elif resultado == "verificar":
+        estado, icone, texto = "aviso", "alerta", "Conferir no SCPI"
+        detalhe = _detalhe_verificar(item.get("mensagem", ""))
+    elif resultado == "erro":
+        estado, icone = "erro", "fechar"
+        texto = "Não foi possível preencher" if simulacao else "Com erro, não foi salva"
+        detalhe = _primeira_linha(item.get("mensagem", ""))
+    elif resultado == "ignorada":
+        estado, icone, texto = "fora", "menos", "Deixada de fora"
+        detalhe = _primeira_linha(item.get("mensagem", ""))
+    elif resultado == "andamento" and rodando:
+        estado, icone, texto = "atual", "", "Em andamento"
+    elif resultado == "andamento":
+        estado, icone, texto = "erro", "alerta", "O robô parou nesta requisição"
+        detalhe = "Nada foi salvo." if simulacao else "Confira nas travas se ela foi gravada."
+    elif rodando:
+        estado, icone, texto = "espera", "", "Aguardando"
+    else:
+        estado, icone, texto = "fora", "menos", "Não chegou a ser processada"
+    return LinhaRequisicao(
+        lote=item.get("lote", ""),
+        recebedor=item.get("recebedor", ""),
+        centro=item.get("centro", ""),
+        itens=int(item.get("itens") or 0),
+        estado=estado,
+        icone=icone,
+        texto=texto,
+        requisicao=requisicao,
+        detalhe=detalhe,
+    )
+
+
+def _fases(execucao, rodando: bool, parou: bool, feitas: int, total: int) -> list[Fase]:
+    if execucao.simulacao or not total:  # sem requisição para o SCPI, nenhuma fase rodou
+        return []
+    fase = (execucao.resumo or {}).get("fase") or "lancando"
+    atual = ORDEM_FASES.index(fase) if fase in ORDEM_FASES else 1
+    fases = []
+    for i, nome in enumerate(NOMES_FASES):
+        if not rodando and not parou:
+            estado = "feita"
+        elif i < atual:
+            estado = "feita"
+        elif i == atual:
+            estado = "atual" if rodando else "parou"
+        else:
+            estado = ""
+        if i == 1 and estado in ("feita", "atual"):
+            texto = f"{feitas} de {total} feitas"
+        else:
+            texto = {"feita": "Feito", "atual": "Lendo agora", "parou": "Parou aqui"}.get(
+                estado, ""
+            )
+        fases.append(Fase(nome, estado, texto))
+    return fases
+
+
+def _agora(execucao, linhas, agora: datetime) -> Agora:
+    fase = (execucao.resumo or {}).get("fase")
+    linha = next((linha for linha in linhas if linha.estado == "atual"), None)
+    if fase == "antes":
+        rotulo, linha = "Antes de lançar", None
+        etapa = "Lendo no SCPI as requisições já gravadas, para conferir tudo depois"
+    elif fase == "depois":
+        rotulo, linha = "Depois de lançar", None
+        etapa = "Lendo no SCPI o que foi gravado, para conferir com o que o robô lançou"
+    else:
+        rotulo = "Agora"
+        etapa = etapa_do_log(execucao.log) if linha else "Abrindo o SCPI"
+    segundos = ultima_atividade(execucao.log, agora)
+    parado = segundos is not None and segundos >= PARADO_S
+    if parado:
+        rotulo = f"Sem novidade há {_segundos(segundos)}"
+        atividade = (
+            "O SCPI às vezes demora para responder. Se passar de 5 min sem novidade, avise quem "
+            "cuida do sistema."
+        )
+    elif segundos is not None:
+        atividade = f"Última atividade há {_segundos(segundos)}"
+    else:
+        atividade = ""
+    return Agora(rotulo, linha, etapa, atividade, parado)
+
+
+def _contagem(linhas, simulacao: bool) -> str:
+    def conta(estado_ou_texto):
+        return sum(1 for linha in linhas if estado_ou_texto(linha))
+
+    partes = []
+    ok = conta(lambda linha: linha.estado == "ok")
+    if ok:
+        partes.append(
+            _plural(ok, "preenchida", "preenchidas")
+            if simulacao
+            else _plural(ok, "lançada", "lançadas")
+        )
+    for n, texto in (
+        (conta(lambda linha: linha.estado == "aviso"), "para conferir"),
+        (conta(lambda linha: linha.estado == "erro"), "com erro"),
+    ):
+        if n:
+            partes.append(f"{n} {texto}")
+    fora = conta(lambda linha: linha.estado == "fora")
+    if fora:
+        partes.append(_plural(fora, "deixada de fora", "deixadas de fora"))
+    espera = conta(lambda linha: linha.estado == "espera")
+    if espera:
+        partes.append(f"{espera} aguardando")
+    return " · ".join(partes)
+
+
+def _desfecho(execucao, linhas) -> Desfecho | None:
+    """O resultado da execução com o próximo passo (só depois do fim, sem falha)."""
+    if not linhas:
+        return None
+    verificar = sum(1 for linha in linhas if linha.estado == "aviso")
+    erros = sum(1 for linha in linhas if linha.estado == "erro")
+    ok = sum(1 for linha in linhas if linha.estado == "ok")
+    if execucao.simulacao:
+        if erros:
+            titulo = (
+                "1 requisição não pôde ser preenchida."
+                if erros == 1
+                else f"{erros} requisições não puderam ser preenchidas."
+            )
+            return Desfecho("atencao", titulo, "Veja o motivo na lista. Nenhuma linha mudou.", 0)
+        if not ok:
+            return Desfecho("atencao", "Nenhuma requisição foi preenchida.", NENHUMA, 0)
+        if ok == 1:
+            return Desfecho(
+                "ok",
+                "A requisição foi preenchida e conferida no SCPI, sem salvar.",
+                "Nenhuma linha mudou: ela continua na fila, pronta para lançar.",
+                0,
+            )
+        return Desfecho(
+            "ok",
+            f"As {ok} requisições foram preenchidas e conferidas no SCPI, sem salvar.",
+            "Nenhuma linha mudou: elas continuam na fila, prontas para lançar.",
+            0,
+        )
+    if verificar or erros:
+        textos = []
+        if verificar:
+            titulo = (
+                "1 requisição precisa ser conferida no SCPI."
+                if verificar == 1
+                else f"{verificar} requisições precisam ser conferidas no SCPI."
+            )
+            gravada = "ela foi gravada" if verificar == 1 else "elas foram gravadas"
+            textos.append(
+                f"O robô não sabe se {gravada}. Confira nas travas antes de lançar de novo."
+            )
+        else:
+            titulo = "1 requisição com erro." if erros == 1 else f"{erros} requisições com erro."
+        if erros:
+            erro = (
+                "1 requisição teve erro e não foi salva"
+                if erros == 1
+                else f"{erros} requisições tiveram erro e não foram salvas"
+            )
+            textos.append(f"{erro}: veja o motivo na lista e resolva nas travas.")
+        return Desfecho("atencao", titulo, " ".join(textos), verificar + erros)
+    if not ok:
+        return Desfecho("atencao", "Nenhuma requisição foi lançada.", NENHUMA, 0)
+    if ok == 1:
+        return Desfecho("ok", "A requisição foi lançada no SCPI.", "", 0)
+    return Desfecho("ok", f"As {ok} requisições foram lançadas no SCPI.", "", 0)
+
+
+NENHUMA = "Veja na lista por que cada uma ficou de fora."
+
+
+def _titulo(execucao, rodando: bool, interrompida: bool) -> str:
+    modo = "Simulação" if execucao.simulacao else "Lançamento"
+    if rodando:
+        return f"{modo} em andamento"
+    if interrompida:
+        return f"{modo} {_feminino(execucao, 'interrompid')}"
+    Situacao = execucao.Situacao
+    if execucao.situacao == Situacao.FALHA:
+        return f"{modo} falhou"
+    titulo = f"{modo} {_feminino(execucao, 'concluíd')}"
+    if execucao.situacao == Situacao.ATENCAO:
+        titulo += " com pendências"
+    return titulo
+
+
+def acompanhamento(execucao, agora: datetime, interrompida: bool) -> Acompanhamento | None:
+    """A execução por requisição, para o cartão da aba Lançamento no SCPI; None na execução
+    gravada antes da lista de requisições no `resumo`."""
+    resumo = execucao.resumo or {}
+    if "lotes" not in resumo:
+        return None
+    rodando = execucao.situacao == execucao.Situacao.ANDAMENTO and not interrompida
+    parou = interrompida or execucao.situacao == execucao.Situacao.FALHA
+    itens = resumo["lotes"]
+    linhas = [_linha(item, execucao.simulacao, rodando) for item in itens]
+    no_scpi = [
+        (item, linha) for item, linha in zip(itens, linhas, strict=True) if _vai_ao_scpi(item)
+    ]
+    total = len(no_scpi)
+    feitas = sum(1 for item in itens if item.get("fim"))
+
+    def parte(estado):
+        # "fora" só conta a que foi processada (com fim): a não processada não enche a barra.
+        n = sum(
+            1
+            for item, linha in no_scpi
+            if linha.estado == estado and (estado != "fora" or item.get("fim"))
+        )
+        return round(100 * n / total, 2) if total else 0.0
+
+    barra = {estado: parte(estado) for estado in ("ok", "aviso", "erro", "fora", "atual")}
+    if rodando:
+        tempo = f"{duracao(execucao.inicio, agora)} decorridos"
+        prevista = estimativa(itens, agora)
+        if prevista is None and total and feitas < total:
+            prevista = "a estimativa aparece depois da primeira requisição"
+    else:
+        tempo = f"levou {duracao(execucao.inicio, execucao.fim)}" if execucao.fim else ""
+        prevista = None
+    return Acompanhamento(
+        titulo=_titulo(execucao, rodando, interrompida),
+        iniciado="Iniciada" if execucao.simulacao else "Iniciado",
+        quando=momento(execucao.inicio, agora).replace(", ", " às "),
+        tempo=tempo,
+        em_andamento=rodando,
+        fases=_fases(execucao, rodando, parou, feitas, total),
+        feitas=feitas,
+        total=total,
+        barra=barra,
+        estimativa=prevista,
+        agora=_agora(execucao, linhas, agora) if rodando else None,
+        linhas=linhas,
+        contagem=_contagem(linhas, execucao.simulacao),
+        desfecho=None if (rodando or parou) else _desfecho(execucao, linhas),
+    )

@@ -560,7 +560,16 @@ transações precisam se comportar como no servidor.
   em processo separado (`scpi/disparo.py`, saída em `logs/lancar_saidas.log`). Logo abaixo dos
   botões fica a fila do robô (`consultas.fila_do_robo`: todas as requisições, sem corte, em SQL que
   repete `requisicoes.agrupar`, a regra única do que está na fila; `tests/test_consultas_fila.py`
-  confere que concordam). A última execução vira uma frase, com quem iniciou, a duração e só os
+  confere que concordam). O andamento da última execução (`pedidos/_andamento.html`) fica no topo
+  da aba enquanto o robô roda e nos 10 minutos depois do fim (`ANDAMENTO_NO_TOPO`), senão abaixo da
+  fila. O robô grava no `resumo` (JSON, sem migration) a `fase` (`antes`, `lancando`, `depois`) e
+  `lotes`, um item por lote escolhido com o `resultado` (`scpi.lancamento.RESULTADOS`), atualizado
+  no início e no fim de cada um; `andamento.acompanhamento` (puro) faz disso o cartão: as fases do
+  lançamento real, "N de M" com a barra e a estimativa pelo tempo médio, o bloco "Agora" com a
+  etapa em português lida da última linha do registro (`etapa_do_log`; a navegação do SCPI não
+  muda) e o aviso "Sem novidade" depois de 1 min sem linha nova, a lista das requisições com o
+  resultado e o desfecho com o próximo passo; o registro técnico fica sempre recolhido. A execução
+  gravada antes da lista (sem `lotes`) continua numa frase, com quem iniciou, a duração e só os
   contadores diferentes de zero (`pedidos/andamento.py`, puro); a falha é explicada em português
   (`explicar_falha`: erro conhecido como vem, "Falha inesperada:" vira erro do sistema ou demora
   do SCPI, processo que não subiu vira "não chegou a iniciar"), com o texto técnico e o registro

@@ -1,7 +1,8 @@
 {% load interface_extras %}
 {% comment %}
 Aba Lançamento no SCPI de Automações: formulário único (a fila com as requisições a marcar e os botões "Simular" e "Lançar no SCPI"),
-andamento da última execução do robô e travas para conferir (as execuções anteriores ficam no
+andamento da última execução do robô (pedidos/_andamento.html: no topo enquanto o robô roda e nos
+10 minutos depois do fim, senão abaixo da fila) e travas para conferir (as execuções anteriores ficam no
 histórico da visão geral). Enquanto houver execução em andamento, o HTMX recarrega este trecho a
 cada 3 s (a view o escolhe pelo HX-Target `section#lancamentos`). Quando a execução termina, a resposta seguinte já vem sem
 `hx-trigger`: a atualização para e os formulários de resolução, que só aparecem sem execução
@@ -9,6 +10,7 @@ em andamento, nunca ficam numa seção recarregada (perderiam o que o usuário d
 "Não lançar" fica junto deles.
 {% endcomment %}
 <section id="lancamentos" class="pilha-larga"{% if acompanhar_lancamento %} hx-get="{% url 'automacoes:pagina' %}" hx-trigger="every 3s" hx-swap="outerHTML"{% endif %}>
+  {% if andamento_no_topo %}{% include "pedidos/_andamento.html" %}{% endif %}
   <div class="cartao pilha">
     {# Um formulário só, com a fila: as requisições marcadas dizem o que o robô processa e o botão clicado diz o modo. Sem nenhuma marcada, os botões ficam desabilitados (fila-robo.js) e o servidor recusa o envio. A ação em destaque é a que dá para executar agora: "Simular" com o lançamento real bloqueado (LANCAMENTO_REAL), "Lançar no SCPI" com ele liberado. Bloqueado, o "Lançar no SCPI" fica aria-disabled e type="button", como no cartão do painel: continua no Tab e mostra o motivo numa dica, sem enviar nada. Com JavaScript, o lançamento real passa por uma confirmação (#dialogo-lancar). #}
     <form method="post" action="{% url 'automacoes:lancar' %}" id="fila-form" class="fila-form" data-fila-robo>
@@ -78,53 +80,7 @@ em andamento, nunca ficam numa seção recarregada (perderiam o que o usuário d
     {% endif %}
   </div>
 
-  {# A última execução numa frase (pedidos/andamento.py), com quem iniciou e a duração; só os contadores diferentes de zero. A falha vem explicada em português, com o texto técnico recolhido. #}
-  {% if execucao %}
-  <div class="cartao pilha" id="andamento">
-    <div class="andamento-topo">
-      <h2 class="cartao-titulo">Andamento</h2>
-      {% if andamento.interrompida %}<span class="selo selo-aviso">Interrompida</span>
-      {% elif execucao.situacao == "FALHA" %}<span class="selo selo-erro">{{ execucao.get_situacao_display }}</span>
-      {% elif execucao.situacao == "ATENCAO" %}<span class="selo selo-aviso">{{ execucao.get_situacao_display }}</span>
-      {% elif execucao.situacao == "SUCESSO" %}<span class="selo selo-ok">{{ execucao.get_situacao_display }}</span>
-      {% else %}<span class="selo selo-info">{{ execucao.get_situacao_display }}</span>{% endif %}
-    </div>
-    <p class="andamento-frase">{{ andamento.frase }}</p>
-    <p class="texto-secundario texto-pequeno">Iniciada por {% if execucao.iniciada_por %}{{ execucao.iniciada_por.get_full_name|default:execucao.iniciada_por.username }}{% else %}linha de comando{% endif %}. Duração: {{ andamento.duracao }}.</p>
-    {% if andamento.contadores %}
-    <ul class="contadores">
-      {% for contador in andamento.contadores %}<li class="selo selo-neutro">{{ contador }}</li>{% endfor %}
-    </ul>
-    {% endif %}
-    {% with falha=andamento.falha %}
-    {% if falha %}
-    <div class="aviso aviso-erro" role="alert">{% include "interface/_icone.html" with nome="alerta" %}<div class="pilha-curta"><p><strong>{{ falha.frase|linebreaksbr }}</strong></p><p>{{ falha.ate_onde }} {{ falha.proximo_passo }}</p></div></div>
-    <div class="acoes">
-      {% if andamento.precisa_conferir %}<a class="botao botao-texto" href="#travas">Ver as travas</a>{% endif %}
-    </div>
-    {% if falha.tecnico %}
-    <details class="detalhe-tecnico">
-      <summary>Detalhe técnico</summary>
-      <pre class="log-execucao mono" tabindex="0">{{ execucao.erro }}{% if log_recente %}
-
-{{ log_recente }}{% endif %}</pre>
-    </details>
-    {% endif %}
-    {% elif andamento.precisa_conferir %}
-    <p><a href="#travas">Ver as travas</a></p>
-    {% endif %}
-    {% if log_recente and not falha.tecnico %}
-    <details class="detalhe-tecnico"{% if lancamento_em_andamento %} open{% endif %}>
-      <summary>Registro da execução</summary>
-      <pre class="log-execucao mono" tabindex="0">{{ log_recente }}</pre>
-    </details>
-    {% endif %}
-    {% endwith %}
-  </div>
-  {% else %}
-  <p class="texto-secundario" id="andamento">Nenhuma execução ainda.</p>
-  {% endif %}
-  <!-- /andamento -->
+  {% if not andamento_no_topo %}{% include "pedidos/_andamento.html" %}{% endif %}
 
   {% if travados %}
   <div class="cartao pilha" id="travas">

@@ -1,0 +1,129 @@
+{% comment %}
+Andamento da última execução do robô, na aba Lançamento no SCPI (incluído por _lancamentos.html no
+topo, enquanto o robô roda e logo depois do fim, ou abaixo da fila).
+
+Com a lista das requisições no resumo (`acomp`, pedidos/andamento.py `acompanhamento`): as fases do
+lançamento real, o "N de M" com a barra, o bloco "Agora" com a etapa em português e cada requisição
+com o resultado. O registro técnico fica sempre recolhido. A execução gravada antes da lista
+continua no cartão de uma frase (`andamento`).
+{% endcomment %}
+{% if execucao %}
+{% if acomp %}
+<div class="cartao acompanhamento" id="andamento">
+  <div class="acomp-topo">
+    <div>
+      <h2>{{ acomp.titulo }}</h2>
+      <p class="texto-secundario texto-pequeno">{{ acomp.iniciado }} por {% if execucao.iniciada_por %}{{ execucao.iniciada_por.get_full_name|default:execucao.iniciada_por.username }}{% else %}linha de comando{% endif %} {{ acomp.quando }}{% if acomp.tempo %} · {{ acomp.tempo }}{% endif %}</p>
+    </div>
+    {% include "pedidos/_andamento_selo.html" %}
+  </div>
+
+  {% if acomp.fases %}
+  <ol class="acomp-fases" aria-label="Etapas do lançamento">
+    {% for fase in acomp.fases %}
+    <li class="acomp-fase{% if fase.estado %} acomp-fase-{{ fase.estado }}{% endif %}"{% if fase.estado == "atual" %} aria-current="step"{% endif %}>
+      <span class="acomp-fase-marca">{% if fase.estado == "feita" %}{% include "interface/_icone.html" with nome="check" %}{% else %}{{ forloop.counter }}{% endif %}</span>
+      <span class="acomp-fase-nome">{{ fase.nome }}</span>
+      {% if fase.texto %}<span class="acomp-fase-estado">{{ fase.texto }}</span>{% endif %}
+    </li>
+    {% endfor %}
+  </ol>
+  {% endif %}
+
+  {% include "pedidos/_andamento_falha.html" %}
+
+  {% with d=acomp.desfecho %}{% if d %}
+  <div class="aviso {% if d.tipo == 'ok' %}aviso-ok{% else %}aviso-atencao{% endif %}"{% if d.tipo != 'ok' %} role="alert"{% endif %}>
+    {% if d.tipo == "ok" %}{% include "interface/_icone.html" with nome="check" %}{% else %}{% include "interface/_icone.html" with nome="alerta" %}{% endif %}
+    <div class="pilha-curta">
+      <p><strong>{{ d.titulo }}</strong></p>
+      {% if d.texto %}<p>{{ d.texto }}</p>{% endif %}
+      {% if d.travas %}<div class="acoes"><a class="botao botao-secundario" href="#travas">Ver as travas{% include "interface/_icone.html" with nome="seta-direita" %}</a></div>{% endif %}
+    </div>
+  </div>
+  {% endif %}{% endwith %}
+
+  {% if acomp.total %}
+  <div class="acomp-progresso">
+    <div class="acomp-progresso-linha">
+      <p class="acomp-numero">{{ acomp.feitas }} <small>de {{ acomp.total }} {{ acomp.total|pluralize:"requisição,requisições" }}</small></p>
+      {% if acomp.estimativa %}<p class="acomp-estimativa">{{ acomp.estimativa }}</p>{% endif %}
+    </div>
+    <div class="acomp-barra" role="progressbar" aria-label="Requisições processadas" aria-valuemin="0" aria-valuemax="{{ acomp.total }}" aria-valuenow="{{ acomp.feitas }}" aria-valuetext="{{ acomp.feitas }} de {{ acomp.total }}">
+      <span class="acomp-barra-ok" style="width: {{ acomp.barra.ok|stringformat:'s' }}%"></span><span class="acomp-barra-aviso" style="width: {{ acomp.barra.aviso|stringformat:'s' }}%"></span><span class="acomp-barra-erro" style="width: {{ acomp.barra.erro|stringformat:'s' }}%"></span><span class="acomp-barra-fora" style="width: {{ acomp.barra.fora|stringformat:'s' }}%"></span><span class="acomp-barra-atual" style="width: {{ acomp.barra.atual|stringformat:'s' }}%"></span>
+    </div>
+  </div>
+  {% endif %}
+
+  {% with a=acomp.agora %}{% if a %}
+  <div class="acomp-agora{% if a.parado %} acomp-agora-parado{% endif %}">
+    <p class="acomp-agora-rotulo">{{ a.rotulo }}</p>
+    {% if a.linha %}<p class="acomp-agora-req"><a class="mono" href="{% url 'pedidos:detalhe' a.linha.lote %}">{{ a.linha.lote }}</a><strong>{{ a.linha.recebedor }}</strong>{% if a.linha.centro %}<span class="texto-secundario texto-pequeno">Centro {{ a.linha.centro }} · {{ a.linha.itens }} {{ a.linha.itens|pluralize:"material,materiais" }}</span>{% endif %}</p>{% endif %}
+    <p class="acomp-agora-etapa"><span class="acomp-pulso" aria-hidden="true"></span><span>{{ a.etapa }}</span></p>
+    {% if a.atividade %}<p class="acomp-agora-atividade">{% if a.parado %}{% include "interface/_icone.html" with nome="info" %}{% else %}{% include "interface/_icone.html" with nome="relogio" %}{% endif %}<span>{{ a.atividade }}</span></p>{% endif %}
+  </div>
+  {% endif %}{% endwith %}
+
+  {% if acomp.linhas %}
+  <div class="pilha">
+    <div class="acomp-lista-titulo">
+      <h3>Requisições desta execução</h3>
+      {% if acomp.contagem %}<span class="texto-secundario texto-pequeno">{{ acomp.contagem }}</span>{% endif %}
+    </div>
+    <ol class="acomp-lista">
+      {% for linha in acomp.linhas %}
+      <li class="acomp-req acomp-req-{{ linha.estado }}"{% if linha.estado == "atual" %} aria-current="true"{% endif %}>
+        {% if linha.estado == "atual" %}<span class="acomp-marca-atual" aria-hidden="true"></span>{% elif linha.estado == "espera" %}<span class="acomp-marca-espera" aria-hidden="true"></span>{% else %}{% include "interface/_icone.html" with nome=linha.icone %}{% endif %}
+        <a class="mono" href="{% url 'pedidos:detalhe' linha.lote %}">{{ linha.lote }}</a>
+        <div class="acomp-req-nome">
+          <span>{{ linha.recebedor|default:"—" }}</span>
+          {% if linha.centro %}<span class="acomp-req-meta">Centro {{ linha.centro }} · {{ linha.itens }} {{ linha.itens|pluralize:"material,materiais" }}</span>{% endif %}
+        </div>
+        <div class="acomp-req-resultado">
+          <strong>{{ linha.texto }}{% if linha.requisicao %} · <span class="mono">{{ linha.requisicao }}</span>{% endif %}</strong>
+          {% if linha.detalhe %}<p>{{ linha.detalhe }}</p>{% endif %}
+        </div>
+      </li>
+      {% endfor %}
+    </ol>
+  </div>
+  {% endif %}
+
+  {% if log_recente and not andamento.falha.tecnico %}
+  {# Aberto, continua aberto e na mesma rolagem nas recargas de 3 s (fila-robo.js). #}
+  <details class="detalhe-tecnico" data-registro-tecnico>
+    <summary>Registro técnico</summary>
+    <pre class="log-execucao mono" tabindex="0">{{ log_recente }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% else %}
+{# A última execução numa frase (pedidos/andamento.py), com quem iniciou e a duração; só os contadores diferentes de zero. A falha vem explicada em português, com o texto técnico recolhido. #}
+<div class="cartao pilha" id="andamento">
+  <div class="andamento-topo">
+    <h2 class="cartao-titulo">Andamento</h2>
+    {% include "pedidos/_andamento_selo.html" %}
+  </div>
+  <p class="andamento-frase">{{ andamento.frase }}</p>
+  <p class="texto-secundario texto-pequeno">Iniciada por {% if execucao.iniciada_por %}{{ execucao.iniciada_por.get_full_name|default:execucao.iniciada_por.username }}{% else %}linha de comando{% endif %}. Duração: {{ andamento.duracao }}.</p>
+  {% if andamento.contadores %}
+  <ul class="contadores">
+    {% for contador in andamento.contadores %}<li class="selo selo-neutro">{{ contador }}</li>{% endfor %}
+  </ul>
+  {% endif %}
+  {% include "pedidos/_andamento_falha.html" %}
+  {% if not andamento.falha and andamento.precisa_conferir %}
+  <p><a href="#travas">Ver as travas</a></p>
+  {% endif %}
+  {% if log_recente and not andamento.falha.tecnico %}
+  <details class="detalhe-tecnico"{% if lancamento_em_andamento %} open{% endif %}>
+    <summary>Registro da execução</summary>
+    <pre class="log-execucao mono" tabindex="0">{{ log_recente }}</pre>
+  </details>
+  {% endif %}
+</div>
+{% endif %}
+{% else %}
+<p class="texto-secundario" id="andamento">Nenhuma execução ainda.</p>
+{% endif %}
+<!-- /andamento -->

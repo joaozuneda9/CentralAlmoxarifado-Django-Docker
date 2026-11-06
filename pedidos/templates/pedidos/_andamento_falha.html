@@ -1,0 +1,14 @@
+{# A falha da execução explicada em português (pedidos/andamento.py, `explicar_falha`), com o atalho para as travas e o texto técnico recolhido (_andamento.html). #}{% with falha=andamento.falha %}{% if falha %}
+<div class="aviso aviso-erro" role="alert">{% include "interface/_icone.html" with nome="alerta" %}<div class="pilha-curta"><p><strong>{{ falha.frase|linebreaksbr }}</strong></p><p>{{ falha.ate_onde }} {{ falha.proximo_passo }}</p></div></div>
+<div class="acoes">
+  {% if andamento.precisa_conferir %}<a class="botao botao-texto" href="#travas">Ver as travas</a>{% endif %}
+</div>
+{% if falha.tecnico %}
+<details class="detalhe-tecnico">
+  <summary>Detalhe técnico</summary>
+  <pre class="log-execucao mono" tabindex="0">{{ execucao.erro }}{% if log_recente %}
+
+{{ log_recente }}{% endif %}</pre>
+</details>
+{% endif %}
+{% endif %}{% endwith %}
