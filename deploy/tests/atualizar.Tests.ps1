@@ -109,14 +109,30 @@ function Executar {
     & (Join-Path $global:AlmoxTesteDestino 'deploy/atualizar.ps1') @parametros | Out-Null
 }
 
+# Lista de permissoes, nao de proibicoes: so estas consultas podem acontecer antes de -Aplicar.
+# Qualquer outra chamada (inclusive "volume prune --force" ou "volume rm") reprova o teste.
+$global:AlmoxTesteConsultas = @(
+    '^context show$'
+    ' config --format json$'
+    ' ps --status running --services$'
+    '^ps -a -q --filter label=com\.docker\.compose\.project=almoxarifado(_prod)?$'
+    '^ps -a -q --filter volume=[A-Za-z0-9_.-]+$'
+    '^volume ls --quiet( --filter label=com\.docker\.compose\.project=almoxarifado(_prod)?)?$'
+    '^inspect --format \{\{json \.Config\.Labels\}\}( (projeto|volume)[0-9]+)+$'
+) -join '|'
+
+function Somente-Consultas {
+    param([string]$Motivo)
+    $fora = @($global:AlmoxTesteChamadas | Where-Object { $_ -cnotmatch $global:AlmoxTesteConsultas })
+    if ($fora.Count) { throw "$Motivo Chamada fora da lista: $($fora[0])" }
+}
+
 function Recusa {
     param([scriptblock]$Acao, [string]$Motivo)
     $erro = $null
     try { & $Acao } catch { $erro = $_.Exception.Message }
     if (-not $erro -or $erro -notlike "*$Motivo*") { throw "Esperava recusa '$Motivo'; recebeu '$erro'" }
-    if ($global:AlmoxTesteChamadas | Where-Object { $_ -match ' (pull|build|run|up|stop|down|restart) ' }) {
-        throw 'Uma recusa de preflight alterou o Docker.'
-    }
+    Somente-Consultas 'Uma recusa de preflight alterou o Docker.'
 }
 
 try {
@@ -150,9 +166,12 @@ try {
     Recusa { Executar } 'destacado'
     Git-Teste checkout -q --detach v1.0.0
     Executar
-    if ($global:AlmoxTesteChamadas | Where-Object { $_ -notmatch ' ps --status running --services$|config --format json$|^context show$|^ps -a -q --filter label=com\.docker\.compose\.project=almoxarifado_prod$|^volume ls --quiet --filter label=com\.docker\.compose\.project=almoxarifado_prod$|^volume ls --quiet$' }) {
-        throw 'Planejamento deve apenas consultar os servicos do projeto.'
-    }
+    Somente-Consultas 'Planejamento deve apenas consultar o Docker.'
+    # A propria lista recusa o que nao e consulta.
+    $global:AlmoxTesteChamadas.Add('volume prune --force')
+    $vazou = $false
+    try { Somente-Consultas 'x' } catch { $vazou = $true }
+    if (-not $vazou) { throw 'A lista de consultas aceitou volume prune.' }
     # -notmatch ignora maiusculas: digest e versao precisam da comparacao exata.
     $digestValido = $global:AlmoxTesteDigest
     $global:AlmoxTesteDigest = $digestValido.Substring(0, $digestValido.Length - 64) + ('A' * 64)
@@ -182,8 +201,9 @@ try {
     # Montado por container desta pasta (parado ou nao): aceita, sem alterar nada.
     $global:AlmoxTesteOrigemVolume = @(($global:AlmoxTesteDestino.Replace('\', '/') + '/'))
     Executar
-    if ($global:AlmoxTesteChamadas | Where-Object { $_ -match ' (pull|build|run|up|stop|down|restart|rm) ' }) {
-        throw 'Conferir a origem dos volumes nao pode alterar o Docker.'
+    Somente-Consultas 'Conferir a origem dos volumes nao pode alterar o Docker.'
+    if (-not ($global:AlmoxTesteChamadas | Where-Object { $_ -ceq 'ps -a -q --filter volume=almoxarifado_prod_banco-dados' })) {
+        throw 'A origem do volume nao foi conferida.'
     }
     $global:AlmoxTesteVolumes = @()
     $global:AlmoxTesteOrigemVolume = @()
@@ -193,6 +213,7 @@ try {
     Recusa { Executar } 'comprove a origem'
     $global:AlmoxTesteOrigemVolume = @(($global:AlmoxTesteDestino + '\'))
     Executar
+    Somente-Consultas 'Conferir volume sem rotulo nao pode alterar o Docker.'
     $global:AlmoxTesteVolumesExistentes = @('gis-stack_dados', 'almoxarifado-prod_banco-dados')
     $global:AlmoxTesteOrigemVolume = @()
     Executar
@@ -237,9 +258,7 @@ try {
     $global:AlmoxTesteServicos = @('web', 'banco', 'agendador')
     Recusa { Executar } 'integracoes vazias'
     Executar -AtivarOperacao
-    if ($global:AlmoxTesteChamadas | Where-Object { $_ -match ' (pull|build|run|up|stop|down|restart) ' }) {
-        throw 'Planejamento com -AtivarOperacao nao pode alterar o Docker.'
-    }
+    Somente-Consultas 'Planejamento com -AtivarOperacao nao pode alterar o Docker.'
     $global:AlmoxTesteServicos = @()
     $global:AlmoxTesteToken = ''
     # O chat da Seguranca do Trabalho (spec 008) tambem conta como integracao.

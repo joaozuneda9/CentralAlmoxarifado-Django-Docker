@@ -30,7 +30,8 @@ foi criado noutra pasta (rótulo `com.docker.compose.project.working_dir`) e,
 como o volume só guarda o projeto, também quando um volume do projeto não é
 montado por nenhum container criado nesta pasta (containers removidos, volume
 órfão ou de outra pasta): a origem não pode ser comprovada, e quem decide
-reutilizá-lo é uma pessoa, conferindo antes de quem é o volume. Bind mounts
+reutilizá-lo é uma pessoa, conferindo antes de quem é o volume (roteiro em
+"Volume sem origem comprovada", na seção Recuperação). Bind mounts
 `./dados` ficam em cada pasta: logs (com o journal do lançamento), backups e
 `.xlsx` de carga.
 
@@ -203,6 +204,53 @@ explicitamente esse serviço pelo Docker pode ativá-lo. Usar sempre o script e
 não ligar agendamentos de testes que possam competir com produção.
 
 ## Recuperação
+
+### Volume sem origem comprovada
+
+O `atualizar.ps1` para com "sem container que comprove a origem" quando um
+volume do projeto (com o rótulo dele, ou com o nome que a configuração usa)
+existe e nenhum container o monta: por exemplo, depois que os containers foram
+removidos e os volumes ficaram. O volume pode ter os dados reais; nada aqui
+apaga, recria ou sobrescreve volume. **Nunca** use `docker volume rm`,
+`docker volume prune`, `down -v` nem cópia por cima para destravar.
+
+1. Confirmar a quem pertence, só consultando:
+
+   ```powershell
+   docker volume inspect almoxarifado_prod_banco-dados   # rótulos e CreatedAt
+   docker ps -a --filter volume=almoxarifado_prod_banco-dados   # vazio = órfão
+   ```
+
+   O nome precisa ser o da tabela do ambiente; a data de criação e o histórico
+   (seção "Histórico", último backup em `dados/backups` desta pasta) precisam
+   bater com esta instalação. **Se não for possível confirmar que o volume é
+   desta pasta e deste projeto, não prossiga**: deixe o volume como está e
+   leve a dúvida a quem administra o servidor.
+2. Confirmado, reassociar pela pasta dona, no checkout limpo da tag em uso e
+   com o marcador, criando os containers **sem iniciá-los** (`create` monta os
+   volumes existentes pelo nome e não toca nos dados; `--no-recreate` preserva o
+   que já existe). Num terminal PowerShell novo, em `C:\docker\producao`:
+
+   ```powershell
+   $env:PROJETO_COMPOSE = 'almoxarifado_prod'
+   $env:AMBIENTE_DEPLOY = 'producao'
+   $env:IMAGEM_APP = '<a mesma imagem por digest da versão em uso>'
+   $env:REVISAO_APP = (git rev-parse HEAD)
+   docker compose --project-directory . --env-file .env -p almoxarifado_prod `
+       -f compose.ambientes.yaml -f compose.producao.yaml `
+       create --no-recreate --no-build --pull missing banco web
+   Remove-Item Env:PROJETO_COMPOSE, Env:AMBIENTE_DEPLOY, Env:IMAGEM_APP, Env:REVISAO_APP
+   ```
+
+   `banco` monta `banco-dados` e `web` monta `perfil-navegador`. O Compose pode
+   avisar que um volume já existe sem ter sido criado por ele: é esperado para
+   volume sem rótulo, e o volume é usado como está.
+3. Retomar: fechar esse terminal (o script recusa as variáveis herdadas acima)
+   e, num terminal limpo, planejar de novo como em "Atualizar a produção (depois
+   da passagem)". Com os containers desta pasta montando os volumes, a origem
+   fica comprovada e a atualização segue o roteiro normal. No desenvolvimento, o
+   mesmo com o projeto `almoxarifado`, `compose.desenvolvimento.yaml` e a imagem
+   `central-almoxarifado-dev:<SHA>`.
 
 Voltar a imagem anterior não desfaz migrations. Verificar compatibilidade e
 preparar restauração específica antes de rollback do banco; restaurar um backup

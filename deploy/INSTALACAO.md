@@ -10,8 +10,10 @@ A produção está em `C:\docker\producao`, projeto `almoxarifado_prod` (virada 
 `C:\docker\almoxarifado-prod` foi uma preparação abandonada e não é produção.
 O nome do projeto escolhe os volumes (o banco): não rode o Compose de produção
 a partir de outra pasta. A produção ainda roda do `compose.yaml` editado à mão,
-sem marcador; o `atualizar.ps1` só vale depois da passagem única descrita em
-[AMBIENTES.md](AMBIENTES.md).
+sem marcador, e o `atualizar.ps1` recusa a pasta nesse estado. Na passagem
+única de [AMBIENTES.md](AMBIENTES.md), depois de restaurar o `compose.yaml`,
+trocar para a tag nova e criar o marcador, o `atualizar.ps1` já é usado para
+aplicar a versão; daí em diante, é ele que faz as atualizações descritas lá.
 
 Leia [AMBIENTES.md](AMBIENTES.md) para a preparação, migração e atualização e
 [FLUXO_GIT.md](FLUXO_GIT.md) para branches, PRs, versões e publicação de imagens.
