@@ -413,7 +413,7 @@ class ConciliacaoIncompleta(Exception):
 
 
 @contextmanager
-def _trava_conciliacao():
+def trava_conciliacao():
     """Uma conciliação por vez entre processos (`GET_LOCK`, com espera): duas ao mesmo tempo
     poderiam gravar, cada uma, a conferência do lançamento do mesmo lote."""
     with connection.cursor() as cursor:
@@ -452,7 +452,7 @@ def conciliar(extracao: ExtracaoOficial) -> dict[str, int]:
     log; os comandos saem com erro."""
     contagem: dict[str, int] = {}
     falhas: list[str] = []
-    with _trava_conciliacao():
+    with trava_conciliacao():
         try:
             verificar = conciliar_verificar(extracao, falhas)
         except Exception as exc:

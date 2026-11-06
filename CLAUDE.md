@@ -682,10 +682,11 @@ transações precisam se comportar como no servidor.
   `conciliar_lancamentos` em processo separado; desabilitado com lançamento ou importação em
   andamento) e o veredito atual de cada requisição lançada (`conciliacao.consultas.lotes_conferidos`:
   a última conferência conclusiva que ainda vale), com o filtro em links `?veredito=` (Divergências,
-  o padrão, Aguardando, Comprovados, Todos; 50 por vez). No cartão de cada trava em verificar,
+  o padrão, Aguardando, Comprovados, Todos; 50 por página, `?pagina_conciliacao=`). O cabeçalho (`div#conferir-agora`)
+  se recarrega a cada 5 s só enquanto o botão está bloqueado. No cartão de cada trava em verificar,
   `conciliacao/_verificacao.html` mostra as candidatas, com "É esta" (a ação `lancada` de sempre).
   O lote **lançado** Não encontrado ou em Vínculo em conflito tem o número corrigido em
-  `automacoes:corrigir` → `pedidos.servicos.corrigir_requisicao` (sob a `TRAVA_LANCAMENTO`; no conflito,
+  `automacoes:corrigir` → `pedidos.servicos.corrigir_requisicao` (sob a `TRAVA_LANCAMENTO` e a da conciliação, nessa ordem, com o momento tomado dentro delas; no conflito,
   só uma das duas apontadas; recusa o número de outro lote), que troca só `requisicao_scpi` e `mensagem`
   e grava a `CorrecaoVinculo`: daí em diante só valem as conferências de extrações começadas depois
   dela, e a próxima é de novo `LANCAMENTO`. Os avisos de saúde (`conciliacao/saude.py`) entram no

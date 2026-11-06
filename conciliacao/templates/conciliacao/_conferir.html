@@ -1,0 +1,35 @@
+{% comment %}
+O cabeçalho do cartão "Conferência com o SCPI": a última extração e o "Conferir agora". Enquanto o
+botão está bloqueado (lançamento, importação ou a própria conferência em andamento), o trecho se
+recarrega a cada 5 s pelo HTMX (a view o escolhe pelo HX-Target `div#conferir-agora`) e, quando o
+motivo some, volta sem `hx-trigger`: o botão se libera sem recarregar a aba nem tocar nos
+formulários de correção, que ficam fora deste trecho.
+{% endcomment %}
+<div id="conferir-agora" class="pilha"{% if conferir_motivo %} hx-get="{% url 'automacoes:pagina' %}" hx-trigger="every 5s" hx-swap="outerHTML"{% endif %}>
+  <div class="andamento-topo">
+    <h2 class="cartao-titulo" id="conciliacao-titulo">Conferência com o SCPI</h2>
+    <form method="post" action="{% url 'automacoes:conferir' %}">
+      {% csrf_token %}
+      {% if conferir_motivo %}
+      <span class="dica-flutuante dica-flutuante-fim">
+        <button type="button" class="botao botao-secundario" aria-disabled="true" aria-describedby="dica-conferir">{% include "interface/_icone.html" with nome="atualizar" %}Conferir agora</button>
+        <span class="dica-flutuante-texto" role="tooltip" id="dica-conferir">{{ conferir_motivo }}</span>
+      </span>
+      {% else %}
+      <button type="submit" class="botao botao-secundario">{% include "interface/_icone.html" with nome="atualizar" %}Conferir agora</button>
+      {% endif %}
+    </form>
+  </div>
+  {% with extracao=ultima_extracao %}
+  <p class="texto-secundario">
+    {% if extracao %}
+    {% with imp=extracao.importacao %}
+    Última extração do SCPI: {{ imp.inicio|date:"d/m" }} às {{ imp.inicio|date:"H:i" }}{% if imp.situacao == "SUCESSO" %}, {{ extracao.requisicoes }} {{ extracao.requisicoes|pluralize:"requisição,requisições" }} lidas.{% elif imp.situacao == "FALHA" %}. <span class="selo selo-erro">Falhou</span> {{ imp.erro|truncatechars:160 }}{% else %}. <span class="selo selo-info">Em andamento</span>{% endif %}
+    {% endwith %}
+    {% else %}
+    Nenhuma extração do SCPI ainda. “Conferir agora” extrai as requisições e confere as que o robô lançou.
+    {% endif %}
+  </p>
+  {% endwith %}
+  {% if conferir_motivo %}<p class="texto-secundario texto-pequeno">{{ conferir_motivo }}</p>{% endif %}
+</div>

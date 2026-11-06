@@ -3,6 +3,8 @@
 from dataclasses import dataclass, field
 from datetime import date, datetime
 
+from django.core.paginator import Page, Paginator
+
 from conciliacao import regras
 from conciliacao.models import (
     Candidata,
@@ -165,26 +167,32 @@ def lotes_conferidos() -> list[LoteConferido]:
     correcoes: dict[str, CorrecaoVinculo] = {}
     for correcao in CorrecaoVinculo.objects.select_related("usuario").order_by("quando", "pk"):
         correcoes[correcao.lote] = correcao
-    lotes = set(correcoes)
+    do_lancamento = ConferenciaLote.objects.filter(
+        tipo__in=(ConferenciaLote.Tipo.LANCAMENTO, ConferenciaLote.Tipo.REVISAO)
+    )
+    lotes = set(correcoes) | set(do_lancamento.values_list("lote", flat=True).distinct())
     atuais: dict[str, ConferenciaLote] = {}
     conferencias = (
-        ConferenciaLote.objects.filter(
-            tipo__in=(ConferenciaLote.Tipo.LANCAMENTO, ConferenciaLote.Tipo.REVISAO)
-        )
+        do_lancamento.exclude(veredito=Veredito.AGUARDANDO)
         .select_related("requisicao", "outra_requisicao", "extracao__importacao")
+        # O bruto gzip da extração não serve à tela e viria em cada conferência.
+        .defer("extracao__arquivo")
         .order_by("criada_em", "pk")
     )
     for conferencia in conferencias:
-        lotes.add(conferencia.lote)
-        if conferencia.veredito == Veredito.AGUARDANDO:
-            continue
         correcao = correcoes.get(conferencia.lote)
         if correcao is not None and conferencia.extracao.importacao.inicio <= correcao.quando:
             continue
         atuais[conferencia.lote] = conferencia
+    # A tentativa em verificar que a pessoa resolveu informando o número também é um lançamento a
+    # acompanhar; o filtro das linhas lançadas, abaixo, deixa de fora a que segue travada.
     lotes |= set(
         TentativaLancamento.objects.filter(
-            resultado=TentativaLancamento.Resultado.LANCADA, historica=False
+            resultado__in=(
+                TentativaLancamento.Resultado.LANCADA,
+                TentativaLancamento.Resultado.VERIFICAR,
+            ),
+            historica=False,
         ).values_list("lote", flat=True)
     )
     por_lote: dict[str, LoteConferido] = {}
@@ -214,30 +222,33 @@ def lotes_conferidos() -> list[LoteConferido]:
 class Conciliacao:
     """O que a aba mostra da conciliação dos lançados."""
 
-    ultima_extracao: ExtracaoOficial | None
     filtro: str
     contagens: dict[str, int]
-    lotes: list[LoteConferido]
-    total: int  # quantos lotes o filtro pegaria sem o limite
+    pagina: Page  # a página pedida dos lotes do filtro (`LIMITE_DA_LISTA` por página)
+
+    @property
+    def lotes(self) -> list[LoteConferido]:
+        return list(self.pagina.object_list)
+
+    @property
+    def total(self) -> int:
+        return self.pagina.paginator.count
 
     @property
     def filtros(self) -> list[tuple[str, str, int]]:
         return [(chave, rotulo, self.contagens[chave]) for chave, rotulo in FILTROS]
 
-    @property
-    def cortada(self) -> bool:
-        return self.total > len(self.lotes)
-
 
 def ultima_extracao() -> ExtracaoOficial | None:
     return (
         ExtracaoOficial.objects.select_related("importacao")
+        .defer("arquivo")
         .order_by("-importacao__inicio", "-pk")
         .first()
     )
 
 
-def conciliacao_da_aba(filtro: str = FILTRO_PADRAO) -> Conciliacao:
+def conciliacao_da_aba(filtro: str = FILTRO_PADRAO, pagina=1) -> Conciliacao:
     filtro = filtro if filtro in dict(FILTROS) else FILTRO_PADRAO
     todos = lotes_conferidos()
     contagens = {chave: 0 for chave, _ in FILTROS}
@@ -246,11 +257,9 @@ def conciliacao_da_aba(filtro: str = FILTRO_PADRAO) -> Conciliacao:
     contagens["todos"] = len(todos)
     escolhidos = todos if filtro == "todos" else [i for i in todos if i.grupo == filtro]
     return Conciliacao(
-        ultima_extracao=ultima_extracao(),
         filtro=filtro,
         contagens=contagens,
-        lotes=escolhidos[:LIMITE_DA_LISTA],
-        total=len(escolhidos),
+        pagina=Paginator(escolhidos, LIMITE_DA_LISTA).get_page(pagina),
     )
 
 
@@ -273,6 +282,7 @@ def verificacoes(lotes) -> dict[str, Verificacao]:
                 lote=lote, tipo=ConferenciaLote.Tipo.VERIFICAR, tentativa=tentativa
             )
             .select_related("extracao__importacao")
+            .defer("extracao__arquivo")
             .order_by("-criada_em", "-pk")
             if tentativa is not None
             else ConferenciaLote.objects.none()

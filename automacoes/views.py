@@ -23,7 +23,7 @@ from catalogo.curva import INICIO_DADOS_CONFIAVEIS
 from catalogo.forms import ROBOS, ROBOS_POR_CHAVE
 from catalogo.models import Importacao
 from catalogo.saude import situacao_do_catalogo
-from conciliacao.consultas import conciliacao_da_aba, verificacoes
+from conciliacao.consultas import conciliacao_da_aba, ultima_extracao, verificacoes
 from interface.htmx import regiao_pedida, render_regiao
 from pedidos import andamento
 from pedidos.consultas import (
@@ -221,6 +221,11 @@ def _motivo_para_nao_conferir() -> str:
     return ""
 
 
+def _contexto_conferir(request=None) -> dict:
+    """O cabeçalho da conferência com o SCPI (`div#conferir-agora`)."""
+    return {"conferir_motivo": _motivo_para_nao_conferir(), "ultima_extracao": ultima_extracao()}
+
+
 def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
     """Tudo o que a página mostra; também usado quando o formulário de um robô volta com erro
     (`formularios`: o formulário de cada robô com o que a pessoa já preencheu)."""
@@ -243,8 +248,10 @@ def contexto_pagina(request, aba: str, formularios: dict | None = None) -> dict:
     return {
         **_contexto_historico(request),
         **situacao,
-        "conciliacao": conciliacao_da_aba(request.GET.get("veredito", "")),
-        "conferir_motivo": _motivo_para_nao_conferir(),
+        "conciliacao": conciliacao_da_aba(
+            request.GET.get("veredito", ""), request.GET.get("pagina_conciliacao", 1)
+        ),
+        **_contexto_conferir(request),
         "robos": robos,
         "aba": aba,
         "abas": [(chave, rotulo, estados.get(chave)) for chave, rotulo in ABAS],
@@ -262,6 +269,7 @@ REGIOES = {
     "section#situacao-catalogo": ("catalogo/_situacao.html", _contexto_situacao),
     "section#lancamentos": ("pedidos/_lancamentos.html", lambda request: contexto_lancamento()),
     "div#historico": ("automacoes/_historico.html", _contexto_regiao_historico),
+    "div#conferir-agora": ("conciliacao/_conferir.html", _contexto_conferir),
 }
 
 

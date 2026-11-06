@@ -2,7 +2,7 @@
 vereditos e as candidatas, o "Conferir agora" e a correção do número de um lote lançado."""
 
 from dataclasses import replace
-from datetime import datetime, timedelta
+from datetime import UTC, datetime, timedelta
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -13,7 +13,7 @@ from catalogo.saude import saude_do_catalogo
 from conciliacao.consultas import conciliacao_da_aba
 from conciliacao.extracao import extrair
 from conciliacao.models import ConferenciaLote, CorrecaoVinculo, ExtracaoOficial
-from conciliacao.saude import um_dia_util_antes
+from conciliacao.saude import um_dia_util_depois
 from conciliacao.servicos import conciliar
 from pedidos.models import ExecucaoRobo, LinhaSaida
 from pedidos.servicos import corrigir_requisicao
@@ -107,8 +107,22 @@ def test_conferir_agora_inicia_o_comando(client, pessoa, monkeypatch):
     assert iniciados[0][0] == ["conciliar_lancamentos"]
 
 
-def test_conferir_e_corrigir_so_por_post(client):
-    assert client.get(reverse("automacoes:conferir")).status_code in (302, 405)
+@pytest.mark.django_db
+def test_conferir_e_corrigir_so_por_post(client, pessoa):
+    assert client.get(reverse("automacoes:conferir")).status_code == 405
+    assert client.get(reverse("automacoes:corrigir", args=["P-000001"])).status_code == 405
+
+
+@pytest.mark.django_db
+def test_cabecalho_da_conferencia_se_recarrega_so_enquanto_bloqueado(client, pessoa):
+    alvo = {"HX-Request": "true", "HX-Target": "div#conferir-agora"}
+    execucao = ExecucaoRobo.objects.create()  # lançamento em andamento: o botão fica bloqueado
+    trecho = client.get(reverse("automacoes:pagina"), headers=alvo).content.decode()
+    assert 'id="conferir-agora"' in trecho and 'hx-trigger="every 5s"' in trecho
+    assert 'aria-disabled="true"' in trecho and "Conferência com o SCPI" in trecho
+    ExecucaoRobo.objects.filter(pk=execucao.pk).update(fim=timezone.now(), situacao="SUCESSO")
+    trecho = client.get(reverse("automacoes:pagina"), headers=alvo).content.decode()
+    assert "hx-trigger" not in trecho and 'type="submit"' in trecho
 
 
 # --- Correção do número (FR-026) ---
@@ -184,6 +198,72 @@ def test_corrigir_recusa_numero_de_outro_lote_e_no_conflito_so_as_apontadas(
 
 @pytest.mark.django_db
 @pytest.mark.usefixtures("journal")
+def test_corrigir_conflito_com_a_requisicao_das_observacoes(dois_lotes, scpi, pessoa):
+    p, av = dois_lotes
+    lancar(scpi, [p, av])
+    # O número gravado leva a uma requisição feita à mão; as observações, à do robô.
+    scpi.requisicao_manual(timezone.localdate(), tipo="OUTRA")
+    manual = scpi.salvas[-1].requisicao
+    LinhaSaida.objects.filter(lote=p).update(requisicao_scpi=manual)
+    nova_extracao(scpi)
+    assert atual(p).conferencia.veredito == "CONFLITO"
+    assert sorted(atual(p).conflito_com) == sorted([manual, "000001/26"])
+    r = corrigir_requisicao(p, "000001/26", usuario=pessoa)
+    assert r.ok, r.mensagem
+    nova_extracao(scpi)
+    ultima = ConferenciaLote.objects.filter(lote=p).order_by("-criada_em", "-pk").first()
+    assert (ultima.tipo, ultima.veredito, ultima.requisicao.requisicao) == (
+        "LANCAMENTO",
+        "COMPROVADO",
+        "000001/26",
+    )
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
+def test_corrigir_espera_a_conciliacao_em_andamento(dois_lotes, scpi, pessoa, monkeypatch):
+    from django.db import connections
+
+    from conciliacao import servicos
+
+    p, av = dois_lotes
+    lancar(scpi, [p, av])
+    ConferenciaLote.objects.filter(lote=p).update(veredito="NAO_ENCONTRADO")
+    monkeypatch.setattr(servicos, "ESPERA_TRAVA_S", 0)
+    outra = connections.create_connection("default")
+    try:
+        with outra.cursor() as cursor:
+            cursor.execute("SELECT GET_LOCK(%s, 0)", [servicos.TRAVA_CONCILIACAO])
+        r = corrigir_requisicao(p, "000009/26", usuario=pessoa)
+    finally:
+        outra.close()
+    assert not r.ok and "conferência com o SCPI em andamento" in r.mensagem
+    assert not CorrecaoVinculo.objects.exists()
+    assert LinhaSaida.objects.filter(lote=p, requisicao_scpi="000001/26").exists()
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
+def test_lista_paginada_e_lote_resolvido_a_mao_acompanhado(dois_lotes, scpi, pessoa, monkeypatch):
+    from conciliacao import consultas
+    from pedidos.servicos import resolver_lote
+
+    p, av = dois_lotes
+    scpi.salva_e_falha.add(p)  # fica em verificar; a pessoa informa o número
+    lancar(scpi, [p, av])
+    assert resolver_lote(p, "lancada", usuario=pessoa, requisicao="000001/26").ok
+    ConferenciaLote.objects.filter(tipo__in=("LANCAMENTO", "REVISAO")).delete()
+    lotes = {i.lote: i for i in consultas.lotes_conferidos()}
+    assert lotes[p].conferencia is None  # acompanhado desde já, "Aguardando"
+    monkeypatch.setattr(consultas, "LIMITE_DA_LISTA", 1)
+    primeira = consultas.conciliacao_da_aba("todos", 1)
+    segunda = consultas.conciliacao_da_aba("todos", 2)
+    assert primeira.total == segunda.total == 2
+    assert {primeira.lotes[0].lote, segunda.lotes[0].lote} == {p, av}
+
+
+@pytest.mark.django_db
+@pytest.mark.usefixtures("journal")
 def test_corrigir_recusado_com_lancamento_em_andamento(dois_lotes, scpi, pessoa):
     p, av = dois_lotes
     lancar(scpi, [p, av])
@@ -210,11 +290,19 @@ def test_corrigir_pela_tela_volta_para_a_aba_com_a_mensagem(client, pessoa, dois
 # --- Avisos de saúde (FR-028) ---
 
 
-def test_um_dia_util_antes_pula_o_fim_de_semana():
-    segunda = datetime(2026, 11, 9, 10, 0)
-    assert um_dia_util_antes(segunda) == datetime(2026, 11, 6, 10, 0)  # sexta
-    quarta = datetime(2026, 11, 4, 10, 0)
-    assert um_dia_util_antes(quarta) == datetime(2026, 11, 3, 10, 0)
+def test_um_dia_util_depois_pula_o_fim_de_semana_no_fuso_local():
+    local = timezone.get_current_timezone()
+
+    def em(dia, hora):
+        return timezone.make_aware(datetime(2026, 11, dia, hora), local)
+
+    # Quinta às 23h vence sexta às 23h (hora local, não a de Greenwich).
+    assert um_dia_util_depois(em(5, 23)) == em(6, 23)
+    # Sexta às 15h vence só na segunda às 15h: no sábado à noite ainda não venceu.
+    assert um_dia_util_depois(em(6, 15)) == em(9, 15)
+    assert not um_dia_util_depois(em(6, 15)) <= em(7, 20)
+    # Domingo às 22h local (segunda 01h em UTC): o lançado na quinta às 23h já venceu.
+    assert um_dia_util_depois(em(5, 23)) <= em(8, 22).astimezone(UTC)
 
 
 @pytest.mark.django_db

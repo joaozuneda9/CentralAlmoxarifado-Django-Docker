@@ -34,8 +34,9 @@ pelo `catalogo.saude._demais`). Na interface, a saída do Central se chama "requ
 - "N requisições lançadas com divergência no SCPI: <números>." (Divergente, Duplicado, Vínculo em
   conflito)
 - "N requisições lançadas não encontradas no SCPI: <números>."
-- "N requisições aguardando conferência há mais de um dia útil: <números>." (desde o lançamento ou a
-  correção do número; sábado e domingo não contam)
+- "N requisições aguardando conferência há mais de um dia útil: <números>." (vence no mesmo horário,
+  no fuso local, do dia útil seguinte ao lançamento ou à correção do número: Sábado e Domingo não
+  contam, e o lançado na sexta às 15h só vence na segunda às 15h)
 - "Requisições do SCPI: a última extração falhou em <quando>: <motivo resumido>"
 
 ## Mensagens de recusa (textos)

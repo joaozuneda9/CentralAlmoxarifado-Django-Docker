@@ -1453,16 +1453,29 @@ def corrigir_requisicao(
     em conflito (spec 010, FR-026, research R16): só informando o número certo, nunca relançando.
     O status e o `lancado_em` das linhas não mudam; a `CorrecaoVinculo` guarda quem, quando, o
     número anterior e o novo, e o lote volta a "Aguardando" até a extração seguinte."""
-    agora = agora or timezone.now()
-    if ExecucaoRobo.em_andamento(agora).exists():
+    explicito = agora
+    if ExecucaoRobo.em_andamento(agora or timezone.now()).exists():
         return Resposta(ok=False, mensagem=MENSAGEM_LANCAMENTO_EM_ANDAMENTO)
     requisicao = texto(requisicao)
     if not requisicao_valida(requisicao):
         return Resposta(ok=False, mensagem="Informe o número da requisição no formato 000000/00.")
+    from conciliacao.servicos import ConciliacaoEmAndamento, trava_conciliacao
+
     with trava(TRAVA_LANCAMENTO) as obtida:
         if not obtida:
             return Resposta(ok=False, mensagem=MENSAGEM_LANCAMENTO_EM_ANDAMENTO)
-        return _corrigir_com_a_trava(lote, requisicao, usuario, agora)
+        try:
+            # Com a trava da conciliação também (na ordem em que o robô as toma: lançamento, depois
+            # conciliação), nenhuma conciliação lê o lote enquanto o número muda, e o momento da
+            # correção é tomado aqui dentro: a extração que começar depois dele só é conciliada
+            # depois do commit, já com o número novo; a que começou antes não conta para o lote.
+            with trava_conciliacao():
+                return _corrigir_com_a_trava(lote, requisicao, usuario, explicito or timezone.now())
+        except ConciliacaoEmAndamento:
+            return Resposta(
+                ok=False,
+                mensagem="Há uma conferência com o SCPI em andamento. Tente de novo em instantes.",
+            )
 
 
 def _corrigir_com_a_trava(lote, requisicao, usuario, agora) -> Resposta:

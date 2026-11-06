@@ -6,32 +6,7 @@ recarrega durante o lançamento (os formulários de correção não perdem o que
 links (`?veredito=`, que fica na URL): as divergências primeiro, os comprovados à parte.
 {% endcomment %}
 <section id="conciliacao" class="cartao pilha" aria-labelledby="conciliacao-titulo">
-  <div class="andamento-topo">
-    <h2 class="cartao-titulo" id="conciliacao-titulo">Conferência com o SCPI</h2>
-    <form method="post" action="{% url 'automacoes:conferir' %}">
-      {% csrf_token %}
-      {% if conferir_motivo %}
-      <span class="dica-flutuante dica-flutuante-fim">
-        <button type="button" class="botao botao-secundario" aria-disabled="true" aria-describedby="dica-conferir">{% include "interface/_icone.html" with nome="atualizar" %}Conferir agora</button>
-        <span class="dica-flutuante-texto" role="tooltip" id="dica-conferir">{{ conferir_motivo }}</span>
-      </span>
-      {% else %}
-      <button type="submit" class="botao botao-secundario">{% include "interface/_icone.html" with nome="atualizar" %}Conferir agora</button>
-      {% endif %}
-    </form>
-  </div>
-  {% with extracao=conciliacao.ultima_extracao %}
-  <p class="texto-secundario">
-    {% if extracao %}
-    {% with imp=extracao.importacao %}
-    Última extração do SCPI: {{ imp.inicio|date:"d/m" }} às {{ imp.inicio|date:"H:i" }}{% if imp.situacao == "SUCESSO" %}, {{ extracao.requisicoes }} {{ extracao.requisicoes|pluralize:"requisição,requisições" }} lidas.{% elif imp.situacao == "FALHA" %}. <span class="selo selo-erro">Falhou</span> {{ imp.erro|truncatechars:160 }}{% else %}. <span class="selo selo-info">Em andamento</span>{% endif %}
-    {% endwith %}
-    {% else %}
-    Nenhuma extração do SCPI ainda. “Conferir agora” extrai as requisições e confere as que o robô lançou.
-    {% endif %}
-  </p>
-  {% endwith %}
-  {% if conferir_motivo %}<p class="texto-secundario texto-pequeno">{{ conferir_motivo }}</p>{% endif %}
+  {% include "conciliacao/_conferir.html" %}
 
   <nav aria-label="Filtrar as requisições lançadas pelo veredito">
     <ul class="conciliacao-filtros">
@@ -100,7 +75,7 @@ links (`?veredito=`, que fica na URL): as divergências primeiro, os comprovados
     </li>
     {% endfor %}
   </ul>
-  {% if conciliacao.cortada %}<p class="texto-secundario texto-pequeno">Mostrando os {{ conciliacao.lotes|length }} lançamentos mais recentes de {{ conciliacao.total }}.</p>{% endif %}
+  {% if conciliacao.pagina.has_other_pages %}{% include "interface/_paginacao.html" with pagina=conciliacao.pagina parametro="pagina_conciliacao" rotulo="Paginação das requisições lançadas" rotulo_item="requisição" rotulo_item_plural="requisições" ancora="conciliacao" %}{% endif %}
   {% elif conciliacao.filtro == "problemas" %}
   <p class="texto-secundario">Nenhuma divergência: toda requisição conferida está como no SCPI.</p>
   {% elif conciliacao.filtro == "aguardando" %}

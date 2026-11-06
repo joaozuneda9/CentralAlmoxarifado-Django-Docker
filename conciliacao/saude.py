@@ -3,6 +3,8 @@ avisos da visão geral de Automações, pelo `catalogo.saude`."""
 
 from datetime import datetime, timedelta
 
+from django.utils import timezone
+
 from catalogo.models import Importacao
 from catalogo.saude import ItemSaude, _quando, resumo_do_erro
 from conciliacao.consultas import PROBLEMAS, lotes_conferidos
@@ -12,12 +14,13 @@ from scpi.gravacao import lista_curta
 Veredito = ConferenciaLote.Veredito
 
 
-def um_dia_util_antes(agora: datetime) -> datetime:
-    """O mesmo horário no dia útil anterior (sábado e domingo não contam; feriado, sim)."""
-    antes = agora - timedelta(days=1)
-    while antes.weekday() >= 5:
-        antes -= timedelta(days=1)
-    return antes
+def um_dia_util_depois(momento: datetime) -> datetime:
+    """O mesmo horário, no fuso local, um dia útil depois de `momento` (sábado e domingo não
+    contam; feriado, sim): o lançado na sexta às 15h vence na segunda às 15h."""
+    vence = timezone.localtime(momento) + timedelta(days=1)
+    while vence.weekday() >= 5:
+        vence += timedelta(days=1)
+    return vence
 
 
 def _lotes(lotes: list[str], singular: str, plural: str) -> str:
@@ -70,11 +73,12 @@ def avisos(agora: datetime) -> list[ItemSaude]:
                 ),
             )
         )
-    limite = um_dia_util_antes(agora)
     atrasados = [
         i.lote
         for i in lotes
-        if i.conferencia is None and i.esperando_desde and i.esperando_desde < limite
+        if i.conferencia is None
+        and i.esperando_desde
+        and um_dia_util_depois(i.esperando_desde) <= agora
     ]
     if atrasados:
         saude.append(
