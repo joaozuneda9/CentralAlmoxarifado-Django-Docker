@@ -1,8 +1,16 @@
 """Ajustes só para o pytest."""
 
 import os
+import tempfile
+from pathlib import Path
 
 os.environ.setdefault("SECRET_KEY", "teste-nao-usar-em-producao")
+# Os testes nunca gravam no logs/ do repositório (constituição, Princípio V). O handler
+# `arquivo` do LOGGING abre o almoxarifado.log quando o settings é importado, então a pasta
+# muda antes da importação, e sempre: nem o .env nem o ambiente de quem roda a escolhem. Os
+# subprocessos dos testes (config.settings) herdam a variável e também gravam lá. O handler
+# continua o mesmo, e o caplog segue funcionando: ele se pendura nos loggers, não no arquivo.
+os.environ["LOG_DIR"] = str(Path(tempfile.gettempdir()) / "almoxarifado-testes" / "logs")
 
 from .settings import *  # noqa: E402, F403
 
