@@ -19,6 +19,7 @@ from pedidos.regras import AB, qtd_br
 from pedidos.servicos import confirmar_atendimento
 from pedidos.telegram import texto_aviso
 from tests.cenario import criar_pedido, envio_ab, montar_cenario, registrar, saida
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 HOJE = date(2026, 10, 9)
@@ -26,7 +27,9 @@ HOJE = date(2026, 10, 9)
 
 @pytest.fixture
 def usuario():
-    return get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    return dar_papeis(
+        get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    )
 
 
 @pytest.fixture

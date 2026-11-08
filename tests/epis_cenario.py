@@ -20,6 +20,7 @@ from pedidos.regras import EPIS, EnvioPedido, ItemEnviado
 from pedidos.servicos import registrar_pedido
 from tests.cenario import montar_cenario
 from tests.config_cenario import enviar_formulario, excecao, habilitar
+from tests.papeis import dar_papeis
 
 LUVA = "013.005.100"
 CAPACETE = "013.001.001"
@@ -72,6 +73,7 @@ def usuarios() -> dict:
     almox, _ = modelo.objects.get_or_create(username="70002", defaults={"first_name": "Ana"})
     almox.set_password(SENHA)
     almox.save()
+    dar_papeis(almox)
     admin, _ = modelo.objects.get_or_create(
         username="70003", defaults={"first_name": "Adão", "is_staff": True, "is_superuser": True}
     )

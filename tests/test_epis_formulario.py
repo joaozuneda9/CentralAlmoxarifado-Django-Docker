@@ -13,6 +13,7 @@ from pedidos.protecao import emitir
 from tests.config_cenario import enviar_formulario
 from tests.epis_cenario import CAPACETE, DESTINO, FITA, LUVA, OCULOS, PROTETOR, enviar, montar_epis
 from tests.paginas import texto
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -140,7 +141,9 @@ def test_o_limite_por_nome_soma_todos_os_formularios_publicos(client, settings):
 def test_painel_mostra_o_pedido_aguardando_autorizacao(client):
     enviar(client, [(LUVA, "2")])
     pedido = Pedido.objects.get()
-    client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+    client.force_login(
+        dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
+    )
     filtrado = client.get(reverse("pedidos:painel"), {"origem": "EPIS"}).text
     assert pedido.numero in filtrado and "Aguardando autorização" in filtrado
     assert pedido.numero not in client.get(reverse("pedidos:painel"), {"origem": "AB"}).text

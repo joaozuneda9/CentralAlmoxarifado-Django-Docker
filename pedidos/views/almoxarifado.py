@@ -15,6 +15,7 @@ from django.views.decorators.http import require_POST
 
 from catalogo.models import Opcao
 from catalogo.saude import saude_do_catalogo
+from contas.acesso import AUTOMACOES
 from pedidos import carrinho as carrinho_mod
 from pedidos.consultas import (
     FiltrosPainel,
@@ -80,10 +81,12 @@ def painel(request):
         recibo_impresso_em__isnull=True
     ).count()
     contexto["pedidos_aguardando"] = filtrar_situacao(Pedido.objects.all(), "aguardando").count()
-    contexto["lancamento_pendentes"] = lotes_pendentes()
-    contexto["lancamento_travados"] = contar_lotes_travados()
-    contexto["lancamento_em_andamento"] = ExecucaoRobo.em_andamento().exists()
-    contexto["lancamento_real"] = settings.LANCAMENTO_REAL
+    # O cartão do lançamento é só de quem opera as automações (spec 012).
+    if request.user.has_perm(AUTOMACOES):
+        contexto["lancamento_pendentes"] = lotes_pendentes()
+        contexto["lancamento_travados"] = contar_lotes_travados()
+        contexto["lancamento_em_andamento"] = ExecucaoRobo.em_andamento().exists()
+        contexto["lancamento_real"] = settings.LANCAMENTO_REAL
     resposta = render(request, "pedidos/painel.html", contexto)
     patch_vary_headers(resposta, ["HX-Request", "HX-History-Restore-Request"])
     return resposta

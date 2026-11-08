@@ -15,3 +15,11 @@ class Usuario(AbstractUser):
     class Meta:
         verbose_name = "usuário"
         verbose_name_plural = "usuários"
+        # Papéis da área interna (spec 012): o código pergunta por estas permissões, e os grupos
+        # Atendimento e Gestão as reúnem (`contas.acesso`).
+        permissions = [
+            ("atender_pedidos", "Atender pedidos (painel, atendimento, edição e saída avulsa)"),
+            ("operar_automacoes", "Operar as automações (SCPI, importações e conferência)"),
+            ("ver_curva", "Ver a Curva ABC"),
+            ("ver_formularios", "Ver a configuração dos formulários"),
+        ]

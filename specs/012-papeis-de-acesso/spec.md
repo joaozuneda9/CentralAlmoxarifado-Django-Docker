@@ -224,8 +224,10 @@ campos combinados.
   execução, a rota fora da tabela é negada a quem não é superusuário (nega por padrão).
 - **Painel sem permissão de automações**: o cartão do lançamento some inteiro (não fica um cartão
   vazio), e os avisos de saúde do catálogo aparecem sem o link para Automações.
-- **Recusa de método** (GET num endereço que só aceita POST) e **CSRF**: continuam com as respostas de
-  hoje e não contam como recusa de acesso no log.
+- **Recusa de método** (GET num endereço que só aceita POST) e **CSRF**: para quem tem a permissão da
+  rota, continuam com as respostas de hoje (405 e 403 do CSRF) e não contam como recusa de acesso no
+  log. Para quem não tem, a recusa de acesso vem antes do método: 403 e a linha no log, sem revelar
+  quais métodos a rota aceita.
 
 ## Requirements *(mandatory)*
 

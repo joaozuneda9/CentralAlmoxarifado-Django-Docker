@@ -122,7 +122,9 @@ leem um CSV já baixado. Os testes nunca abrem o navegador.
 
 O pytest usa `config.settings_test` (definido no `pyproject.toml`) e cria o banco
 `test_almoxarifado`. Testes rodam contra MySQL/MariaDB, nunca SQLite: `select_for_update` e
-transações precisam se comportar como no servidor.
+transações precisam se comportar como no servidor. A migration `contas/0004_papeis` roda também no
+banco de teste: o usuário que loga numa rota interna precisa dos papéis (fixture `usuario_logado` e
+`tests/papeis.py`, `dar_papeis`/`usuario_com`), senão recebe 403.
 
 ## Servidor de desenvolvimento e verificação no navegador
 
@@ -166,6 +168,30 @@ transações precisam se comportar como no servidor.
 - `contas.Usuario` é o `AUTH_USER_MODEL`: `AbstractUser` com o `username` rotulado
   "matrícula". O login (`/painel/entrar/`) e o login do admin usam formulários próprios
   (`contas/forms.py`) só para a recusa sair em português correto.
+- **Papéis de acesso da área interna** (spec `specs/012-papeis-de-acesso/`): o código pergunta por
+  quatro permissões do `Meta` de `contas.Usuario` (`contas.atender_pedidos`, `operar_automacoes`,
+  `ver_curva`, `ver_formularios`; constantes em `contas/acesso.py`), nunca pelo nome do papel; os
+  grupos **Atendimento** (painel, pedido, recibos, atendimento, edição e saída avulsa) e **Gestão**
+  (Automações inteira, Curva ABC e página Formulários) as reúnem e se dão no formulário do usuário no
+  admin. `contas.acesso.REGRAS_POR_ROTA` é a fonte única de quem abre cada rota nomeada (`Regra` com
+  as permissões, o `exige_staff` e o motivo da recusa, ou as categorias `PUBLICA`, `ADMIN`, o
+  namespace do admin inteiro, e `SEGURANCA`, que as views da spec 008 decidem); o
+  `contas.middleware.ExigirPermissao`, logo depois do da Segurança do Trabalho, a aplica em
+  `process_view` e **nega por padrão** a rota fora dela (só o superusuário passa; anônimo vai ao
+  login). **Rota nova entra nessa tabela no mesmo PR**: `tests/test_papeis_acesso.py` percorre todas
+  as rotas nomeadas (`tests/rotas.py`) e falha com rota interna fora dela. A recusa é a página
+  `interface/acesso_negado.html` (403, sem cache, o motivo da regra; o usuário sem papel algum vê
+  "Seu usuário ainda não tem acesso"); os `PermissionDenied` das views usam o `403.html`. Sem a
+  permissão, a recusa vem antes do método (GET numa rota só de POST dá 403, não 405). Toda recusa vira
+  uma linha do logger `contas.acesso` (`registrar_recusa`: matrícula, rota nomeada, método e o que
+  faltou; nunca o caminho com parâmetros, o corpo nem nomes), também no filtro da Segurança do
+  Trabalho (fora do GET), no `exige` da spec 009, nas views de autorização e no disparo. O
+  `scpi.disparo.iniciar_lancamento` confere `operar_automacoes` de novo antes de criar a execução. O
+  menu (`interface.navegacao`, `pode_abrir`) e os atalhos do painel e do detalhe para Automações
+  (`{% if perms.contas.operar_automacoes %}`) só mostram o que a rota abre. A migration
+  `contas/0004_papeis` criou as permissões e os dois grupos e os deu a todo usuário ativo fora da
+  Segurança do Trabalho, conferindo no fim (ninguém perdeu acesso no deploy); o administrador
+  restringe pelo admin. O superusuário passa em toda permissão, menos na decisão de EPI.
 - `interface` é só apresentação (sem modelos nem regras), no design system Clean (skill
   `.claude/skills/clean-design/`; regras e vocabulário de classes em `docs/DESIGN.md`):
   `clean.css` (tokens, fontes, tipografia e os ritmos `ritmo-publico`/`ritmo-almox`),
@@ -184,7 +210,8 @@ transações precisam se comportar como no servidor.
   `localStorage` e, fechado, um chip por filtro ativo; sem JavaScript o painel fica aberto. Dois layouts: `base_publico.html` (sem login,
   pensado para o celular) e `base_almoxarifado.html` (barra lateral), os dois com o bloco `voltar`
   (`link-voltar`, acima do rótulo; no almoxarifado, "Voltar ao painel" por padrão, vazio no painel). Cada subprojeto
-  acrescenta seus destinos (com ícone) a `ITENS_MENU` em `interface/navegacao.py`. Scripts
+  acrescenta seus destinos (com ícone) a `ITENS_MENU` em `interface/navegacao.py`; o menu só
+  mostra o que a tabela de rotas abre ao usuário (`contas.acesso.pode_abrir`). Scripts
   ficam no `<head>` com `defer`, nunca no `<body>` (o HTMX re-executa scripts do corpo ao
   restaurar o histórico).
 - `pedidos/regras.py` guarda as regras de negócio: funções puras, sem ORM. Vieram de
@@ -426,7 +453,7 @@ transações precisam se comportar como no servidor.
   página no servidor), o **lote em duas telas** (`formularios_lote`: prévia com número exato, POST com o
   `total` visto, recusa se o filtro mudou, "ciente" sem filtro), a consulta **por material**
   (`formularios_material`) e as gravações em POST, mensagem e redirecionamento. **Permissões**: ver é
-  de todo usuário do almoxarifado; gravar exige `is_staff` mais `catalogo.change_centrocusto` (centros)
+  do papel Gestão (`contas.ver_formularios`, spec 012); gravar exige também `is_staff` mais `catalogo.change_centrocusto` (centros)
   ou `catalogo.change_excecaomaterial` (materiais), recusado com 403 no servidor
   (`catalogo/acesso.py`); a Segurança do Trabalho é negada pelo middleware (rotas fora da lista). A
   migration `catalogo/0007` (a 0006 é só o esquema, separada porque o DDL do MySQL não é transacional)

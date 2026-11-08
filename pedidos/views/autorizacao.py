@@ -13,14 +13,15 @@ from django.shortcuts import get_object_or_404, redirect, render
 from django.urls import reverse
 from django.views.decorators.http import require_POST
 
-from contas.acesso import da_seguranca_trabalho
+from contas.acesso import da_seguranca_trabalho, registrar_recusa
 from pedidos.consultas import decididas_da_autorizacao, fila_de_autorizacao
 from pedidos.models import AutorizacaoPedido
 from pedidos.servicos import decidir_autorizacao
 
 
-def _exigir_seguranca_do_trabalho(usuario) -> None:
-    if not da_seguranca_trabalho(usuario):
+def _exigir_seguranca_do_trabalho(request) -> None:
+    if not da_seguranca_trabalho(request.user):
+        registrar_recusa(request, "grupo:Segurança do Trabalho")
         raise PermissionDenied("Só a Segurança do Trabalho acessa as autorizações.")
 
 
@@ -35,7 +36,7 @@ def _autorizacao(numero: str) -> AutorizacaoPedido:
 @login_required
 def autorizacoes(request):
     """A fila: os que aguardam decisão (do mais antigo ao mais novo) e, abaixo, os já decididos."""
-    _exigir_seguranca_do_trabalho(request.user)
+    _exigir_seguranca_do_trabalho(request)
     decididas = Paginator(decididas_da_autorizacao(), 25).get_page(request.GET.get("pagina"))
     return render(
         request,
@@ -51,7 +52,7 @@ def _contexto_detalhe(autorizacao: AutorizacaoPedido, **extra) -> dict:
 @login_required
 def autorizacao(request, numero):
     """O pedido só para leitura (cabeçalho, materiais e quantidades pedidas) e a decisão."""
-    _exigir_seguranca_do_trabalho(request.user)
+    _exigir_seguranca_do_trabalho(request)
     return render(request, "pedidos/autorizacao.html", _contexto_detalhe(_autorizacao(numero)))
 
 
@@ -59,7 +60,7 @@ def autorizacao(request, numero):
 @require_POST
 def decidir(request, numero):
     """Grava a decisão (`decisao` = autorizar ou recusar; `motivo` obrigatório na recusa)."""
-    _exigir_seguranca_do_trabalho(request.user)
+    _exigir_seguranca_do_trabalho(request)
     decisao = request.POST.get("decisao", "")
     motivo = request.POST.get("motivo", "")
     resposta = decidir_autorizacao(
@@ -74,6 +75,7 @@ def decidir(request, numero):
         messages.success(request, f"Pedido {numero} {verbo}.")
         return redirect("pedidos:autorizacao", numero=numero)
     if resposta.motivo == "grupo":
+        registrar_recusa(request, "grupo:Segurança do Trabalho")
         raise PermissionDenied(resposta.mensagem)
     if resposta.motivo == "nao_encontrada":
         raise Http404(resposta.mensagem)

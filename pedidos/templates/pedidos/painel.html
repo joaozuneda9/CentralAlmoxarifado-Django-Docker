@@ -36,6 +36,8 @@
         </div>
       </div>
 
+      {# O cartão do lançamento é só de quem opera as automações (spec 012). #}
+      {% if perms.contas.operar_automacoes %}
       <div class="atalho{% if lancamento_pendentes %} atalho-pendente{% endif %}">
         <p class="atalho-numero">{{ lancamento_pendentes }}</p>
         <div class="atalho-corpo">
@@ -51,6 +53,7 @@
           </form>
         </div>
       </div>
+      {% endif %}
 
       <div class="atalho atalho-ativo">
         <p class="atalho-numero atalho-mais">{% include "interface/_icone.html" with nome="mais" %}</p>
@@ -127,7 +130,7 @@
   <section class="cartao saude-painel">
     <div class="saude-painel-topo">
       <h2 class="cartao-titulo">Saúde do catálogo</h2>
-      <a class="botao botao-texto" href="{% url 'automacoes:pagina' %}">Ver automações{% include "interface/_icone.html" with nome="seta-direita" %}</a>
+      {% if perms.contas.operar_automacoes %}<a class="botao botao-texto" href="{% url 'automacoes:pagina' %}">Ver automações{% include "interface/_icone.html" with nome="seta-direita" %}</a>{% endif %}
     </div>
     {% if saude %}{% include "catalogo/_saude.html" %}{% else %}<p class="linha texto-secundario">{% include "interface/_icone.html" with nome="check" %}Catálogo em dia.</p>{% endif %}
   </section>

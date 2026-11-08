@@ -8,6 +8,7 @@ from django.urls import reverse
 from catalogo.models import ExcecaoMaterial, Material, Opcao
 from catalogo.saude import ItemSaude, saude_do_catalogo, situacao_do_catalogo
 from tests.epis_cenario import OCULOS, montar_epis
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -69,6 +70,8 @@ def test_sem_saldo_importado_nada_dos_epis():
 
 
 def test_a_visao_geral_mostra_a_contagem(client):
-    client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+    client.force_login(
+        dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
+    )
     html = client.get(reverse("automacoes:pagina")).text
     assert "Formulário de EPIs" in html and "4 materiais" in html

@@ -18,13 +18,14 @@ from conciliacao.servicos import conciliar
 from pedidos.models import ExecucaoRobo, LinhaSaida
 from pedidos.servicos import corrigir_requisicao
 from scpi.lancamento import executar_lancamento
+from tests.papeis import dar_papeis
 
 ABA = reverse("automacoes:pagina") + "?aba=lancamento"
 
 
 @pytest.fixture
 def pessoa(client):
-    usuario = get_user_model().objects.create_user(username="00099", password="x")
+    usuario = dar_papeis(get_user_model().objects.create_user(username="00099", password="x"))
     client.force_login(usuario)
     return usuario
 

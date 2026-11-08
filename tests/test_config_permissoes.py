@@ -11,6 +11,7 @@ from catalogo.acesso import pode_alterar_centros, pode_alterar_materiais
 from catalogo.models import CentroCusto, CentroFormulario, ExcecaoMaterial, Material
 from tests.cenario import montar_cenario
 from tests.config_cenario import criar_centro, usuarios
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -150,7 +151,7 @@ def test_a_permissao_sem_ser_staff_nao_basta(client, django_user_model, cenario,
     """O critério é o do admin: `is_staff` mais a permissão. Só a permissão não abre a gravação."""
     from django.contrib.auth.models import Permission
 
-    quem = django_user_model.objects.create_user(username="80099", password="x")
+    quem = dar_papeis(django_user_model.objects.create_user(username="80099", password="x"))
     quem.user_permissions.add(
         *Permission.objects.filter(codename__in=["change_centrocusto", "change_excecaomaterial"])
     )
@@ -172,3 +173,19 @@ def test_as_funcoes_de_permissao(cenario):
     from django.contrib.auth.models import AnonymousUser
 
     assert not pode_alterar_centros(AnonymousUser()) and not pode_alterar_materiais(None)
+
+
+def test_gravar_tambem_exige_ver_a_pagina(client, django_user_model, cenario, centro):
+    """Spec 012: gravar segue o critério da spec 009 e exige também ver a página (Gestão)."""
+    from django.contrib.auth.models import Permission
+
+    from contas.acesso import GRUPO_ATENDIMENTO
+    from tests.papeis import usuario_com
+
+    quem = usuario_com(GRUPO_ATENDIMENTO, username="80098", is_staff=True)
+    quem.user_permissions.add(
+        *Permission.objects.filter(codename__in=["change_centrocusto", "change_excecaomaterial"])
+    )
+    entrar(client, quem)
+    for url, corpo in gravacoes(centro).values():
+        assert client.post(url, corpo).status_code == 403

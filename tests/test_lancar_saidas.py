@@ -12,6 +12,8 @@ from scpi.disparo import iniciar_lancamento
 from scpi.requisicoes import ErroSCPI
 
 # Nenhum teste grava o journal no `logs/` do repositório, e o comando abre o SCPI simulado.
+from tests.papeis import dar_papeis
+
 pytestmark = [
     pytest.mark.django_db,
     pytest.mark.usefixtures("journal", "scpi_no_comando"),
@@ -20,7 +22,7 @@ pytestmark = [
 
 @pytest.fixture
 def usuario():
-    return get_user_model().objects.create_user("00012", password="x")
+    return dar_papeis(get_user_model().objects.create_user("00012", password="x"))
 
 
 def test_comando_usa_a_execucao_do_botao(dois_lotes):
@@ -101,3 +103,17 @@ def test_disparo_que_nao_inicia_o_processo_encerra_a_execucao_como_falha(monkeyp
     e = ExecucaoRobo.objects.get()
     assert (e.situacao, e.erro) == ("FALHA", "python.exe não encontrado") and e.fim is not None
     assert not ExecucaoRobo.em_andamento().exists()
+
+
+@pytest.mark.parametrize("simulacao", [True, False])
+def test_disparo_sem_a_permissao_de_automacoes_nao_cria_nada(monkeypatch, simulacao):
+    """Segunda barreira do lançamento (spec 012, FR-007): sem `operar_automacoes`, nem simular."""
+    from django.core.exceptions import PermissionDenied
+
+    from contas.acesso import GRUPO_ATENDIMENTO
+    from tests.papeis import usuario_com
+
+    monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("subiu processo"))
+    with pytest.raises(PermissionDenied):
+        iniciar_lancamento(usuario_com(GRUPO_ATENDIMENTO), simulacao=simulacao, lotes=["P-0001"])
+    assert not ExecucaoRobo.objects.exists()

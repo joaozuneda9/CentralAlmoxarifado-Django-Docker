@@ -16,6 +16,7 @@ from catalogo.models import Material
 from pedidos.models import Pedido
 from tests.cenario import montar_cenario
 from tests.config_cenario import enviar_formulario
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -170,7 +171,9 @@ def test_material_sem_unidade_diz_estoque_disponivel_sem_unidade(client, fluxo):
 
 @pytest.fixture
 def logado(client, django_user_model):
-    client.force_login(django_user_model.objects.create_user(username="12345", password="x"))
+    client.force_login(
+        dar_papeis(django_user_model.objects.create_user(username="12345", password="x"))
+    )
 
 
 def test_avulsa_mostra_o_saldo_truncado_e_mantem_codigo_e_unidade(client, logado):

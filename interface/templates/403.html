@@ -1,0 +1,17 @@
+{% extends "interface/acesso_negado.html" %}
+{% comment %}
+403 dos `PermissionDenied` levantados fora do `ExigirPermissao` (views da Segurança do Trabalho,
+`catalogo.acesso.exige` e o disparo do lançamento), com a mensagem da exceção (spec 012).
+O Django passa só `exception`; quem abre o painel é decidido aqui pelas permissões.
+{% endcomment %}
+{% block heading %}Sem acesso{% endblock %}
+{% block page %}
+<section class="cartao">
+  <div class="vazio">
+    {% include "interface/_icone.html" with nome="cadeado" %}
+    <p class="vazio-titulo">{{ exception|default:"Seu usuário não tem acesso a esta ação." }}</p>
+    <p>Se precisar, fale com o administrador do almoxarifado.</p>
+    {% if perms.contas.atender_pedidos %}<a class="botao botao-secundario" href="{% url 'pedidos:painel' %}">{% include "interface/_icone.html" with nome="seta-esquerda" %}Voltar ao painel</a>{% endif %}
+  </div>
+</section>
+{% endblock %}

@@ -25,6 +25,7 @@ from tests.cenario import (
     saida,
     textos,
 )
+from tests.papeis import dar_papeis
 from tests.test_atendimento import dados_post
 
 pytestmark = pytest.mark.django_db
@@ -34,7 +35,9 @@ TUDO = {"023.001.002": "2", "008.001.002": "1,5"}
 
 @pytest.fixture
 def usuario():
-    return get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    return dar_papeis(
+        get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    )
 
 
 @pytest.fixture
@@ -532,8 +535,10 @@ def test_resultados_do_atendimento_incluem_os_acrescentados(client, pedido, loga
 
 @pytest.fixture
 def atendente():
-    return get_user_model().objects.create_user(
-        username="77777", password="x", first_name="Zuleica", last_name="Prado"
+    return dar_papeis(
+        get_user_model().objects.create_user(
+            username="77777", password="x", first_name="Zuleica", last_name="Prado"
+        )
     )
 
 

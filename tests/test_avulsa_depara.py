@@ -13,6 +13,7 @@ from pedidos.carrinho import motivo_bloqueio
 from pedidos.fluxos import FLUXOS, buscar
 from pedidos.regras import LIMPEZA
 from tests.cenario import criar_pedido, montar_cenario
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 AVULSA = FLUXOS["avulsa"]
@@ -23,7 +24,9 @@ OUTRO_ANTIGO = "000.900.002"
 
 @pytest.fixture
 def usuario():
-    return get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    return dar_papeis(
+        get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    )
 
 
 def material(codigo, estoque="0", unidade="UN", **campos):

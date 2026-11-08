@@ -1,0 +1,25 @@
+{% extends "interface/base_almoxarifado.html" %}
+{% comment %}
+Recusa de acesso da área interna (spec 012, contracts/recusa.md), devolvida com 403 pelo
+`contas.middleware.ExigirPermissao` e, com `exception`, pelo `403.html`. O Sair é o do menu: um só
+formulário de saída por página. Nunca mostra dados de pedido.
+{% endcomment %}
+{% block title %}Sem acesso · Central Almoxarifado{% endblock %}
+{% block voltar %}{% endblock %}
+{% block rotulo %}Acesso{% endblock %}
+{% block heading %}{% if sem_papel %}Seu usuário ainda não tem acesso{% else %}Sem acesso a esta página{% endif %}{% endblock %}
+{% block page %}
+<section class="cartao">
+  <div class="vazio">
+    {% include "interface/_icone.html" with nome="cadeado" %}
+    {% if sem_papel %}
+      <p class="vazio-titulo">Falta um papel no seu usuário</p>
+      <p>O administrador do almoxarifado precisa dar um papel ao seu usuário. Procure-o e entre de novo depois.</p>
+    {% else %}
+      <p class="vazio-titulo">{{ motivo|default:"Seu usuário não tem acesso a esta página." }}</p>
+      <p>Se precisar dela, fale com o administrador do almoxarifado.</p>
+      {% if volta_ao_painel %}<a class="botao botao-secundario" href="{% url 'pedidos:painel' %}">{% include "interface/_icone.html" with nome="seta-esquerda" %}Voltar ao painel</a>{% endif %}
+    {% endif %}
+  </div>
+</section>
+{% endblock %}

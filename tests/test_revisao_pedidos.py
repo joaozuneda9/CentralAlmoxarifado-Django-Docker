@@ -10,6 +10,7 @@ from django.urls import reverse
 from pedidos.regras import LIMPEZA, EnvioSaida, data_valida_iso, parse_qtd_br
 from pedidos.servicos import confirmar_atendimento, registrar_saida_avulsa
 from tests.cenario import criar_pedido, envio_limpeza, itens, montar_cenario, registrar, saida
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -17,7 +18,7 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def usuario():
     montar_cenario()
-    return get_user_model().objects.create_user(username="12345", password="x")
+    return dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
 
 
 def test_centro_de_custo_com_espacos_demais_vira_erro_e_nao_500(usuario):

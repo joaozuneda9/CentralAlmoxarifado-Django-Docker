@@ -12,6 +12,7 @@ from catalogo.models import CentroCusto, Formulario
 from pedidos.models import Pedido
 from pedidos.regras import Centro, opcoes_destino, resolver_destino
 from tests.oficina_cenario import FILTRO, OFICINA, PICKUP, RETRO, enviar, montar_oficina
+from tests.papeis import dar_papeis
 
 INDISPONIVEL = "Este formulário está indisponível no momento. Avise o almoxarifado."
 
@@ -112,7 +113,9 @@ class TestFormulario:
     def test_o_atendimento_sugere_centro_e_placa(self, client, destino, placa, centro):
         assert "Pedido registrado" in enviar(client, [(FILTRO, "1")], destino=destino).text
         pedido = Pedido.objects.get()
-        client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+        client.force_login(
+            dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
+        )
         html = client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
         assert re.search(rf'<option value="{re.escape(centro)}"[^>]*selected', html)
         selecionadas = re.findall(r'<option value="([A-Z0-9]+)" data-centro="[^"]*" selected', html)

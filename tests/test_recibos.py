@@ -11,6 +11,7 @@ from pedidos.models import Pedido
 from pedidos.regras import AVULSA
 from pedidos.servicos import marcar_recibos_impressos
 from tests.cenario import criar_pedido
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 ANTES = datetime(2026, 10, 1, 10, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
@@ -18,14 +19,16 @@ ANTES = datetime(2026, 10, 1, 10, 0, tzinfo=ZoneInfo("America/Sao_Paulo"))
 
 @pytest.fixture
 def logado(client):
-    usuario = get_user_model().objects.create_user(username="12345", password="x")
+    usuario = dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
     client.force_login(usuario)
     return usuario
 
 
 def test_recibo_nao_mostra_quem_registrou(client):
-    registrador = get_user_model().objects.create_user(
-        username="77777", password="x", first_name="Registrador"
+    registrador = dar_papeis(
+        get_user_model().objects.create_user(
+            username="77777", password="x", first_name="Registrador"
+        )
     )
     client.force_login(registrador)
     numero = criar_pedido(origem=AVULSA, atendido=True, usuario=registrador).numero

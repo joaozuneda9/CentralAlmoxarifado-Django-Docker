@@ -22,6 +22,7 @@ from tests.cenario import (
     saida,
     textos,
 )
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 HOJE = date(2026, 10, 9)
@@ -30,7 +31,9 @@ TUDO = {"023.001.002": "2", "008.001.002": "1,5"}
 
 @pytest.fixture
 def usuario():
-    return get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    return dar_papeis(
+        get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    )
 
 
 @pytest.fixture
@@ -177,7 +180,7 @@ def test_avulsa_nao_e_atendida(usuario):
 @pytest.mark.django_db(transaction=True)
 def test_atendimentos_simultaneos_gravam_um():
     montar_cenario()
-    usuario = get_user_model().objects.create_user(username="1", password="x")
+    usuario = dar_papeis(get_user_model().objects.create_user(username="1", password="x"))
     p = registrar(LIMPEZA, envio_limpeza()).pedido
     resultados = em_paralelo(lambda: atender(p, usuario), lambda: atender(p, usuario))
     assert sorted(r.ok for r in resultados) == [False, True]
