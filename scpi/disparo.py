@@ -12,8 +12,7 @@ from django.core.exceptions import PermissionDenied
 from django.utils import timezone
 
 from catalogo.models import Importacao
-from contas.acesso import AUTOMACOES
-from contas.acesso import logger as logger_acesso
+from contas.acesso import AUTOMACOES, registrar_recusa_de
 from pedidos.models import ExecucaoRobo
 
 
@@ -113,11 +112,7 @@ def iniciar_lancamento(usuario, *, simulacao: bool, lotes: list[str]) -> Execuca
     """
     # Segunda barreira, além da rota (spec 012, FR-007): o lançamento é irreversível no SCPI.
     if not usuario.has_perm(AUTOMACOES):
-        logger_acesso.warning(
-            "Acesso recusado: matricula=%s rota=scpi.disparo.iniciar_lancamento metodo=- falta=%s",
-            usuario.get_username(),
-            AUTOMACOES,
-        )
+        registrar_recusa_de(usuario, "scpi.disparo.iniciar_lancamento", "-", AUTOMACOES)
         raise PermissionDenied("Lançar no SCPI é de quem opera as automações.")
     if ExecucaoRobo.em_andamento().exists():
         return None

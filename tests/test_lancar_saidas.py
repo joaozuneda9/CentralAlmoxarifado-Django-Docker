@@ -121,3 +121,19 @@ def test_disparo_sem_a_permissao_de_automacoes_nao_cria_nada(monkeypatch, simula
     with pytest.raises(PermissionDenied):
         iniciar_lancamento(usuario_com(GRUPO_ATENDIMENTO), simulacao=simulacao, lotes=["P-0001"])
     assert not ExecucaoRobo.objects.exists()
+
+
+def test_disparo_vale_pela_permissao_nao_pelo_grupo(monkeypatch):
+    """A segunda barreira pergunta pela permissão: dada direto ao usuário, sem o grupo Gestão,
+    o disparo inicia (spec 012, o código nunca pergunta pelo nome do papel)."""
+    from django.contrib.auth.models import Permission
+
+    from tests.papeis import usuario_com
+
+    usuario = usuario_com()
+    usuario.user_permissions.add(Permission.objects.get(codename="operar_automacoes"))
+    chamadas = []
+    monkeypatch.setattr(subprocess, "Popen", lambda args, **kw: chamadas.append(args))
+    e = iniciar_lancamento(usuario, simulacao=True, lotes=["P-0001"])
+    assert e is not None and e.iniciada_por == usuario and len(chamadas) == 1
+    assert not usuario.groups.exists()

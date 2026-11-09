@@ -183,11 +183,22 @@ def registrar_recusa(request, falta: str) -> None:
     pedido e os nomes de solicitantes não vão ao log.
     """
     correspondencia = getattr(request, "resolver_match", None)
-    logger.warning(
-        "Acesso recusado: matricula=%s rota=%s metodo=%s falta=%s",
-        _campo_do_log(request.user.get_username()) if request.user.is_authenticated else "-",
+    registrar_recusa_de(
+        request.user,
         correspondencia.view_name if correspondencia else "-",
         request.method,
+        falta,
+    )
+
+
+def registrar_recusa_de(usuario, rota: str, metodo: str, falta: str) -> None:
+    """A linha da recusa, também fora de uma requisição (o disparo do lançamento): o formato e a
+    codificação da matrícula ficam num lugar só."""
+    logger.warning(
+        "Acesso recusado: matricula=%s rota=%s metodo=%s falta=%s",
+        _campo_do_log(usuario.get_username()) if usuario.is_authenticated else "-",
+        rota,
+        metodo,
         falta,
     )
 
