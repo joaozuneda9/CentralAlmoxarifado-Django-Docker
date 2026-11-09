@@ -114,6 +114,10 @@ def test_disparo_sem_a_permissao_de_automacoes_nao_cria_nada(monkeypatch, simula
     from tests.papeis import usuario_com
 
     monkeypatch.setattr(subprocess, "Popen", lambda *a, **k: pytest.fail("subiu processo"))
+    # A recusa vem antes de qualquer consulta: nem a execução em andamento é procurada.
+    monkeypatch.setattr(
+        ExecucaoRobo, "em_andamento", lambda *a, **k: pytest.fail("consultou execução")
+    )
     with pytest.raises(PermissionDenied):
         iniciar_lancamento(usuario_com(GRUPO_ATENDIMENTO), simulacao=simulacao, lotes=["P-0001"])
     assert not ExecucaoRobo.objects.exists()

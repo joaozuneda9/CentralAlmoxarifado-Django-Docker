@@ -4,6 +4,7 @@ no logger `contas.acesso` por recusa, nas quatro origens, sem dados do pedido.""
 import logging
 import re
 import subprocess
+from urllib.parse import unquote
 
 import pytest
 from django.contrib.auth import get_user_model
@@ -44,6 +45,15 @@ def test_recusa_do_middleware(recusas):
         "Acesso recusado: matricula=12345 rota=automacoes:lancar metodo=POST "
         "falta=contas.operar_automacoes"
     ]
+
+
+def test_matricula_com_espaco_ou_quebra_de_linha_nao_cria_campo_nem_linha(recusas):
+    usuario = usuario_com(GRUPO_ATENDIMENTO, username="12 3\nfalta=x%")
+    cliente(usuario).post(reverse("automacoes:lancar"))
+    (linha,) = recusas()
+    assert "\n" not in linha and LINHA.match(linha)
+    assert "matricula=12%203%0Afalta=x%25 " in linha
+    assert unquote("12%203%0Afalta=x%25") == usuario.username
 
 
 def test_recusa_da_seguranca_do_trabalho_so_fora_do_get(recusas, quem):

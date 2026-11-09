@@ -22,6 +22,7 @@ from scpi.leitura import NadaAExibir
 from scpi.requisicoes import ResultadoIncerto
 from tests.cenario import criar_pedido
 from tests.conciliacao_cenario import tentativa_em_verificar
+from tests.conftest import HOJE
 
 T = regras.TentativaResumo
 R = regras.RequisicaoResumo
@@ -170,12 +171,9 @@ def test_candidata_vista_uma_vez_continua_bloqueando(dois_lotes, scpi, usuario):
     # A requisição some do relatório (falha dele, ou alguém a excluiu): uma extração nova e
     # sem a candidata não desfaz o bloqueio.
     scpi.salvas = [r for r in scpi.salvas if r.requisicao != "000001/26"]
-    hoje = timezone.localdate()
-    nova = extrair(
-        ExtracaoOficial.Motivo.MANUAL,
-        (hoje - timedelta(days=30), hoje + timedelta(days=1)),
-        lambda: scpi.relatorio(hoje - timedelta(days=30), hoje + timedelta(days=1)),
-    )
+    # O período cobre a data dos lotes (`conftest.HOJE`, fixa) seja qual for o dia de hoje.
+    de, ate = HOJE - timedelta(days=1), timezone.localdate() + timedelta(days=1)
+    nova = extrair(ExtracaoOficial.Motivo.MANUAL, (de, ate), lambda: scpi.relatorio(de, ate))
     conciliar_verificar(nova)
     assert ConferenciaLote.objects.get(extracao=nova, lote=p).veredito == "INTERVALO_VAZIO"
     assert not liberacao(p).permitida

@@ -17,6 +17,7 @@ Toda recusa vira uma linha do logger `contas.acesso` (`registrar_recusa`).
 
 import logging
 from dataclasses import dataclass
+from urllib.parse import quote
 
 logger = logging.getLogger("contas.acesso")
 
@@ -167,6 +168,14 @@ def sem_papel(usuario) -> bool:
     return not any(usuario.has_perm(p) for p in PERMISSOES_INTERNAS)
 
 
+def _campo_do_log(texto: str) -> str:
+    """O texto com espaços, quebras de linha, `%` e caracteres invisíveis em `%XX` (o `unquote`
+    devolve o original): um valor vindo do cadastro não cria campo nem linha falsa no log."""
+    return "".join(
+        quote(c, safe="") if c.isspace() or c == "%" or not c.isprintable() else c for c in texto
+    )
+
+
 def registrar_recusa(request, falta: str) -> None:
     """Uma linha no log por recusa de acesso: quem, qual rota, qual método e o que faltou.
 
@@ -176,7 +185,7 @@ def registrar_recusa(request, falta: str) -> None:
     correspondencia = getattr(request, "resolver_match", None)
     logger.warning(
         "Acesso recusado: matricula=%s rota=%s metodo=%s falta=%s",
-        request.user.get_username() if request.user.is_authenticated else "-",
+        _campo_do_log(request.user.get_username()) if request.user.is_authenticated else "-",
         correspondencia.view_name if correspondencia else "-",
         request.method,
         falta,
