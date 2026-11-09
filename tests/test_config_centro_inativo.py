@@ -23,6 +23,7 @@ from pedidos.servicos import (
 from scpi.requisicoes import selecionar
 from tests.cenario import envio_limpeza, itens, montar_cenario, registrar, saida
 from tests.config_cenario import criar_centro
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -33,7 +34,9 @@ TUDO = {"023.001.002": "2", "008.001.002": "1,5"}
 @pytest.fixture
 def usuario():
     montar_cenario()
-    return get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    return dar_papeis(
+        get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    )
 
 
 def inativar(descricao="ETA II"):

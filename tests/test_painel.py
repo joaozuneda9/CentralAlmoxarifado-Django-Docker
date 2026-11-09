@@ -20,6 +20,7 @@ from pedidos.models import ExecucaoRobo, ItemPedido, Pedido
 from pedidos.regras import AB, AVULSA, EPIS, LIMPEZA, OFICINA, VIATURAS
 from pedidos.templatetags.pedidos_extras import origem_curta
 from tests.cenario import criar_pedido
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -44,7 +45,7 @@ COMBINACOES_SCPI = [
 
 @pytest.fixture
 def logado(client):
-    usuario = get_user_model().objects.create_user(username="12345", password="x")
+    usuario = dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
     client.force_login(usuario)
     return usuario
 
@@ -340,7 +341,7 @@ def test_filtros_de_situacao_concordam_com_a_autorizacao_da_seguranca_do_trabalh
     (spec 008); autorizado segue a regra de sempre (e a sem autorização não muda)."""
     from pedidos.models import AutorizacaoPedido
 
-    usuario = get_user_model().objects.create_user(username="70001", password="x")
+    usuario = dar_papeis(get_user_model().objects.create_user(username="70001", password="x"))
     for situacao, atendido in [
         (None, False),
         (None, True),

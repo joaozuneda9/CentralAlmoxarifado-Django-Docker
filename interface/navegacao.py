@@ -1,14 +1,14 @@
 """Itens da barra lateral da área do almoxarifado.
 
 Cada subprojeto acrescenta seus destinos a `ITENS_MENU`. A barra só espelha o que cada rota
-permite; quem decide o acesso continua sendo a própria rota.
+permite (`contas.acesso.pode_abrir`, a tabela de rotas da spec 012); quem decide o acesso é a rota.
 """
 
 from dataclasses import dataclass
 
 from django.urls import reverse
 
-from contas.acesso import da_seguranca_trabalho
+from contas.acesso import da_seguranca_trabalho, pode_abrir
 
 
 @dataclass(frozen=True)
@@ -16,7 +16,6 @@ class ItemMenu:
     rotulo: str
     rota: str
     icone: str = ""
-    so_equipe: bool = False
     # Quem vê o item: o almoxarifado (os usuários de sempre) ou a Segurança do Trabalho (spec 008).
     para: str = "almoxarifado"
 
@@ -27,7 +26,7 @@ ITENS_MENU: tuple[ItemMenu, ...] = (
     ItemMenu("Automações", "automacoes:pagina", "robo"),
     ItemMenu("Curva ABC", "catalogo:curva", "grafico"),
     ItemMenu("Formulários", "catalogo:formularios", "caixa-check"),
-    ItemMenu("Cadastros", "admin:index", "cadastros", so_equipe=True),
+    ItemMenu("Cadastros", "admin:index", "cadastros"),
     ItemMenu("Autorizações", "pedidos:autorizacoes", "escudo", para="seguranca"),
 )
 
@@ -49,9 +48,10 @@ def menu(request) -> dict:
                 "atual": item.rota == atual,
             }
             for item in ITENS_MENU
-            # A Segurança do Trabalho só vê o que é dela; os demais, o que viam, sem o dela.
+            # A Segurança do Trabalho só vê o que é dela; os demais, o que a tabela de rotas lhes
+            # abre (spec 012; "Cadastros", o admin, segue o `is_staff`).
             if (item.para == "seguranca") == seguranca
-            and (seguranca or usuario.is_staff or not item.so_equipe)
+            and (seguranca or pode_abrir(usuario, item.rota))
         ],
         # A marca do menu leva ao ponto de partida de cada um: o painel, ou a fila de autorização.
         "menu_inicio": reverse("pedidos:autorizacoes" if seguranca else "pedidos:painel"),

@@ -46,6 +46,7 @@ from catalogo.models import (
     Material,
     ParDePara,
 )
+from contas.acesso import registrar_recusa
 from interface.htmx import regiao_pedida, render_regiao
 from pedidos.regras import norm_placa, qtd_br, truncar_qtd
 
@@ -474,6 +475,7 @@ def formularios_lote(request):
     parametros = {"formulario": origem, "acao": acao, **filtros}
     if request.method == "POST":
         if not pode_alterar_materiais(request.user):
+            registrar_recusa(request, "is_staff,catalogo.change_excecaomaterial")
             raise PermissionDenied("Sem permissão para alterar a configuração dos formulários.")
         previa = reverse("catalogo:formularios_lote") + "?" + urlencode(parametros)
         if dados.get("total") != str(total):

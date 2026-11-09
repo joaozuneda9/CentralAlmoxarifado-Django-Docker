@@ -15,6 +15,7 @@ from django.urls import reverse
 from pedidos.regras import AB, LIMPEZA, qtd_br
 from pedidos.telegram import texto_aviso
 from tests.cenario import criar_pedido, montar_cenario
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -22,7 +23,9 @@ pytestmark = pytest.mark.django_db
 @pytest.fixture
 def logado(client):
     montar_cenario()
-    client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+    client.force_login(
+        dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
+    )
 
 
 def campo_de_entrega(html, codigo):

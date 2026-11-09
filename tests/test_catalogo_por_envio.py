@@ -18,6 +18,7 @@ from pedidos.protecao import emitir
 from pedidos.regras import EnvioSaida
 from pedidos.views import almoxarifado, publico
 from tests.cenario import itens, montar_cenario, saida
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -56,7 +57,7 @@ def logado(client):
     montar_cenario()
     # A saída avulsa só lista material com saldo: o "ITEM ANTIGO" do cenário vem zerado.
     Material.objects.filter(codigo="000.000.900").update(estoque=Decimal(10))
-    usuario = get_user_model().objects.create_user(username="12345", password="x")
+    usuario = dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
     client.force_login(usuario)
     return usuario
 

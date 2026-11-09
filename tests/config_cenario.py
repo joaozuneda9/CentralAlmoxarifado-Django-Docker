@@ -27,6 +27,7 @@ from pedidos.regras import (
     norm_u,
 )
 from pedidos.servicos import registrar_pedido
+from tests.papeis import dar_papeis
 
 
 def habilitar(centros, *formularios, usuario=None) -> None:
@@ -126,6 +127,10 @@ def usuarios() -> dict:
     permissao(materiais, "change_excecaomaterial")
     staff = criar("80004", is_staff=True)
     comum = criar("80005")
+    # Usuários do almoxarifado têm os dois papéis (spec 012); a gravação continua decidida pelo
+    # `is_staff` e pela permissão do cadastro.
+    for usuario in (centros, materiais, staff, comum):
+        dar_papeis(usuario)
     seguranca = criar("80006")
     seguranca.groups.add(Group.objects.get_or_create(name=GRUPO_SEGURANCA_TRABALHO)[0])
     return {

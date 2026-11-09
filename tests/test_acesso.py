@@ -4,6 +4,7 @@ from django.urls import reverse
 
 from tests.cenario import montar_cenario
 from tests.paginas import item_atual
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 SENHA = "senha-de-teste-bem-comprida-123"
@@ -11,8 +12,10 @@ SENHA = "senha-de-teste-bem-comprida-123"
 
 @pytest.fixture
 def usuario():
-    return get_user_model().objects.create_user(
-        username="12345", password=SENHA, first_name="Ana", last_name="Lima"
+    return dar_papeis(
+        get_user_model().objects.create_user(
+            username="12345", password=SENHA, first_name="Ana", last_name="Lima"
+        )
     )
 
 

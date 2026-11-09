@@ -9,6 +9,7 @@ from django.urls import reverse
 from catalogo.models import CentroCusto, ExcecaoMaterial, Material, Opcao
 from catalogo.saude import ItemSaude, saude_do_catalogo, situacao_do_catalogo
 from tests.oficina_cenario import OFICINA, OLEO, montar_oficina
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -102,6 +103,8 @@ def test_sem_saldo_importado_nada_da_oficina():
 
 
 def test_a_visao_geral_mostra_a_contagem(client):
-    client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+    client.force_login(
+        dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
+    )
     html = client.get(reverse("automacoes:pagina")).text
     assert FORMULARIO in html and "3 materiais" in html

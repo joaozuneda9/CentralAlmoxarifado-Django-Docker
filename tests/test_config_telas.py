@@ -649,7 +649,11 @@ def test_nas_viaturas_inativar_vale_para_todas_as_linhas_da_descricao(admin):
 def test_ativar_so_aceita_post_e_exige_a_permissao(client):
     assert usuarios() and client.get(ATIVO).status_code in (302, 405)
     client.force_login(usuarios()["comum"])
+    # Sem a permissão, a recusa de acesso vem antes do método (spec 012); com ela, o 405 de sempre.
+    assert client.get(ATIVO).status_code == 403
+    client.force_login(usuarios()["admin"])
     assert client.get(ATIVO).status_code == 405
+    client.force_login(usuarios()["comum"])
     centro = criar_centro("SETOR NOVO", "90")
     r = client.post(ATIVO, {"formulario": "AB", "centro": [centro.pk], "ativo": "0"})
     assert r.status_code == 403 and CentroCusto.objects.get(pk=centro.pk).ativo is True

@@ -54,7 +54,7 @@
 
   {% if pedido.atendimento_ou_none and not editando %}{% include "pedidos/_alteracoes.html" %}{% endif %}
 
-  {% if pedido.situacao_scpi.chave == "atencao" %}
+  {% if pedido.situacao_scpi.chave == "atencao" and perms.contas.operar_automacoes %}
   <p class="nao-imprimir"><a href="{% url 'automacoes:pagina' %}?aba=lancamento#travas">Resolver em Automações</a></p>
   {% endif %}
 

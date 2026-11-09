@@ -21,6 +21,7 @@ from pedidos.regras import REGRA_LIVRE
 from pedidos.servicos import MENSAGEM_LIMITE_SOLICITANTE, catalogo_de
 from tests.cenario import montar_cenario
 from tests.config_cenario import enviar_formulario
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -120,7 +121,9 @@ def test_o_pedido_do_formulario_novo_e_gravado_e_aparece_no_painel_e_no_recibo(c
     assert pedido.origem == ORIGEM and pedido.numero.startswith("P-")
     assert [str(i.qtd_pedida) for i in pedido.itens.all()] == ["2.000", "2.500"]
 
-    client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+    client.force_login(
+        dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
+    )
     assert pedido.numero in client.get(reverse("pedidos:painel")).text
     detalhe = client.get(reverse("pedidos:detalhe", args=[pedido.numero]))
     assert detalhe.status_code == 200 and "PARAFUSO DE TESTE" in detalhe.text

@@ -4,12 +4,13 @@ de autorização, a decisão e as páginas públicas; o resto é negado por padr
 
 import pytest
 from django.test import Client
-from django.urls import URLPattern, URLResolver, get_resolver, reverse
+from django.urls import reverse
 
 from contas.acesso import ROTAS_SEGURANCA_TRABALHO, da_seguranca_trabalho
 from pedidos.models import AutorizacaoPedido
 from tests.epis_cenario import SENHA, montar_epis, registrar
 from tests.paginas import texto
+from tests.rotas import rotas_nomeadas
 
 pytestmark = pytest.mark.django_db
 
@@ -33,30 +34,6 @@ PERMITIDAS = {
 @pytest.fixture(autouse=True)
 def cenario():
     montar_epis()
-
-
-def rotas_nomeadas():
-    """Toda rota com nome do projeto (com o namespace), com uma URL concreta de teste."""
-    achadas = {}
-
-    def andar(padroes, namespace):
-        for p in padroes:
-            if isinstance(p, URLResolver):
-                novo = f"{namespace}{p.namespace}:" if p.namespace else namespace
-                andar(p.url_patterns, novo)
-            elif isinstance(p, URLPattern) and p.name:
-                nome = f"{namespace}{p.name}"
-                parametros = list(p.pattern.regex.groupindex) or list(
-                    getattr(p.pattern, "converters", {})
-                )
-                kwargs = {k: "1" for k in parametros}
-                try:
-                    achadas.setdefault(nome, reverse(nome, kwargs=kwargs))
-                except Exception:  # rota que o reverse não monta com um valor qualquer
-                    continue
-
-    andar(get_resolver().url_patterns, "")
-    return achadas
 
 
 def test_a_lista_de_rotas_permitidas_e_a_do_contrato():

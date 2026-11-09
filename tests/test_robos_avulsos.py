@@ -19,6 +19,7 @@ from catalogo.models import Importacao, Material
 from pedidos.forms import LancamentoForm
 from scpi.disparo import guardar_csv_enviado, iniciar_importacao, iniciar_lancamento
 from tests.cenario import criar_pedido
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -164,7 +165,7 @@ def test_csv_enviado_fica_na_pasta_de_uploads(settings, tmp_path):
 
 
 def test_lancamento_passa_cada_lote_ao_robo(processos):
-    usuario = get_user_model().objects.create_user(username="99")
+    usuario = dar_papeis(get_user_model().objects.create_user(username="99"))
     iniciar_lancamento(usuario, simulacao=True, lotes=["P-0001", "AV-0002"])
     assert argumentos(processos[0])[-5:] == ["--dry-run", "--lote", "P-0001", "--lote", "AV-0002"]
     assert "--limite" not in processos[0]

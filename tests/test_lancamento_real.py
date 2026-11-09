@@ -7,6 +7,7 @@ from django.urls import reverse
 
 from pedidos.models import ExecucaoRobo, LinhaSaida
 from scpi.lancamento import LANCAMENTO_BLOQUEADO
+from tests.papeis import dar_papeis
 from tests.test_config import PRODUCAO, RAIZ, rodar
 
 # O comando abre o SCPI simulado.
@@ -21,7 +22,7 @@ def _bloqueado(settings, journal):
 @pytest.fixture
 def usuario_logado(client):
     # A matrícula 12345 já é do fixture `dois_lotes`.
-    usuario = get_user_model().objects.create_user(username="54321", password="x")
+    usuario = dar_papeis(get_user_model().objects.create_user(username="54321", password="x"))
     client.force_login(usuario)
     return usuario
 

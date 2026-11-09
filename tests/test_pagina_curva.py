@@ -5,6 +5,7 @@ import pytest
 from django.urls import reverse
 
 from catalogo.models import ConfiguracaoCurva, Material, ParDePara, SaidaSCPI
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 
@@ -18,7 +19,7 @@ def hoje(monkeypatch):
 
 @pytest.fixture
 def usuario(django_user_model):
-    return django_user_model.objects.create_user(username="12345", password="x")
+    return dar_papeis(django_user_model.objects.create_user(username="12345", password="x"))
 
 
 @pytest.fixture

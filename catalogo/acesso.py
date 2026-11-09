@@ -9,6 +9,8 @@ from functools import wraps
 
 from django.core.exceptions import PermissionDenied
 
+from contas.acesso import registrar_recusa
+
 
 def _pode(usuario, permissao: str) -> bool:
     return bool(
@@ -41,9 +43,16 @@ def exige(pode):
         @wraps(view)
         def envolvida(request, *args, **kwargs):
             if not pode(request.user):
+                registrar_recusa(request, f"is_staff,{getattr(pode, 'permissao', pode.__name__)}")
                 raise PermissionDenied("Sem permissão para alterar a configuração dos formulários.")
             return view(request, *args, **kwargs)
 
         return envolvida
 
     return decorador
+
+
+# A permissão que cada critério pede, para a linha da recusa no log (spec 012).
+pode_alterar_centros.permissao = "catalogo.change_centrocusto"
+pode_criar_centros.permissao = "catalogo.add_centrocusto"
+pode_alterar_materiais.permissao = "catalogo.change_excecaomaterial"

@@ -12,6 +12,7 @@ from pedidos.models import LinhaSaida, Pedido
 from pedidos.regras import AB, EnvioSaida
 from pedidos.servicos import registrar_saida_avulsa
 from tests.cenario import envio_ab, itens, montar_cenario, registrar, saida, textos
+from tests.papeis import dar_papeis
 
 pytestmark = pytest.mark.django_db
 HOJE = date(2026, 10, 9)
@@ -22,7 +23,7 @@ def usuario():
     montar_cenario()
     # A saída avulsa só lista material com saldo: o "ITEM ANTIGO" do cenário vem zerado.
     Material.objects.filter(codigo="000.000.900").update(estoque=Decimal(10))
-    return get_user_model().objects.create_user(username="12345", password="x")
+    return dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
 
 
 def avulsa(envio_id, envio, usuario):

@@ -20,6 +20,7 @@ from pedidos.servicos import (
     registrar_saida_avulsa,
 )
 from tests.cenario import criar_pedido, itens, montar_cenario, saida, textos
+from tests.papeis import dar_papeis
 from tests.test_carrinho import item
 
 pytestmark = pytest.mark.django_db
@@ -35,7 +36,9 @@ ANTIGO = "000.000.900"  # estoque 0
 
 @pytest.fixture
 def usuario():
-    return get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    return dar_papeis(
+        get_user_model().objects.create_user(username="12345", password="x", first_name="Ana")
+    )
 
 
 @pytest.fixture(autouse=True)

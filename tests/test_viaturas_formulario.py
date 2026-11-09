@@ -13,6 +13,7 @@ from pedidos.regras import VIATURAS
 from pedidos.telegram import texto_aviso
 from tests.config_cenario import enviar_formulario
 from tests.paginas import texto
+from tests.papeis import dar_papeis
 from tests.viaturas_cenario import (
     BOTINA,
     EQUIPE,
@@ -180,7 +181,9 @@ def test_ocorrencia_longa_e_recusada_no_campo(client):
 def test_painel_detalhe_recibo_e_aviso(client):
     enviar(client, [(FITA, "2")], ocorrencia="1234/2026")
     pedido = Pedido.objects.get()
-    client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+    client.force_login(
+        dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
+    )
     painel = client.get(reverse("pedidos:painel")).text
     assert "Ocorrência 1234/2026" in texto(painel)
     assert pedido.numero in client.get(reverse("pedidos:painel"), {"origem": VIATURAS}).text
@@ -195,7 +198,9 @@ def test_painel_detalhe_recibo_e_aviso(client):
 def test_sem_ocorrencia_o_sucesso_e_o_detalhe_nao_mostram_o_campo(client):
     assert "Nº da ocorrência" not in enviar(client, [(FITA, "1")]).text
     pedido = Pedido.objects.get()
-    client.force_login(get_user_model().objects.create_user(username="12345", password="x"))
+    client.force_login(
+        dar_papeis(get_user_model().objects.create_user(username="12345", password="x"))
+    )
     assert (
         "Nº da ocorrência" not in client.get(reverse("pedidos:detalhe", args=[pedido.numero])).text
     )

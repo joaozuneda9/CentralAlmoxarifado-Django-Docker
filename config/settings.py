@@ -55,6 +55,8 @@ MIDDLEWARE = [
     "django.contrib.auth.middleware.AuthenticationMiddleware",
     # Depois da autenticação: a Segurança do Trabalho só abre as rotas da lista (spec 008).
     "contas.middleware.RestringirSegurancaTrabalho",
+    # Logo depois: a tabela de rotas da área interna, que nega por padrão (spec 012).
+    "contas.middleware.ExigirPermissao",
     "django.contrib.messages.middleware.MessageMiddleware",
     "django.middleware.clickjacking.XFrameOptionsMiddleware",
 ]
@@ -212,4 +214,12 @@ LOGGING = {
         },
     },
     "root": {"handlers": ["console", "arquivo"], "level": "INFO"},
+    "loggers": {
+        # Recusas de acesso (spec 012): uma linha por recusa, com matrícula, rota e o que faltou.
+        "contas.acesso": {
+            "handlers": ["console", "arquivo"],
+            "level": "WARNING",
+            "propagate": False,
+        },
+    },
 }
